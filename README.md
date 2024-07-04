@@ -23,7 +23,7 @@ The training set was comprised of data from 0z October 1, 1979 through 21z Septe
 
 The target grids were coarsened from native 4km resolution to 8km to save on computing.
 
-The target grids were cropped to a desired domain. The input grids were cropped to give a 1 degree buffer around the target grids to ensure no information is lost around the edges of the domain.
+The target grids were cropped to a desired domain. The input grids were cropped to give a 0.5 degree buffer around the target grids to ensure no information is lost around the edges of the domain.
 
 ## Training
 HARPNET was trained on a 2023 M2 MacBook Pro. The following hyperparameters were used:
