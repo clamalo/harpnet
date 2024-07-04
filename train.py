@@ -21,7 +21,7 @@ warnings.filterwarnings("ignore")
 
 
 
-BASE_DIR = '/Users/clamalo/documents/harpnet/data/load_data/'
+BASE_DIR = '/Users/clamalo/documents/harpnet/load_data/'
 LOAD = True
 months = -1
 max_lat, min_lat, max_lon, min_lon = 41.75, 36.225, -104.25, -109.825
@@ -31,7 +31,7 @@ if LOAD:
     #LOAD TP DATA
     summed_dir = '/Volumes/T9/monthly/'
     file_paths = [os.path.join(summed_dir, fp) for fp in os.listdir(summed_dir) if fp.endswith('.nc')]
-    file_paths = sorted(file_paths, key=lambda fp: os.path.basename(fp))[:15]
+    file_paths = sorted(file_paths, key=lambda fp: os.path.basename(fp))[:5]
 
     with ProgressBar():
         ds = xr.open_mfdataset(file_paths, combine='by_coords', parallel=True, chunks={'time': 100})

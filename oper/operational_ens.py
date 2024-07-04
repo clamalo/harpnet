@@ -11,20 +11,22 @@ from ecmwf.opendata import Client
 client = Client("ecmwf", beta=True)
 import requests
 import os
-from utils import *
 import pickle
 from ecmwf.opendata import Client
 from metpy.plots import USCOUNTIES
-from utils.model import UNetWithAttention
+import sys
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'utils')))
+from utils import *
+from model import UNetWithAttention
 
 datestr = '20240109'
 cycle = '12'
-ingest = False
+ingest = False 
 ecmwf = False
 max_lat, min_lat, max_lon, min_lon = 41.75, 36.225, -104.25, -109.825
 
 
-with open(os.path.join('/Users/clamalo/documents/harpnet/data/load_data/shapes.pkl'), 'rb') as f:
+with open(os.path.join('/Users/clamalo/documents/harpnet/load_data/shapes.pkl'), 'rb') as f:
     shapes = pickle.load(f)
 ds_latitudes = shapes['output_latitudes']
 ds_longitudes = shapes['output_longitudes']
@@ -113,8 +115,9 @@ def predict(epoch, gfs_arr, ecmwf_arr):
     return gfs_pred, ecmwf_pred
 
 
-num_members = 10
-for epoch in tqdm(range(9, num_members)):
+first_member = 12
+last_member = 13
+for epoch in tqdm(range(first_member, last_member)):
     gfs_pred, ecmwf_pred = predict(epoch, gfs_arr, ecmwf_arr)
     gfs_preds.append(gfs_pred)
     ecmwf_preds.append(ecmwf_pred)
@@ -196,9 +199,7 @@ axs[1, 1].set_title('8km Downscaled Output (Gridded Mesh)')
 plt.savefig('comp.png')
 
 
-quit()
-
-coordinates = [40.5784, -111.6328]
+coordinates = [40.64835, -106.68377]
 gfs_output_arr = gfs_output_ds['tp'].sel(latitude=coordinates[0], longitude=coordinates[1], method='nearest').values
 gfs_input_arr = gfs_ds['tp'].sel(latitude=coordinates[0], longitude=coordinates[1], method='nearest').values
 print(f'GFS Input: {np.sum(gfs_input_arr)*0.0393701}')
