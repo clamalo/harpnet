@@ -21,7 +21,7 @@ warnings.filterwarnings("ignore")
 
 
 
-BASE_DIR = '/Users/clamalo/documents/harpnet/data/load_data'
+BASE_DIR = '/Users/clamalo/documents/harpnet/data/load_data/'
 LOAD = True
 months = -1
 max_lat, min_lat, max_lon, min_lon = 41.75, 36.225, -104.25, -109.825
@@ -41,7 +41,7 @@ if LOAD:
     for var in ds.data_vars:
         ds[var] = ds[var].astype('float32')
 
-    reference_ds = xr.load_dataset('/Users/clamalo/documents/projects/conus404/data/reference_ds.grib2', engine='cfgrib')
+    reference_ds = xr.load_dataset(os.path.join(BASE_DIR, 'reference_ds.grib2'), engine='cfgrib')
     reference_ds = reference_ds.assign_coords(longitude=(((reference_ds.longitude + 180) % 360) - 180)).sortby('longitude')
     reference_ds = reference_ds.sel(latitude=slice(max_lat+0.5, min_lat-0.5), longitude=slice(min_lon-0.5, max_lon+0.5))
 
