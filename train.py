@@ -61,7 +61,6 @@ if LOAD:
 
     indices = list(range(input_ds.time.shape[0]))
     random.shuffle(indices)
-    
 
     for var in input_ds.data_vars:
         load_array(input_ds[var], shapes, indices, BASE_DIR)
@@ -75,11 +74,9 @@ if LOAD:
 
 variables = ['tp']
 
-
 if not LOAD:
     with open(os.path.join(BASE_DIR, 'shapes.pkl'), 'rb') as f:
         shapes = pickle.load(f)
-print(shapes.keys())
 input_ds_latitudes, input_ds_longitudes = shapes['input_latitudes'], shapes['input_longitudes']
 ds_latitudes, ds_longitudes = shapes['output_latitudes'], shapes['output_longitudes']
 
@@ -101,6 +98,7 @@ optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
 
 num_params = sum(p.numel() for p in model.parameters())
 print(f'\nNumber of parameters: {num_params/1e6:.2f}M')
+
 
 
 # TRAIN
