@@ -128,9 +128,7 @@ def monthly_dataset(year,month):
             if (year, month, day, hour) == (1979, 10, 1, 0) or (year, month, day, hour) == (1979, 10, 1, 1) or (year, month, day, hour) == (1979, 10, 1, 2):
                 continue
             hourly_files.append(f'/Volumes/T9/summed/{year}-{month:02d}-{day:02d}_{hour:02d}.nc')
-
     month_ds = xr.open_mfdataset(hourly_files, combine='nested', concat_dim='time')
-
     month_ds = month_ds.sortby('time')
     month_ds.to_netcdf(f'/Volumes/T9/monthly/{year}-{month:02d}.nc')
 
@@ -150,16 +148,18 @@ if __name__ == "__main__":
             cluster = LocalCluster(n_workers=12, threads_per_worker=1)
             client = Client(cluster)
             process_month(year, month)
+            client.close()
+            cluster.close()
+
+
+            print('Creating monthly dataset')
+            monthly_dataset(year, month)
 
 
             print('Deleting raw files')
             files_to_delete = glob.glob('/Volumes/T9/raw/*')
             for file in tqdm(files_to_delete):
                 os.remove(file)
-
-
-            print('Creating monthly dataset')
-            monthly_dataset(year, month)
 
 
             print('Deleting summed files')
