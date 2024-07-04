@@ -12,7 +12,7 @@ colormap.set_over(color='#aca0c7')
 bounds = [0,0.01,0.03,0.05,0.075,0.1,0.15,0.2,0.25,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1,1.2,1.4,1.6,1.8,2,2.5,3,3.5,4,5,6,7,8,9,10]#,11,12,13,14,15,16,17,18,19,20])
 norm = colors.BoundaryNorm(boundaries=bounds, ncolors=len(bounds))
 
-max_lat, min_lat, max_lon, min_lon = 43.45, 37.9, -108.9, -114.45
+max_lat, min_lat, max_lon, min_lon = 44.85, 39.3, -108.7, -114.25
 
 reference_ds = xr.load_dataset('/Users/clamalo/documents/projects/conus404/data/reference_ds.grib2', engine='cfgrib')
 reference_ds = reference_ds.assign_coords(longitude=(((reference_ds.longitude + 180) % 360) - 180)).sortby('longitude')
@@ -47,4 +47,4 @@ axs[1].set_title('Fine')
 axs[0].set_extent([min_lon-0.5, max_lon+0.5, min_lat-0.5, max_lat+0.5])
 axs[1].set_extent([min_lon-0.5, max_lon+0.5, min_lat-0.5, max_lat+0.5])
  
-plt.savefig(f'comparison.png', dpi=300, bbox_inches='tight')
+plt.savefig(f'testing/comparison.png', dpi=300, bbox_inches='tight')
