@@ -53,7 +53,6 @@ if LOAD:
 
     ds = ds.sel(lat=slice(min_lat, max_lat), lon=slice(min_lon, max_lon))
 
-    mean_std_dict = {}
     shapes = {}
     shapes['input_latitudes'] = input_ds.lat.values
     shapes['input_longitudes'] = input_ds.lon.values
