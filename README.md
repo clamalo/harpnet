@@ -15,9 +15,11 @@ Dropout layers were added in the decoder steps with decreasing dropout rates wit
 ## Data
 HARPNET was trained using CONUS404, a 4km reanalysis dataset over CONUS prepared by the NOAA. CONUS404 was created by dynamically downscaling hourly native ERA5 data from ~25km to ~4km using WRF.
 
-Hourly precipitation data from 0z October 1, 1979 through 23z September 30, 2022 was used in the creation of HARPNET. This hourly data was summed into 3-hourly chunks, since HARPNET predicts 3-hourly precipitation.
-
 The input data was constructed by interpolating the 4km 3-hourly summed CONUS404 data to a 0.25-degree reference grid, emulating the input conditions of a global model like the GFS or ECMWF (or their ensemble counterparts).
+
+Hourly precipitation data from 0z October 1, 1979 through 23z September 30, 2022 was used in the creation of HARPNET. This hourly data was summed into 3-hourly chunks, since HARPNET predicts 3-hourly precipitation. These 3-hourly chunks were from 0-3z, 3-6z, 6-9z, etc.
+
+The training set was comprised of data from 0z October 1, 1979 through 21z September 30, 2020. The test set was comprised of data from 0z October 1, 1979 through 21z September 30, 2022.
 
 The target grids were coarsened from native 4km resolution to 8km to save on computing.
 
