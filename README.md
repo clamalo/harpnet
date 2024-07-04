@@ -1,4 +1,4 @@
-# HARPNET - High-Resolution Attention Res-UNet Precipitation Network
+# HARPNET - **H**igh-Resolution Attention Res-UNet Precipitation Network
 ### OpenSnow's Next-Generation Precipitation Downscaling System
 
 ## Model Architecture
