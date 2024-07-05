@@ -117,8 +117,8 @@ def predict(epoch, gfs_arr, ecmwf_arr):
     return gfs_pred, ecmwf_pred
 
 
-first_member = 20
-last_member = 21
+first_member = 2
+last_member = 3
 for epoch in tqdm(range(first_member, last_member)):
     gfs_pred, ecmwf_pred = predict(epoch, gfs_arr, ecmwf_arr)
     gfs_preds.append(gfs_pred)

@@ -23,7 +23,7 @@ import pandas as pd
 
 
 BASE_DIR = '/Users/clamalo/documents/harpnet/load_data/'
-LOAD = False
+LOAD = True
 months = -1
 max_lat, min_lat, max_lon, min_lon = 42.05, 36.5, -119.025, -124.6
 
@@ -36,9 +36,11 @@ if LOAD:
 
     with ProgressBar():
         ds = xr.open_mfdataset(file_paths, combine='by_coords', parallel=True, chunks={'time': 100})
+
         time_index = pd.DatetimeIndex(ds.time.values)
         filtered_times = time_index[time_index.hour.isin([3, 6, 9, 12, 15, 18, 21, 0])]
         ds = ds.sel(time=filtered_times)
+        
         ds = ds.assign_coords(hour=ds.time.dt.hour, day=ds.time.dt.dayofyear)
     ds = ds.sortby('time')
     ds['days'] = ds.time.dt.dayofyear
