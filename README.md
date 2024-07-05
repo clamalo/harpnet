@@ -2,6 +2,7 @@
 ### OpenSnow's Next-Generation Precipitation Downscaling System
 
 ## Model Architecture
+![alt text](https://github.com/clamalo/harpnet/blob/master/figures/harpnet.png?raw=true)
 HARPNET uses an attention-gated residual convolution UNet architecture to downscale precipitation. The advantages of this architecture include efficiency and the fact that all the data is processed together, which is important for retaining spatial continuity throughout the downscaling process. This architecture was decided on after several considerations:
 
 - **UNet:** The UNet's architecture consists of an encoder that captures context through down-sampling and a decoder that enables precise localization through up-sampling. This structure is ideal for converting low-resolution inputs into high-resolution outputs while preserving important spatial information; it gives the network the best of both worlds, rich feature extraction while retaining crucial spatial context. The UNet architecture includes skip connections that directly link corresponding layers in the encoder and decoder. These connections help retain high-resolution features lost during down-sampling via pooling layers and improve the accuracy of the output.
