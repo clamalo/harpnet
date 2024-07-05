@@ -12,17 +12,16 @@ colormap.set_over(color='#aca0c7')
 bounds = [0,0.01,0.03,0.05,0.075,0.1,0.15,0.2,0.25,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1,1.2,1.4,1.6,1.8,2,2.5,3,3.5,4,5,6,7,8,9,10]#,11,12,13,14,15,16,17,18,19,20])
 norm = colors.BoundaryNorm(boundaries=bounds, ncolors=len(bounds))
 
-max_lat, min_lat, max_lon, min_lon = 44.85, 39.3, -108.7, -114.25
+max_lat, min_lat, max_lon, min_lon = 42.05, 36.5, -119.025, -124.6
 
-reference_ds = xr.load_dataset('/Users/clamalo/documents/projects/conus404/data/reference_ds.grib2', engine='cfgrib')
+reference_ds = xr.load_dataset('/Users/clamalo/documents/harpnet/load_data/reference_ds.grib2', engine='cfgrib')
 reference_ds = reference_ds.assign_coords(longitude=(((reference_ds.longitude + 180) % 360) - 180)).sortby('longitude')
 reference_ds = reference_ds.sel(latitude=slice(max_lat+0.5, min_lat-0.5), longitude=slice(min_lon-0.5, max_lon+0.5))
 
 # open every file in /Volumes/T9/summed/ and concatenate them
 datasets = []
-# for month in [10, 11]:
-for month in [11]:
-    ds = xr.open_dataset(f'/Volumes/T9/monthly/1979-{month:02d}.nc')
+for month in [1]:
+    ds = xr.open_dataset(f'/Users/clamalo/documents/harpnet/data_prep/monthly/1981-{month:02d}.nc')
     datasets.append(ds)
 ds = xr.concat(datasets, dim='time')
 ds = ds.sum(dim='time')

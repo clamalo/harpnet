@@ -19,11 +19,13 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'u
 from utils import *
 from model import UNetWithAttention
 
+
+
 datestr = '20240109'
 cycle = '12'
 ingest = False 
 ecmwf = False
-max_lat, min_lat, max_lon, min_lon = 41.75, 36.225, -104.25, -109.825
+max_lat, min_lat, max_lon, min_lon = 42.05, 36.5, -119.025, -124.6
 
 
 with open(os.path.join('/Users/clamalo/documents/harpnet/load_data/shapes.pkl'), 'rb') as f:
@@ -115,8 +117,8 @@ def predict(epoch, gfs_arr, ecmwf_arr):
     return gfs_pred, ecmwf_pred
 
 
-first_member = 12
-last_member = 13
+first_member = 20
+last_member = 21
 for epoch in tqdm(range(first_member, last_member)):
     gfs_pred, ecmwf_pred = predict(epoch, gfs_arr, ecmwf_arr)
     gfs_preds.append(gfs_pred)
