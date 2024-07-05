@@ -124,7 +124,7 @@ class UNetWithAttention(nn.Module):
         enc2 = self.enc2(self.pool(enc1))
         enc3 = self.enc3(self.pool(enc2))
         enc4 = self.enc4(self.pool(enc3))
-        enc5 = self.enc5(self.pool(enc4))
+        enc5 = self.enc5(self.pool(enc4)) 
 
         bridge = self.bridge(self.pool(enc5))
 

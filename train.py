@@ -32,7 +32,7 @@ if LOAD:
     #LOAD TP DATA
     summed_dir = '/Volumes/T9/monthly/'
     file_paths = [os.path.join(summed_dir, fp) for fp in os.listdir(summed_dir) if fp.endswith('.nc')]
-    file_paths = sorted(file_paths, key=lambda fp: os.path.basename(fp))
+    file_paths = sorted(file_paths, key=lambda fp: os.path.basename(fp))[:1]
 
     with ProgressBar():
         ds = xr.open_mfdataset(file_paths, combine='by_coords', parallel=True, chunks={'time': 100})
