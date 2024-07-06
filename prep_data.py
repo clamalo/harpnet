@@ -157,8 +157,8 @@ if __name__ == "__main__":
 
     create_dirs(tar_dir, raw_dir, summed_dir, monthly_dir)
 
-    for year in range(1985,1986):
-        for month in range(4,13):
+    for year in range(2007,2023):
+        for month in range(1,13):
 
             print('Downloading & untarring')
             download_and_untar(year, month, tar_dir, raw_dir)
@@ -178,7 +178,12 @@ if __name__ == "__main__":
 
             print('Deleting raw files')
             files_to_delete = glob.glob(f'{raw_dir}*.nc')
+            num_days = monthrange(year, month)[1]
             for file in tqdm(files_to_delete):
+                file_year, file_month, file_day = file.split('_')[-2].split('-')
+                file_hour = file.split('_')[-1].split(':')[0]
+                if int(file_day) == num_days and int(file_hour) in [22, 23]:
+                    continue
                 os.remove(file)
 
 
