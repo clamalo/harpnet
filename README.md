@@ -20,7 +20,7 @@ The input data was constructed by interpolating the 4km 3-hourly summed CONUS404
 
 Hourly precipitation data from 0z October 1, 1979 through 23z September 30, 2022 was used in the creation of HARPNET. This hourly data was summed into 3-hourly chunks, since HARPNET predicts 3-hourly precipitation. These 3-hourly chunks were from 0-3z, 3-6z, 6-9z, etc.
 
-The training set was comprised of data from 0z October 1, 1979 through 21z September 30, 2020. The test set was comprised of data from 0z October 1, 1979 through 21z September 30, 2022.
+The training set was comprised of data from 0z October 1, 1979 through 21z September 30, 2020. The test set was comprised of data from 0z October 1, 2020 through 21z September 30, 2022.
 
 The target grids were coarsened from native 4km resolution to 8km to save on computing.
 
