@@ -23,7 +23,7 @@ import pandas as pd
 
 
 BASE_DIR = '/Users/clamalo/documents/harpnet/load_data/'
-LOAD = True
+LOAD = False
 months = -1
 max_lat, min_lat, max_lon, min_lon = 42.05, 36.5, -119.025, -124.6
 
@@ -32,7 +32,7 @@ if LOAD:
     #LOAD TP DATA
     summed_dir = '/Volumes/T9/monthly/'
     file_paths = [os.path.join(summed_dir, fp) for fp in os.listdir(summed_dir) if fp.endswith('.nc')]
-    file_paths = sorted(file_paths, key=lambda fp: os.path.basename(fp))[:1]
+    file_paths = sorted(file_paths, key=lambda fp: os.path.basename(fp))
 
     with ProgressBar():
         ds = xr.open_mfdataset(file_paths, combine='by_coords', parallel=True, chunks={'time': 100})
@@ -53,9 +53,9 @@ if LOAD:
 
     input_ds = ds.interp(lat=reference_ds.latitude.values, lon=reference_ds.longitude.values)
 
-    # #crop both datasets to before october 1 2020 0z (not inclusive) THIS IS THE TRAIN/TEST SPLIT
-    # input_ds = input_ds.sel(time=slice(None, np.datetime64('2020-09-30T21:00:00')))
-    # ds = ds.sel(time=slice(None, np.datetime64('2020-09-30T21:00:00')))
+    #crop both datasets to before october 1 2020 0z (not inclusive) THIS IS THE TRAIN/TEST SPLIT
+    input_ds = input_ds.sel(time=slice(None, np.datetime64('2020-09-30T21:00:00')))
+    ds = ds.sel(time=slice(None, np.datetime64('2020-09-30T21:00:00')))
 
     ds = ds.sel(lat=slice(min_lat, max_lat), lon=slice(min_lon, max_lon))
 
@@ -75,7 +75,6 @@ if LOAD:
 
     with open(os.path.join(BASE_DIR, 'shapes.pkl'), 'wb') as f:
         pickle.dump(shapes, f)
-
 
 
 variables = ['tp']
@@ -128,7 +127,6 @@ for epoch in range(num_epochs):
         epoch_loss += loss.item()
     print(f'Epoch {epoch+1}/{num_epochs}, Loss: {epoch_loss/len(train_dataloader)}')
 
-    # torch.save(model.state_dict(), 'train1.pt')
     checkpoint = {
         'epoch': epoch,
         'model_state_dict': model.state_dict(),
