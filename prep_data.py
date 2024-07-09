@@ -157,8 +157,10 @@ if __name__ == "__main__":
 
     create_dirs(tar_dir, raw_dir, summed_dir, monthly_dir)
 
-    for year in range(2007,2023):
-        for month in range(1,13):
+    for year in range(1979,2023):
+        start_month = 1 if year != 1979 else 10
+        end_month = 12 if year != 2022 else 9
+        for month in range(start_month, end_month + 1):
 
             print('Downloading & untarring')
             download_and_untar(year, month, tar_dir, raw_dir)
