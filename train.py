@@ -76,6 +76,8 @@ if LOAD:
     with open(os.path.join(BASE_DIR, 'shapes.pkl'), 'wb') as f:
         pickle.dump(shapes, f)
 
+
+
 variables = ['tp']
 
 if not LOAD:
@@ -128,7 +130,6 @@ for epoch in range(51,101):
         epoch_loss += loss.item()
     print(f'Epoch {epoch+1}/{num_epochs}, Loss: {epoch_loss/len(train_dataloader)}')
 
-    # torch.save(model.state_dict(), 'train1.pt')
     checkpoint = {
         'epoch': epoch,
         'model_state_dict': model.state_dict(),

@@ -8,11 +8,8 @@ from calendar import monthrange
 import dask
 from dask.diagnostics import ProgressBar
 import warnings
-import matplotlib.pyplot as plt
-import cartopy.crs as ccrs
 warnings.filterwarnings("ignore")
 from tqdm import tqdm
-import re
 import xarray as xr
 import os
 import numpy as np
@@ -21,13 +18,9 @@ import dask
 from dask.diagnostics import ProgressBar
 import warnings
 from datetime import datetime, timedelta
-import matplotlib.pyplot as plt
 from dask.distributed import Client, LocalCluster
-import matplotlib.pyplot as plt
-import cartopy.crs as ccrs
 warnings.filterwarnings("ignore")
 import glob
-import concurrent.futures
 
 
 def create_dirs(tar_dir, raw_dir, summed_dir, monthly_dir):
@@ -157,8 +150,10 @@ if __name__ == "__main__":
 
     create_dirs(tar_dir, raw_dir, summed_dir, monthly_dir)
 
-    for year in range(2007,2023):
-        for month in range(1,13):
+    for year in range(1979,2023):
+        start_month = 1 if year != 1979 else 10
+        end_month = 12 if year != 2022 else 9
+        for month in range(start_month, end_month + 1):
 
             print('Downloading & untarring')
             download_and_untar(year, month, tar_dir, raw_dir)
