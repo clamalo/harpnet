@@ -80,7 +80,7 @@ class ResConvBlock(nn.Module):
         return x
     
 class UNetWithAttention(nn.Module):
-    def __init__(self, in_channels, out_channels):
+    def __init__(self, in_channels, out_channels, output_shape=(128, 128)):
         super(UNetWithAttention, self).__init__()
 
         self.enc1 = ResConvBlock(in_channels, 64)
@@ -113,12 +113,15 @@ class UNetWithAttention(nn.Module):
 
         self.final_conv = nn.Conv2d(64, out_channels, kernel_size=1)
 
+        self.output_shape = output_shape
+
     def forward(self, x):#, elevation):
 
         if len(x.shape) == 3:
             x = x.unsqueeze(1)
 
-        x = nn.functional.interpolate(x, size=(128, 128), mode='bilinear')
+        output_shape = self.output_shape
+        x = nn.functional.interpolate(x, size=output_shape, mode='bilinear', align_corners=True)
 
         enc1 = self.enc1(x)
         enc2 = self.enc2(self.pool(enc1))

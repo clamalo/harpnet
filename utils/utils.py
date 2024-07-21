@@ -25,7 +25,7 @@ def load_fine_dataset(path, months):
     file_paths = [os.path.join(path, fp) for fp in os.listdir(path) if fp.endswith('.nc')]
     file_paths = sorted(file_paths, key=lambda fp: os.path.basename(fp))
     with ProgressBar():
-        ds = xr.open_mfdataset(file_paths, combine='by_coords', parallel=True, chunks={'Time': 100})
+        ds = xr.open_mfdataset(file_paths, combine='by_coords', parallel=True, chunks={'Time': 100000})
         ds = ds.assign_coords(hour=ds.Time.dt.hour, day=ds.Time.dt.dayofyear)
     ds = ds.sortby('Time')
     ds = ds.rename({'Time': 'time'})
@@ -69,7 +69,6 @@ def load_array_test(arr, shapes, indices, BASE_DIR, target=False):
 
 
 class MemMapDataset(Dataset):
-    # def __init__(self, base_dir, variables, suffix, shapes):
     def __init__(self, data, labels, days):
         self.data = data
         self.labels = labels

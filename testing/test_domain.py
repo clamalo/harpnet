@@ -21,7 +21,7 @@ reference_ds = reference_ds.sel(latitude=slice(max_lat+0.5, min_lat-0.5), longit
 # open every file in /Volumes/T9/summed/ and concatenate them
 datasets = []
 for month in [1]:
-    ds = xr.open_dataset(f'/Users/clamalo/documents/harpnet/data_prep/monthly/1981-{month:02d}.nc')
+    ds = xr.open_dataset(f'/Volumes/T9/monthly/1981-{month:02d}.nc')
     datasets.append(ds)
 ds = xr.concat(datasets, dim='time')
 ds = ds.sum(dim='time')

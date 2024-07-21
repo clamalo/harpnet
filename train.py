@@ -19,29 +19,29 @@ from utils.utils import *
 import warnings
 warnings.filterwarnings("ignore")
 import pandas as pd
+import cftime
 
 
 
 BASE_DIR = '/Users/clamalo/documents/harpnet/load_data/'
-LOAD = True
+LOAD = False
 months = -1
-max_lat, min_lat, max_lon, min_lon = 42.05, 36.5, -119.025, -124.6
+max_lat, min_lat, max_lon, min_lon = 44.85, 39.3, -108.7, -114.25
 
 
 if LOAD:
     #LOAD TP DATA
     summed_dir = '/Volumes/T9/monthly/'
     file_paths = [os.path.join(summed_dir, fp) for fp in os.listdir(summed_dir) if fp.endswith('.nc')]
-    file_paths = sorted(file_paths, key=lambda fp: os.path.basename(fp))[:1]
+    file_paths = sorted(file_paths, key=lambda fp: os.path.basename(fp))
 
     with ProgressBar():
         ds = xr.open_mfdataset(file_paths, combine='by_coords', parallel=True, chunks={'time': 100})
-
         time_index = pd.DatetimeIndex(ds.time.values)
         filtered_times = time_index[time_index.hour.isin([3, 6, 9, 12, 15, 18, 21, 0])]
         ds = ds.sel(time=filtered_times)
-        
-        ds = ds.assign_coords(hour=ds.time.dt.hour, day=ds.time.dt.dayofyear)
+
+    
     ds = ds.sortby('time')
     ds['days'] = ds.time.dt.dayofyear
     for var in ds.data_vars:
@@ -53,9 +53,9 @@ if LOAD:
 
     input_ds = ds.interp(lat=reference_ds.latitude.values, lon=reference_ds.longitude.values)
 
-    # #crop both datasets to before october 1 2020 0z (not inclusive) THIS IS THE TRAIN/TEST SPLIT
-    # input_ds = input_ds.sel(time=slice(None, np.datetime64('2020-09-30T21:00:00')))
-    # ds = ds.sel(time=slice(None, np.datetime64('2020-09-30T21:00:00')))
+    #crop both datasets to before october 1 2020 0z (not inclusive) THIS IS THE TRAIN/TEST SPLIT
+    input_ds = input_ds.sel(time=slice(None, np.datetime64('2020-09-30T21:00:00')))
+    ds = ds.sel(time=slice(None, np.datetime64('2020-09-30T21:00:00')))
 
     ds = ds.sel(lat=slice(min_lat, max_lat), lon=slice(min_lon, max_lon))
 
@@ -76,8 +76,6 @@ if LOAD:
     with open(os.path.join(BASE_DIR, 'shapes.pkl'), 'wb') as f:
         pickle.dump(shapes, f)
 
-
-
 variables = ['tp']
 
 if not LOAD:
@@ -97,19 +95,21 @@ train_dataloader = DataLoader(train_dataset, batch_size=32, shuffle=False)
 print(f'({len(train_dataloader)}, 32, {next(iter(train_dataloader))[0].shape[1]}, {next(iter(train_dataloader))[0].shape[2]}, {next(iter(train_dataloader))[0].shape[3]})')
 
 model = UNetWithAttention(1, 1)
+#restore weights
+checkpoint = torch.load('checkpoints/train_e50.pt')
+model.load_state_dict(checkpoint['model_state_dict'])
 device = torch.device('mps')
 model = model.to(device)
 criterion = nn.MSELoss()
 optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
 
 num_params = sum(p.numel() for p in model.parameters())
 print(f'\nNumber of parameters: {num_params/1e6:.2f}M')
 
-
-
 # TRAIN
 num_epochs = 51
-for epoch in range(num_epochs):
+for epoch in range(51,101):
     epoch_loss = 0
     model.train()
     for i, batch in tqdm(enumerate(train_dataloader), total=len(train_dataloader)):
