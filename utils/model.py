@@ -121,7 +121,7 @@ class UNetWithAttention(nn.Module):
             x = x.unsqueeze(1)
 
         output_shape = self.output_shape
-        # x = nn.functional.interpolate(x, size=output_shape, mode='bilinear', align_corners=True)
+        x = nn.functional.interpolate(x, size=output_shape, mode='bilinear', align_corners=True)
 
         enc1 = self.enc1(x)
         enc2 = self.enc2(self.pool(enc1))

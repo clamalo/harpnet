@@ -135,8 +135,15 @@ class MemMapDataset(Dataset):
     
 
 def create_dataloader(input_file_paths, target_file_paths, batch_size=64, shuffle=True):
-    input_arr = np.concatenate([np.load(fp, mmap_mode='r') for fp in input_file_paths], axis=0)
-    target_arr = np.concatenate([np.load(fp, mmap_mode='r') for fp in target_file_paths], axis=0)
+    def load_files_in_batches(file_paths, batch_size=64):
+        arrays = []
+        for i in tqdm(range(0, len(file_paths), batch_size)):
+            batch_paths = file_paths[i:i + batch_size]
+            batch_arrays = [np.load(fp, mmap_mode='r') for fp in batch_paths]
+            arrays.append(np.concatenate(batch_arrays, axis=0))
+        return np.concatenate(arrays, axis=0)
+    input_arr = load_files_in_batches(input_file_paths, batch_size=batch_size)
+    target_arr = load_files_in_batches(target_file_paths, batch_size=batch_size)
     dataset = MemMapDataset(input_arr, target_arr)
     dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=shuffle)
     return dataset, dataloader
@@ -160,14 +167,15 @@ def test(domain, model, dataloader, criterion, device):
     lats, lons, input_lats, input_lons = get_lats_lons(domain)
     model.eval()
     running_loss = 0.0
+    random_10 = np.random.randint(0, len(dataloader), 10)
+
+    plotted = 0
     for i, (inputs, targets) in tqdm(enumerate(dataloader), total=len(dataloader)):
         inputs, targets = inputs.to(device), targets.to(device)
         outputs = model(inputs).squeeze(1)
         loss = criterion(outputs, targets)
         running_loss += loss.item()
 
-        random_10 = np.random.randint(0, len(dataloader), 10)
-        plotted = 0
         if i in random_10:
             fig, axs = plt.subplots(1, 3, figsize=(12, 4), subplot_kw={'projection': cartopy.crs.PlateCarree()})
             axs[0].pcolormesh(lons, lats, inputs[0].cpu().numpy(), transform=cartopy.crs.PlateCarree(), vmin=0, vmax=10)

@@ -1,0 +1,11 @@
+.DS_Store
+checkpoints/
+8km_checkpoints/
+load_data/
+oper/data/
+__pycache__/
+utils/__pycache__/
+testing/comparison.png
+data_prep/
+4km_checkpoints/
+Figures/test/

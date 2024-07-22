@@ -16,7 +16,7 @@ warnings.filterwarnings("ignore")
 
 
 domain = 14
-ingest = True
+ingest = False
 first_month = (1979, 10)
 last_month = (2022, 9)
 train_test_cutoff = '2020-10-01:00:00:00'
