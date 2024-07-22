@@ -4,13 +4,6 @@ import os
 from dask.diagnostics import ProgressBar
 from torch.utils.data import Dataset, DataLoader
 
-max_lat, min_lat, max_lon, min_lon = 45, 35, -105, -115  # Utah
-
-def unnormalize_data(normalized_data, key, mean_std_dict):
-    mean = mean_std_dict[key]['mean']
-    std = mean_std_dict[key]['std']
-    return (normalized_data * std) + mean
-
 def output_to_dataset(output, ds_latitudes, ds_longitudes, flip):
     if flip:
         output = np.flip(output, axis=1)
@@ -19,8 +12,6 @@ def output_to_dataset(output, ds_latitudes, ds_longitudes, flip):
     tp_ds = xr.Dataset({"tp": tp_da})
     return tp_ds
 
-
-    
 def load_fine_dataset(path, months):
     file_paths = [os.path.join(path, fp) for fp in os.listdir(path) if fp.endswith('.nc')]
     file_paths = sorted(file_paths, key=lambda fp: os.path.basename(fp))
