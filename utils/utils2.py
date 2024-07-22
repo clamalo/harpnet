@@ -39,42 +39,41 @@ def create_grid_domains():
         pickle.dump(grid_domains, f)
 
 
-def xr_to_np(domain):
-    print('Converting xr to np:')
+def xr_to_np(domain, first_month, last_month):
+    first_month = datetime(first_month[0], first_month[1], 1)
+    last_month = datetime(last_month[0], last_month[1], 1)
+    print('Converting xr to np...')
     with open(f'{constants.domains_dir}grid_domains.pkl', 'rb') as f:
         grid_domains = pickle.load(f)
     min_lat_idx, max_lat_idx, min_lon_idx, max_lon_idx = grid_domains[domain]
     reference_ds = xr.load_dataset(f'{constants.base_dir}reference_ds.grib2', engine='cfgrib')
     reference_ds = reference_ds.assign_coords(longitude=(((reference_ds.longitude + 180) % 360) - 180)).sortby('longitude')
-    for year in tqdm(range(2010, 2023)):
-        if year == 1979:
-            start_month = 10
-        else:
-            start_month = 1
-        if year == 2022:
-            end_month = 9
-        else:
-            end_month = 12
-        for month in range(start_month, end_month+1):
-            ds = xr.open_dataset(f'{constants.nc_dir}{year}-{month:02d}.nc')
-            time_index = pd.DatetimeIndex(ds.time.values)
-            filtered_times = time_index[time_index.hour.isin([3, 6, 9, 12, 15, 18, 21, 0])]
-            ds = ds.sel(time=filtered_times)
-            ds = ds.sortby('time')
-            ds['days'] = ds.time.dt.dayofyear
-            cropped_ds = ds.isel(lat=slice(min_lat_idx, max_lat_idx), lon=slice(min_lon_idx, max_lon_idx))
-            min_lat, max_lat, min_lon, max_lon = min(cropped_ds.lat.values), max(cropped_ds.lat.values), min(cropped_ds.lon.values), max(cropped_ds.lon.values)
-            reference_ds = reference_ds.sel(latitude=slice(max_lat+0.25, min_lat-0.25), longitude=slice(min_lon-0.25, max_lon+0.25))
-            input_ds = ds.interp(lat=reference_ds.latitude.values, lon=reference_ds.longitude.values)
-            input_ds = input_ds.sortby('lat', ascending=True)
-            ds = ds.isel(lat=slice(min_lat_idx, max_lat_idx), lon=slice(min_lon_idx, max_lon_idx))
 
-            # pre-interp
-            input_ds = input_ds.interp(lat=ds.lat.values, lon=ds.lon.values)
-            # pre-interp
+    total_months = (last_month.year - first_month.year) * 12 + last_month.month - first_month.month + 1
 
-            np.save(f'{constants.domains_dir}{domain}/input_{year}_{month:02d}.npy', input_ds.tp.values.astype('float32'))
-            np.save(f'{constants.domains_dir}{domain}/target_{year}_{month:02d}.npy', ds.tp.values.astype('float32'))
+    current_month = first_month
+    for _ in tqdm(range(total_months), desc="Processing months"):
+        year, month = current_month.year, current_month.month
+        ds = xr.open_dataset(f'{constants.nc_dir}{year}-{month:02d}.nc')
+        time_index = pd.DatetimeIndex(ds.time.values)
+        filtered_times = time_index[time_index.hour.isin([3, 6, 9, 12, 15, 18, 21, 0])]
+        ds = ds.sel(time=filtered_times)
+        ds = ds.sortby('time')
+        ds['days'] = ds.time.dt.dayofyear
+        cropped_ds = ds.isel(lat=slice(min_lat_idx, max_lat_idx), lon=slice(min_lon_idx, max_lon_idx))
+        min_lat, max_lat, min_lon, max_lon = min(cropped_ds.lat.values), max(cropped_ds.lat.values), min(cropped_ds.lon.values), max(cropped_ds.lon.values)
+        reference_ds = reference_ds.sel(latitude=slice(max_lat+0.25, min_lat-0.25), longitude=slice(min_lon-0.25, max_lon+0.25))
+        input_ds = ds.interp(lat=reference_ds.latitude.values, lon=reference_ds.longitude.values)
+        input_ds = input_ds.sortby('lat', ascending=True)
+        ds = ds.isel(lat=slice(min_lat_idx, max_lat_idx), lon=slice(min_lon_idx, max_lon_idx))
+
+        # pre-interp
+        input_ds = input_ds.interp(lat=ds.lat.values, lon=ds.lon.values)
+        # pre-interp
+
+        np.save(f'{constants.domains_dir}{domain}/input_{year}_{month:02d}.npy', input_ds.tp.values.astype('float32'))
+        np.save(f'{constants.domains_dir}{domain}/target_{year}_{month:02d}.npy', ds.tp.values.astype('float32'))
+        current_month += relativedelta(months=1)
 
 
 def get_lats_lons(domain):
@@ -182,4 +181,5 @@ def test(domain, model, dataloader, criterion, device):
             plt.savefig(f'figures/test/{plotted}.png')
             plt.close()
             plotted += 1
+
     return running_loss / len(dataloader)

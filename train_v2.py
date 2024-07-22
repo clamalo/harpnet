@@ -16,16 +16,16 @@ warnings.filterwarnings("ignore")
 
 
 domain = 14
-ingest = False
-first_month = (2019, 1)
-last_month = (2020, 12)
+ingest = True
+first_month = (1979, 10)
+last_month = (2022, 9)
 train_test_cutoff = '2020-10-01:00:00:00'
 
 
 if ingest:
     setup(domain)
     create_grid_domains()
-    xr_to_np(domain)
+    xr_to_np(domain, first_month, last_month)
 
 train_input_file_paths, train_target_file_paths, test_input_file_paths, test_target_file_paths = create_paths(domain, first_month, last_month, train_test_cutoff)
 
