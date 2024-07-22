@@ -6,11 +6,17 @@ import xarray as xr
 import pickle
 import pandas as pd
 from tqdm import tqdm
+import constants
+
+def setup(domain):
+    if not os.path.exists(f'{constants.domains_dir}'):
+        os.makedirs(f'{constants.domains_dir}')
+    if not os.path.exists(f'{constants.domains_dir}{domain}/'):
+        os.makedirs(f'{constants.domains_dir}{domain}/')
+
 
 def create_grid_domains():
-    if not os.path.exists(f'/Volumes/T9/domains/'):
-        os.makedirs(f'/Volumes/T9/domains/')
-    ds = xr.open_dataset('/Volumes/T9/monthly/1979-10.nc', chunks={'time': 100})
+    ds = xr.open_dataset(f'{constants.nc_dir}1979-10.nc', chunks={'time': 100})
     start_lat, start_lon = 35, -125
     end_lat, end_lon = 50, -103
     start_lat_idx = ds.lat.values.searchsorted(start_lat)
@@ -23,19 +29,18 @@ def create_grid_domains():
         for lon_idx in range(start_lon_idx, end_lon_idx, 64):
             grid_domains[total_domains] = [lat_idx, lat_idx+64, lon_idx, lon_idx+64]
             total_domains += 1
-    with open('/Volumes/T9/domains/grid_domains.pkl', 'wb') as f:
+    with open(f'{constants.domains_dir}grid_domains.pkl', 'wb') as f:
         pickle.dump(grid_domains, f)
+
 
 def xr_to_np(domain):
     print('Converting xr to np:')
-    if not os.path.exists(f'/Volumes/T9/domains/{domain}/'):
-        os.makedirs(f'/Volumes/T9/domains/{domain}/')
-    with open('/Volumes/T9/domains/grid_domains.pkl', 'rb') as f:
+    with open(f'{constants.domains_dir}grid_domains.pkl', 'rb') as f:
         grid_domains = pickle.load(f)
     min_lat_idx, max_lat_idx, min_lon_idx, max_lon_idx = grid_domains[domain]
-    reference_ds = xr.load_dataset('/Volumes/T9/reference_ds.grib2', engine='cfgrib')
+    reference_ds = xr.load_dataset(f'{constants.base_dir}reference_ds.grib2', engine='cfgrib')
     reference_ds = reference_ds.assign_coords(longitude=(((reference_ds.longitude + 180) % 360) - 180)).sortby('longitude')
-    for year in tqdm(range(2018, 2022)):
+    for year in tqdm(range(2010, 2023)):
         if year == 1979:
             start_month = 10
         else:
@@ -45,7 +50,7 @@ def xr_to_np(domain):
         else:
             end_month = 12
         for month in range(start_month, end_month+1):
-            ds = xr.open_dataset(f'/Volumes/T9/monthly/{year}-{month:02d}.nc')
+            ds = xr.open_dataset(f'{constants.nc_dir}{year}-{month:02d}.nc')
             time_index = pd.DatetimeIndex(ds.time.values)
             filtered_times = time_index[time_index.hour.isin([3, 6, 9, 12, 15, 18, 21, 0])]
             ds = ds.sel(time=filtered_times)
@@ -53,24 +58,29 @@ def xr_to_np(domain):
             ds['days'] = ds.time.dt.dayofyear
             cropped_ds = ds.isel(lat=slice(min_lat_idx, max_lat_idx), lon=slice(min_lon_idx, max_lon_idx))
             min_lat, max_lat, min_lon, max_lon = min(cropped_ds.lat.values), max(cropped_ds.lat.values), min(cropped_ds.lon.values), max(cropped_ds.lon.values)
-            reference_ds = reference_ds.sel(latitude=slice(max_lat+0.5, min_lat-0.5), longitude=slice(min_lon-0.5, max_lon+0.5))
+            reference_ds = reference_ds.sel(latitude=slice(max_lat+0.25, min_lat-0.25), longitude=slice(min_lon-0.25, max_lon+0.25))
             input_ds = ds.interp(lat=reference_ds.latitude.values, lon=reference_ds.longitude.values)
             input_ds = input_ds.sortby('lat', ascending=True)
             ds = ds.isel(lat=slice(min_lat_idx, max_lat_idx), lon=slice(min_lon_idx, max_lon_idx))
-            np.save(f'/Volumes/T9/domains/{domain}/input_{year}_{month:02d}.npy', input_ds.tp.values.astype('float32'))
-            np.save(f'/Volumes/T9/domains/{domain}/target_{year}_{month:02d}.npy', ds.tp.values.astype('float32'))
+
+            # pre-interp
+            input_ds = input_ds.interp(lat=ds.lat.values, lon=ds.lon.values)
+            # pre-interp
+
+            np.save(f'{constants.domains_dir}{domain}/input_{year}_{month:02d}.npy', input_ds.tp.values.astype('float32'))
+            np.save(f'{constants.domains_dir}{domain}/target_{year}_{month:02d}.npy', ds.tp.values.astype('float32'))
 
 
 def get_lats_lons(domain):
-    with open('/Volumes/T9/domains/grid_domains.pkl', 'rb') as f:
+    with open(f'{constants.domains_dir}grid_domains.pkl', 'rb') as f:
         grid_domains = pickle.load(f)
     min_lat_idx, max_lat_idx, min_lon_idx, max_lon_idx = grid_domains[domain]
-    ds = xr.open_dataset('/Volumes/T9/monthly/1979-10.nc')
+    ds = xr.open_dataset(f'{constants.nc_dir}1979-10.nc')
     cropped_ds = ds.isel(lat=slice(min_lat_idx, max_lat_idx), lon=slice(min_lon_idx, max_lon_idx))
     min_lat, max_lat, min_lon, max_lon = min(cropped_ds.lat.values), max(cropped_ds.lat.values), min(cropped_ds.lon.values), max(cropped_ds.lon.values)
-    reference_ds = xr.load_dataset('/Volumes/T9/reference_ds.grib2', engine='cfgrib')
+    reference_ds = xr.load_dataset(f'{constants.base_dir}reference_ds.grib2', engine='cfgrib')
     reference_ds = reference_ds.assign_coords(longitude=(((reference_ds.longitude + 180) % 360) - 180)).sortby('longitude')
-    reference_ds = reference_ds.sel(latitude=slice(max_lat+0.5, min_lat-0.5), longitude=slice(min_lon-0.5, max_lon+0.5))
+    reference_ds = reference_ds.sel(latitude=slice(max_lat+0.25, min_lat-0.25), longitude=slice(min_lon-0.25, max_lon+0.25))
     input_ds = ds.interp(lat=reference_ds.latitude.values, lon=reference_ds.longitude.values)
     input_ds = input_ds.sortby('lat', ascending=True)
     lats, lons = cropped_ds.lat.values, cropped_ds.lon.values
@@ -80,10 +90,8 @@ def get_lats_lons(domain):
 
 def create_paths(train_test_cutoff,domain):
     train_test_cutoff = datetime.strptime(train_test_cutoff, '%Y-%m-%d:%H:%M:%S')
-
-    input_file_paths = sorted([os.path.join(f'/Volumes/T9/domains/{domain}/', fp) for fp in os.listdir(f'/Volumes/T9/domains/{domain}/') if fp.startswith('input') and fp.endswith('.npy')], key=lambda fp: os.path.basename(fp))
-    target_file_paths = sorted([os.path.join(f'/Volumes/T9/domains/{domain}/', fp) for fp in os.listdir(f'/Volumes/T9/domains/{domain}/') if fp.startswith('target') and fp.endswith('.npy')], key=lambda fp: os.path.basename(fp))
-
+    input_file_paths = sorted([os.path.join(f'{constants.domains_dir}{domain}/', fp) for fp in os.listdir(f'{constants.domains_dir}{domain}/') if fp.startswith('input') and fp.endswith('.npy')], key=lambda fp: os.path.basename(fp))
+    target_file_paths = sorted([os.path.join(f'{constants.domains_dir}{domain}/', fp) for fp in os.listdir(f'{constants.domains_dir}{domain}/') if fp.startswith('target') and fp.endswith('.npy')], key=lambda fp: os.path.basename(fp))
     train_input_file_paths = []
     train_target_file_paths = []
     test_input_file_paths = []
@@ -110,9 +118,9 @@ class MemMapDataset(Dataset):
         return self.data[idx], self.labels[idx]
     
 
-def create_dataloader(input_file_paths, target_file_paths, batch_size=32, shuffle=True):
-    input_arr = np.concatenate([np.load(fp, mmap_mode='r')/10 for fp in input_file_paths], axis=0)
-    target_arr = np.concatenate([np.load(fp, mmap_mode='r')/10 for fp in target_file_paths], axis=0)
+def create_dataloader(input_file_paths, target_file_paths, batch_size=64, shuffle=True):
+    input_arr = np.concatenate([np.load(fp, mmap_mode='r') for fp in input_file_paths], axis=0)
+    target_arr = np.concatenate([np.load(fp, mmap_mode='r') for fp in target_file_paths], axis=0)
     dataset = MemMapDataset(input_arr, target_arr)
     dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=shuffle)
     return dataset, dataloader

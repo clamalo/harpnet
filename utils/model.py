@@ -121,7 +121,7 @@ class UNetWithAttention(nn.Module):
             x = x.unsqueeze(1)
 
         output_shape = self.output_shape
-        x = nn.functional.interpolate(x, size=output_shape, mode='bilinear', align_corners=True)
+        # x = nn.functional.interpolate(x, size=output_shape, mode='bilinear', align_corners=True)
 
         enc1 = self.enc1(x)
         enc2 = self.enc2(self.pool(enc1))
@@ -158,29 +158,3 @@ class UNetWithAttention(nn.Module):
 
         final = self.final_conv(dec1)
         return final
-    
-
-
-
-
-class Discriminator(nn.Module):
-    def __init__(self, in_channels, base_filters=64):
-        super(Discriminator, self).__init__()
-        self.main = nn.Sequential(
-            nn.Conv2d(in_channels, base_filters, 4, 2, 1),
-            nn.LeakyReLU(0.2, inplace=True),
-            nn.Conv2d(base_filters, base_filters * 2, 4, 2, 1),
-            nn.BatchNorm2d(base_filters * 2),
-            nn.LeakyReLU(0.2, inplace=True),
-            nn.Conv2d(base_filters * 2, base_filters * 4, 4, 2, 1),
-            nn.BatchNorm2d(base_filters * 4),
-            nn.LeakyReLU(0.2, inplace=True),
-            nn.Conv2d(base_filters * 4, base_filters * 8, 4, 2, 1),
-            nn.BatchNorm2d(base_filters * 8),
-            nn.LeakyReLU(0.2, inplace=True),
-            nn.Conv2d(base_filters * 8, 1, 4, 1, 0),
-            nn.Sigmoid()
-        )
-
-    def forward(self, x):
-        return self.main(x)
