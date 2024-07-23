@@ -84,16 +84,16 @@ def xr_to_np(domain, first_month, last_month):
     for _ in tqdm(range(total_months), desc="Processing months"):
         year, month = current_month.year, current_month.month
         ds = xr.open_dataset(f'{constants.nc_dir}{year}-{month:02d}.nc')
-        time_index = pd.DatetimeIndex(ds.time.values)
-        filtered_times = time_index[time_index.hour.isin([3, 6, 9, 12, 15, 18, 21, 0])]
-        ds = ds.sel(time=filtered_times)
+        # time_index = pd.DatetimeIndex(ds.time.values)
+        # filtered_times = time_index[time_index.hour.isin([3, 6, 9, 12, 15, 18, 21, 0])]
+        # ds = ds.sel(time=filtered_times)
         ds = ds.sortby('time')
         ds['days'] = ds.time.dt.dayofyear
 
         cropped_ds = ds.isel(lat=slice(min_lat_idx, max_lat_idx), lon=slice(min_lon_idx, max_lon_idx))
         min_lat, max_lat, min_lon, max_lon = min(cropped_ds.lat.values), max(cropped_ds.lat.values), min(cropped_ds.lon.values), max(cropped_ds.lon.values)
         
-        # reference_ds = reference_ds.sel(latitude=slice(max_lat+0.25, min_lat-0.25), longitude=slice(min_lon-0.25, max_lon+0.25)
+        # reference_ds = reference_ds.sel(latitude=slice(min_lat-1,max_lat+1), longitude=slice(min_lon-1, max_lon+1))
         reference_ds = crop_reference_ds(reference_ds, cropped_ds)
 
         input_ds = ds.interp(lat=reference_ds.latitude.values, lon=reference_ds.longitude.values)
@@ -119,7 +119,7 @@ def get_lats_lons(domain):
     reference_ds = reference_ds.assign_coords(longitude=(((reference_ds.longitude + 180) % 360) - 180)).sortby('longitude')
     reference_ds = reference_ds.sortby('latitude', ascending=True)
     
-    # reference_ds = reference_ds.sel(latitude=slice(max_lat+0.25, min_lat-0.25), longitude=slice(min_lon-0.25, max_lon+0.25)
+    # reference_ds = reference_ds.sel(latitude=slice(min_lat-1,max_lat+1), longitude=slice(min_lon-1, max_lon+1))
     reference_ds = crop_reference_ds(reference_ds, cropped_ds)
 
     input_ds = ds.interp(lat=reference_ds.latitude.values, lon=reference_ds.longitude.values)
@@ -187,8 +187,8 @@ class MemMapDataset(Dataset):
         return self.data[idx], self.labels[idx]
     
 
-def create_dataloader(input_file_paths, target_file_paths, batch_size=32, shuffle=True):
-    def load_files_in_batches(file_paths, batch_size=128):
+def create_dataloader(input_file_paths, target_file_paths, batch_size=128, shuffle=True):
+    def load_files_in_batches(file_paths, batch_size=32):
         arrays = []
         for i in tqdm(range(0, len(file_paths), batch_size)):
             batch_paths = file_paths[i:i + batch_size]
@@ -212,7 +212,7 @@ def train(domain, model, dataloader, criterion, optimizer, device, plot=False):
         plotted = 0
 
     for i, (inputs, targets) in tqdm(enumerate(dataloader), total=len(dataloader)):
-        inputs, targets = inputs.to(device)/10, targets.to(device)/10
+        inputs, targets = inputs.to(device), targets.to(device)
         optimizer.zero_grad()
         outputs = model(inputs)
         loss = criterion(outputs, targets)
@@ -222,9 +222,9 @@ def train(domain, model, dataloader, criterion, optimizer, device, plot=False):
 
         if plot and i in random_10:
             fig, axs = plt.subplots(1, 3, figsize=(12, 4), subplot_kw={'projection': cartopy.crs.PlateCarree()})
-            axs[0].pcolormesh(input_lons, input_lats, inputs[0].cpu().numpy(), transform=cartopy.crs.PlateCarree(), vmin=0, vmax=1)
-            axs[1].pcolormesh(lons, lats, outputs[0].cpu().detach().numpy(), transform=cartopy.crs.PlateCarree(), vmin=0, vmax=1)
-            axs[2].pcolormesh(lons, lats, targets[0].cpu().numpy(), transform=cartopy.crs.PlateCarree(), vmin=0, vmax=1)
+            axs[0].pcolormesh(input_lons, input_lats, inputs[0].cpu().numpy(), transform=cartopy.crs.PlateCarree(), vmin=0, vmax=10)
+            axs[1].pcolormesh(lons, lats, outputs[0].cpu().detach().numpy(), transform=cartopy.crs.PlateCarree(), vmin=0, vmax=10)
+            axs[2].pcolormesh(lons, lats, targets[0].cpu().numpy(), transform=cartopy.crs.PlateCarree(), vmin=0, vmax=10)
             for ax in axs:
                 ax.coastlines()
                 ax.add_feature(USCOUNTIES.with_scale('5m'), edgecolor='gray')
@@ -248,16 +248,16 @@ def test(domain, model, dataloader, criterion, device):
     plotted = 0
 
     for i, (inputs, targets) in tqdm(enumerate(dataloader), total=len(dataloader)):
-        inputs, targets = inputs.to(device)/10, targets.to(device)/10
+        inputs, targets = inputs.to(device), targets.to(device)
         outputs = model(inputs)
         loss = criterion(outputs, targets)
         losses.append(loss.item())
 
         if i in random_10:
             fig, axs = plt.subplots(1, 3, figsize=(12, 4), subplot_kw={'projection': cartopy.crs.PlateCarree()})
-            axs[0].pcolormesh(input_lons, input_lats, inputs[0].cpu().numpy(), transform=cartopy.crs.PlateCarree(), vmin=0, vmax=1)
-            axs[1].pcolormesh(lons, lats, outputs[0].cpu().detach().numpy(), transform=cartopy.crs.PlateCarree(), vmin=0, vmax=1)
-            axs[2].pcolormesh(lons, lats, targets[0].cpu().numpy(), transform=cartopy.crs.PlateCarree(), vmin=0, vmax=1)
+            axs[0].pcolormesh(input_lons, input_lats, inputs[0].cpu().numpy(), transform=cartopy.crs.PlateCarree(), vmin=0, vmax=10)
+            axs[1].pcolormesh(lons, lats, outputs[0].cpu().detach().numpy(), transform=cartopy.crs.PlateCarree(), vmin=0, vmax=10)
+            axs[2].pcolormesh(lons, lats, targets[0].cpu().numpy(), transform=cartopy.crs.PlateCarree(), vmin=0, vmax=10)
             for ax in axs:
                 ax.coastlines()
                 ax.add_feature(USCOUNTIES.with_scale('5m'), edgecolor='gray')

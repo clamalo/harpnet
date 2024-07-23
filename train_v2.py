@@ -4,6 +4,8 @@ import numpy as np
 from tqdm import tqdm
 import matplotlib.pyplot as plt
 import os
+# ulimit -n 4096 do this command below
+os.system('ulimit -n 1024')
 from datetime import datetime
 from utils.model import UNetWithAttention
 from utils.utils2 import *
@@ -26,11 +28,10 @@ def set_seed(seed=42):
 set_seed(42)
 
 
-# domain = 14
-domain = 32
-LOAD = False
+domain = 14
+LOAD = True
 first_month = (1979, 10)
-last_month = (1981, 9)
+last_month = (2022, 9)
 train_test = 0.2
 continue_epoch = None
 max_epoch = 10

@@ -86,17 +86,11 @@ class UNetWithAttention(nn.Module):
         self.upconv2 = nn.ConvTranspose2d(256, 128, kernel_size=2, stride=2)
         self.upconv1 = nn.ConvTranspose2d(128, 64, kernel_size=2, stride=2)
 
-        # self.dec5 = ResConvBlock(2048, 1024, dropout_rate=0.5)
-        # self.dec4 = ResConvBlock(1024, 512, dropout_rate=0.5)
-        # self.dec3 = ResConvBlock(512, 256, dropout_rate=0.3)
-        # self.dec2 = ResConvBlock(256, 128, dropout_rate=0.3)
-        # self.dec1 = ResConvBlock(128, 64, dropout_rate=0.1)
-
-        self.dec5 = ResConvBlock(2048, 1024, dropout_rate=0.3)
-        self.dec4 = ResConvBlock(1024, 512, dropout_rate=0.3)
-        self.dec3 = ResConvBlock(512, 256, dropout_rate=0.1)
-        self.dec2 = ResConvBlock(256, 128, dropout_rate=0.1)
-        self.dec1 = ResConvBlock(128, 64, dropout_rate=0.0)
+        self.dec5 = ResConvBlock(2048, 1024, dropout_rate=0.5)
+        self.dec4 = ResConvBlock(1024, 512, dropout_rate=0.5)
+        self.dec3 = ResConvBlock(512, 256, dropout_rate=0.3)
+        self.dec2 = ResConvBlock(256, 128, dropout_rate=0.3)
+        self.dec1 = ResConvBlock(128, 64, dropout_rate=0.1)
 
         self.final_conv = nn.Conv2d(64, out_channels, kernel_size=1)
 
