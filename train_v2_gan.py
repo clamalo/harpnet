@@ -5,7 +5,7 @@ from tqdm import tqdm
 import matplotlib.pyplot as plt
 import os
 from datetime import datetime
-from utils.model import UNetWithAttention
+from utils.model import UNetWithAttention, Discriminator
 from utils.utils2 import *
 import matplotlib.pyplot as plt
 import cartopy
@@ -49,23 +49,25 @@ test_dataset, test_dataloader = create_dataloader(test_input_file_paths, test_ta
 print(len(train_dataloader), next(iter(train_dataloader))[0].numpy().shape, next(iter(train_dataloader))[1].numpy().shape)
 print(len(test_dataloader), next(iter(test_dataloader))[0].numpy().shape, next(iter(test_dataloader))[1].numpy().shape)
 
-model = UNetWithAttention(1, 1, output_shape=(32,32)).to('mps')
-optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
-criterion = nn.MSELoss()
+generator = UNetWithAttention(1, 1, output_shape=(32, 32)).to('mps')
+discriminator = Discriminator(in_channels=1).to('mps')
+optimizer_G = torch.optim.Adam(generator.parameters(), lr=1e-4)
+optimizer_D = torch.optim.Adam(discriminator.parameters(), lr=1e-4)
+criterion_GAN = nn.BCELoss()
+criterion_content = nn.MSELoss()
 
-if continue_epoch:
-    checkpoint = torch.load(f'checkpoints/{domain}/{continue_epoch}_model.pt')
-    model.load_state_dict(checkpoint['model_state_dict'])
-    optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
 
 for epoch in range(continue_epoch or 0, max_epoch):
-    train_loss = train(domain, model, train_dataloader, criterion, optimizer, 'mps', plot=True)
-    test_loss = test(domain, model, test_dataloader, criterion, 'mps')
-    print(f'Epoch {epoch} - Train Loss: {train_loss:.4f} - Test Loss: {test_loss:.4f}')
-    checkpoint = {
-        'model_state_dict': model.state_dict(),
-        'optimizer_state_dict': optimizer.state_dict(),
-        'train_loss': train_loss,
-        'test_loss': test_loss
-    }
-    torch.save(checkpoint, f'checkpoints/{domain}/{epoch}_model.pt')
+    G_loss, D_loss = train_gan(domain, generator, discriminator, train_dataloader, criterion_GAN, criterion_content, optimizer_G, optimizer_D, 'mps', plot=True)
+    test_loss = test_gan(domain, generator, test_dataloader, criterion_content, 'mps')
+    print(f'Epoch {epoch} - G Loss: {G_loss:.4f} - D Loss: {D_loss:.4f} - Test Loss: {test_loss:.4f}')
+    # checkpoint = {
+    #     'generator_state_dict': generator.state_dict(),
+    #     'discriminator_state_dict': discriminator.state_dict(),
+    #     'optimizer_G_state_dict': optimizer_G.state_dict(),
+    #     'optimizer_D_state_dict': optimizer_D.state_dict(),
+    #     'G_loss': G_loss,
+    #     'D_loss': D_loss,
+    #     'test_loss': test_loss
+    # }
+    # torch.save(checkpoint, f'checkpoints/{domain}/{epoch}_model.pt')

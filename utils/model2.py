@@ -16,6 +16,26 @@ class ConvBlock(nn.Module):
         x = self.convblock(x)
         return x
     
+class EncoderBlock(nn.Module):
+    def __init__(self, in_channels, out_channels):
+        super(EncoderBlock, self).__init__()
+        self.conv = ConvBlock(in_channels, out_channels)
+        self.pool = nn.MaxPool2d(2)
+    def forward(self, x):
+        x = self.conv(x)
+        p = self.pool(x)
+        return x, p
+    
+class DecoderBlock(nn.Module):
+    def __init__(self, in_channels, out_channels):
+        super(DecoderBlock, self).__init__()
+        self.upconv = nn.ConvTranspose2d(in_channels, out_channels, 2, stride=2)
+        self.conv = ConvBlock(in_channels, out_channels)
+    def forward(self, x, skip):
+        x = self.upconv(x)
+        x = torch.cat((x, skip), dim=1)
+        x = self.conv(x)
+        return x
 
 class AttentionBlock(nn.Module):
     def __init__(self, in_channels, gating_channels):
@@ -59,9 +79,8 @@ class ResConvBlock(nn.Module):
         x = self.dropout(x)
         return x
     
-    
 class UNetWithAttention(nn.Module):
-    def __init__(self, in_channels, out_channels, output_shape=(64, 64)):
+    def __init__(self, in_channels, out_channels):
         super(UNetWithAttention, self).__init__()
 
         self.enc1 = ResConvBlock(in_channels, 64)
@@ -86,35 +105,28 @@ class UNetWithAttention(nn.Module):
         self.upconv2 = nn.ConvTranspose2d(256, 128, kernel_size=2, stride=2)
         self.upconv1 = nn.ConvTranspose2d(128, 64, kernel_size=2, stride=2)
 
-        # self.dec5 = ResConvBlock(2048, 1024, dropout_rate=0.5)
-        # self.dec4 = ResConvBlock(1024, 512, dropout_rate=0.5)
-        # self.dec3 = ResConvBlock(512, 256, dropout_rate=0.3)
-        # self.dec2 = ResConvBlock(256, 128, dropout_rate=0.3)
-        # self.dec1 = ResConvBlock(128, 64, dropout_rate=0.1)
-
-        self.dec5 = ResConvBlock(2048, 1024, dropout_rate=0.3)
-        self.dec4 = ResConvBlock(1024, 512, dropout_rate=0.3)
-        self.dec3 = ResConvBlock(512, 256, dropout_rate=0.1)
-        self.dec2 = ResConvBlock(256, 128, dropout_rate=0.1)
-        self.dec1 = ResConvBlock(128, 64, dropout_rate=0.0)
+        self.dec5 = ResConvBlock(2048, 1024, dropout_rate=0.5)
+        self.dec4 = ResConvBlock(1024, 512, dropout_rate=0.5)
+        self.dec3 = ResConvBlock(512, 256, dropout_rate=0.3)
+        self.dec2 = ResConvBlock(256, 128, dropout_rate=0.3)
+        self.dec1 = ResConvBlock(128, 64, dropout_rate=0.1)
 
         self.final_conv = nn.Conv2d(64, out_channels, kernel_size=1)
-
-        self.output_shape = output_shape
 
     def forward(self, x):#, elevation):
 
         if len(x.shape) == 3:
             x = x.unsqueeze(1)
 
-        output_shape = self.output_shape
-        x = nn.functional.interpolate(x, size=output_shape, mode='bilinear', align_corners=True)
+        x = nn.functional.interpolate(x, size=(64, 64), mode='bilinear')
+        # elevation = elevation.expand(x.shape[0], 1, x.shape[2], x.shape[3])
+        # x = torch.cat([x, elevation], dim=1)
 
         enc1 = self.enc1(x)
         enc2 = self.enc2(self.pool(enc1))
         enc3 = self.enc3(self.pool(enc2))
         enc4 = self.enc4(self.pool(enc3))
-        enc5 = self.enc5(self.pool(enc4)) 
+        enc5 = self.enc5(self.pool(enc4))
 
         bridge = self.bridge(self.pool(enc5))
 
@@ -144,24 +156,30 @@ class UNetWithAttention(nn.Module):
         dec1 = self.dec1(up1)
 
         final = self.final_conv(dec1)
-        
-        final = torch.clamp(final, min=0)
-        return final.squeeze(1)
+        return final
     
 
+
+
+
 class Discriminator(nn.Module):
-    def __init__(self, in_channels=1):
+    def __init__(self, in_channels, base_filters=64):
         super(Discriminator, self).__init__()
-        self.conv1 = nn.Conv2d(in_channels, 64, kernel_size=3, stride=2, padding=1)
-        self.fc = nn.Linear(64*16*16, 1)
-        self.relu = nn.LeakyReLU(0.2, inplace=True)
-        self.sigmoid = nn.Sigmoid()
-        self.dropout = nn.Dropout(0.3)  # Added dropout
+        self.main = nn.Sequential(
+            nn.Conv2d(in_channels, base_filters, 4, 2, 1),
+            nn.LeakyReLU(0.2, inplace=True),
+            nn.Conv2d(base_filters, base_filters * 2, 4, 2, 1),
+            nn.BatchNorm2d(base_filters * 2),
+            nn.LeakyReLU(0.2, inplace=True),
+            nn.Conv2d(base_filters * 2, base_filters * 4, 4, 2, 1),
+            nn.BatchNorm2d(base_filters * 4),
+            nn.LeakyReLU(0.2, inplace=True),
+            nn.Conv2d(base_filters * 4, base_filters * 8, 4, 2, 1),
+            nn.BatchNorm2d(base_filters * 8),
+            nn.LeakyReLU(0.2, inplace=True),
+            nn.Conv2d(base_filters * 8, 1, 4, 1, 0),
+            nn.Sigmoid()
+        )
 
     def forward(self, x):
-        if len(x.shape) == 3:
-            x = x.unsqueeze(1)
-        x = self.relu(self.conv1(x))
-        x = x.view(x.size(0), -1)
-        x = self.sigmoid(self.fc(x))
-        return x
+        return self.main(x)

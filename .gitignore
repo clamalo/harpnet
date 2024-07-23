@@ -8,4 +8,5 @@ utils/__pycache__/
 testing/comparison.png
 data_prep/
 4km_checkpoints/
-Figures/test/
+figures/test/
+figures/train/
