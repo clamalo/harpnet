@@ -22,9 +22,9 @@ Hourly precipitation data from 0z October 1, 1979 through 23z September 30, 2022
 
 The training set was comprised of data from 0z October 1, 1979 through 21z September 30, 2020. The test set was comprised of data from 0z October 1, 2020 through 21z September 30, 2022.
 
-The target grids were coarsened from native 4km resolution to 8km to save on computing.
-
 The target grids were cropped to a desired domain. The input grids were cropped to give a 0.5 degree buffer around the target grids to ensure no information is lost around the edges of the domain.
+
+A separate version of the HARPNET model was developed to process grids with shape 64x64 @ 4km. These patches can be stitched together to downscale large areas at a time while remaining computationally efficient.
 
 ## Training
 HARPNET was trained on a 2023 M2 MacBook Pro. The following hyperparameters were used:
