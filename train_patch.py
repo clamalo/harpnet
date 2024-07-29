@@ -16,16 +16,8 @@ import matplotlib.patches as patches
 import warnings
 warnings.filterwarnings("ignore")
 import random
-def set_seed(seed=42):
-    os.environ['PYTHONHASHSEED'] = str(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)  # if you are using multi-GPU.
-    random.seed(seed)
-    torch.backends.cudnn.deterministic = True
-    torch.backends.cudnn.benchmark = False
-set_seed(42)
+np.random.seed(42)
+torch.manual_seed(42)
 
 
 domain = 14
@@ -60,7 +52,7 @@ if continue_epoch:
     optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
 
 for epoch in range(continue_epoch or 0, max_epoch):
-    train_loss = train(domain, model, train_dataloader, criterion, optimizer, 'mps', plot=True)
+    train_loss = train(domain, model, train_dataloader, criterion, optimizer, 'mps', plot=False)
     test_loss = test(domain, model, test_dataloader, criterion, 'mps')
     print(f'Epoch {epoch} - Train Loss: {train_loss:.4f} - Test Loss: {test_loss:.4f}')
     checkpoint = {

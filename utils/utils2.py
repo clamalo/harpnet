@@ -14,18 +14,8 @@ from metpy.plots import USCOUNTIES
 import matplotlib.patches as patches
 import torch
 import random
-def set_seed(seed=42):
-    os.environ['PYTHONHASHSEED'] = str(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)  # if you are using multi-GPU.
-    random.seed(seed)
-    torch.backends.cudnn.deterministic = True
-    torch.backends.cudnn.benchmark = False
-
-# Call this function at the beginning of your script or before creating your model
-set_seed(42)
+np.random.seed(42)
+torch.manual_seed(42)
 
 
 def setup(domain):
