@@ -29,9 +29,9 @@ set_seed(42)
 
 
 domain = 14
-LOAD = True
+LOAD = False
 first_month = (1979, 10)
-last_month = (2022, 9)
+last_month = (1980, 9)
 train_test = 0.2
 continue_epoch = None
 max_epoch = 10
@@ -50,7 +50,7 @@ test_dataset, test_dataloader = create_dataloader(test_input_file_paths, test_ta
 print(len(train_dataloader), next(iter(train_dataloader))[0].numpy().shape, next(iter(train_dataloader))[1].numpy().shape)
 print(len(test_dataloader), next(iter(test_dataloader))[0].numpy().shape, next(iter(test_dataloader))[1].numpy().shape)
 
-model = UNetWithAttention(1, 1, output_shape=(32,32)).to('mps')
+model = UNetWithAttention(1, 1, output_shape=(64,64)).to('mps')
 optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
 criterion = nn.MSELoss()
 

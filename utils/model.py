@@ -69,23 +69,28 @@ class UNetWithAttention(nn.Module):
         self.enc3 = ResConvBlock(128, 256)
         self.enc4 = ResConvBlock(256, 512)
         self.enc5 = ResConvBlock(512, 1024)
+        self.enc6 = ResConvBlock(1024, 2048)
 
         self.pool = nn.MaxPool2d(kernel_size=2, stride=2)
 
         self.bridge = ResConvBlock(1024, 2048)
+        # self.bridge = ResConvBlock(2048, 4096)
 
-        self.attn_block1 = AttentionBlock(1024, 2048)
-        self.attn_block2 = AttentionBlock(512, 1024)
+        self.attn_block6 = AttentionBlock(2048, 4096)
+        self.attn_block5 = AttentionBlock(1024, 2048)
+        self.attn_block4 = AttentionBlock(512, 1024)
         self.attn_block3 = AttentionBlock(256, 512)
-        self.attn_block4 = AttentionBlock(128, 256)
-        self.attn_block5 = AttentionBlock(64, 128)
+        self.attn_block2 = AttentionBlock(128, 256)
+        self.attn_block1 = AttentionBlock(64, 128)
 
+        self.upconv6 = nn.ConvTranspose2d(4096, 2048, kernel_size=2, stride=2)
         self.upconv5 = nn.ConvTranspose2d(2048, 1024, kernel_size=2, stride=2)
         self.upconv4 = nn.ConvTranspose2d(1024, 512, kernel_size=2, stride=2)
         self.upconv3 = nn.ConvTranspose2d(512, 256, kernel_size=2, stride=2)
         self.upconv2 = nn.ConvTranspose2d(256, 128, kernel_size=2, stride=2)
         self.upconv1 = nn.ConvTranspose2d(128, 64, kernel_size=2, stride=2)
 
+        self.dec6 = ResConvBlock(4096, 2048, dropout_rate=0.5)
         self.dec5 = ResConvBlock(2048, 1024, dropout_rate=0.5)
         self.dec4 = ResConvBlock(1024, 512, dropout_rate=0.5)
         self.dec3 = ResConvBlock(512, 256, dropout_rate=0.3)
@@ -109,15 +114,22 @@ class UNetWithAttention(nn.Module):
         enc3 = self.enc3(self.pool(enc2))
         enc4 = self.enc4(self.pool(enc3))
         enc5 = self.enc5(self.pool(enc4)) 
+        enc6 = self.enc6(self.pool(enc5))
 
         bridge = self.bridge(self.pool(enc5))
+        # bridge = self.bridge(self.pool(enc6))
 
-        gating5 = self.attn_block1(enc5, bridge)
+        # gating6 = self.attn_block6(enc6, bridge)
+        # up6 = self.upconv6(bridge)
+        # up6 = torch.cat([up6, gating6], dim=1)
+        # dec6 = self.dec6(up6)
+
+        gating5 = self.attn_block5(enc5, bridge)
         up5 = self.upconv5(bridge)
         up5 = torch.cat([up5, gating5], dim=1)
         dec5 = self.dec5(up5)
 
-        gating4 = self.attn_block2(enc4, dec5)
+        gating4 = self.attn_block4(enc4, dec5)
         up4 = self.upconv4(dec5)
         up4 = torch.cat([up4, gating4], dim=1)
         dec4 = self.dec4(up4)
@@ -127,12 +139,12 @@ class UNetWithAttention(nn.Module):
         up3 = torch.cat([up3, gating3], dim=1)
         dec3 = self.dec3(up3)
 
-        gating2 = self.attn_block4(enc2, dec3)
+        gating2 = self.attn_block2(enc2, dec3)
         up2 = self.upconv2(dec3)
         up2 = torch.cat([up2, gating2], dim=1)
         dec2 = self.dec2(up2)
 
-        gating1 = self.attn_block5(enc1, dec2)
+        gating1 = self.attn_block1(enc1, dec2)
         up1 = self.upconv1(dec2)
         up1 = torch.cat([up1, gating1], dim=1)
         dec1 = self.dec1(up1)
@@ -141,21 +153,3 @@ class UNetWithAttention(nn.Module):
         
         final = torch.clamp(final, min=0)
         return final.squeeze(1)
-    
-
-class Discriminator(nn.Module):
-    def __init__(self, in_channels=1):
-        super(Discriminator, self).__init__()
-        self.conv1 = nn.Conv2d(in_channels, 64, kernel_size=3, stride=2, padding=1)
-        self.fc = nn.Linear(64*16*16, 1)
-        self.relu = nn.LeakyReLU(0.2, inplace=True)
-        self.sigmoid = nn.Sigmoid()
-        self.dropout = nn.Dropout(0.3)  # Added dropout
-
-    def forward(self, x):
-        if len(x.shape) == 3:
-            x = x.unsqueeze(1)
-        x = self.relu(self.conv1(x))
-        x = x.view(x.size(0), -1)
-        x = self.sigmoid(self.fc(x))
-        return x

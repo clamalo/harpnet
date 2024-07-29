@@ -84,22 +84,21 @@ def xr_to_np(domain, first_month, last_month):
     for _ in tqdm(range(total_months), desc="Processing months"):
         year, month = current_month.year, current_month.month
         ds = xr.open_dataset(f'{constants.nc_dir}{year}-{month:02d}.nc')
-        # time_index = pd.DatetimeIndex(ds.time.values)
-        # filtered_times = time_index[time_index.hour.isin([3, 6, 9, 12, 15, 18, 21, 0])]
-        # ds = ds.sel(time=filtered_times)
+        time_index = pd.DatetimeIndex(ds.time.values)
+        filtered_times = time_index[time_index.hour.isin([3, 6, 9, 12, 15, 18, 21, 0])]
+        ds = ds.sel(time=filtered_times)
         ds = ds.sortby('time')
         ds['days'] = ds.time.dt.dayofyear
 
         cropped_ds = ds.isel(lat=slice(min_lat_idx, max_lat_idx), lon=slice(min_lon_idx, max_lon_idx))
         min_lat, max_lat, min_lon, max_lon = min(cropped_ds.lat.values), max(cropped_ds.lat.values), min(cropped_ds.lon.values), max(cropped_ds.lon.values)
         
-        # reference_ds = reference_ds.sel(latitude=slice(min_lat-1,max_lat+1), longitude=slice(min_lon-1, max_lon+1))
         reference_ds = crop_reference_ds(reference_ds, cropped_ds)
 
         input_ds = ds.interp(lat=reference_ds.latitude.values, lon=reference_ds.longitude.values)
         input_ds = input_ds.sortby('lat', ascending=True)
         ds = ds.isel(lat=slice(min_lat_idx, max_lat_idx), lon=slice(min_lon_idx, max_lon_idx))
-        ds = ds.coarsen(lat=2, lon=2).mean() #if coarsen
+        # ds = ds.coarsen(lat=2, lon=2).mean() #if coarsen
         # input_ds = input_ds.interp(lat=ds.lat.values, lon=ds.lon.values) #if pre-interp
 
         np.save(f'{constants.domains_dir}{domain}/input_{year}_{month:02d}.npy', input_ds.tp.values.astype('float32'))
@@ -119,12 +118,11 @@ def get_lats_lons(domain):
     reference_ds = reference_ds.assign_coords(longitude=(((reference_ds.longitude + 180) % 360) - 180)).sortby('longitude')
     reference_ds = reference_ds.sortby('latitude', ascending=True)
     
-    # reference_ds = reference_ds.sel(latitude=slice(min_lat-1,max_lat+1), longitude=slice(min_lon-1, max_lon+1))
     reference_ds = crop_reference_ds(reference_ds, cropped_ds)
 
     input_ds = ds.interp(lat=reference_ds.latitude.values, lon=reference_ds.longitude.values)
     input_ds = input_ds.sortby('lat', ascending=True)
-    cropped_ds = cropped_ds.coarsen(lat=2, lon=2).mean() #if coarsen
+    # cropped_ds = cropped_ds.coarsen(lat=2, lon=2).mean() #if coarsen
     # input_ds = input_ds.interp(lat=cropped_ds.lat.values, lon=cropped_ds.lon.values) #if pre-interp
     lats, lons = cropped_ds.lat.values, cropped_ds.lon.values
     input_lats, input_lons = input_ds.lat.values, input_ds.lon.values
@@ -187,7 +185,7 @@ class MemMapDataset(Dataset):
         return self.data[idx], self.labels[idx]
     
 
-def create_dataloader(input_file_paths, target_file_paths, batch_size=128, shuffle=True):
+def create_dataloader(input_file_paths, target_file_paths, batch_size=64, shuffle=True):
     def load_files_in_batches(file_paths, batch_size=32):
         arrays = []
         for i in tqdm(range(0, len(file_paths), batch_size)):
