@@ -20,13 +20,13 @@ np.random.seed(42)
 torch.manual_seed(42)
 
 
-domain = 14
-LOAD = False
+domain = 17
+LOAD = True
 first_month = (1979, 10)
-last_month = (1980, 9)
+last_month = (2022, 9)
 train_test = 0.2
 continue_epoch = None
-max_epoch = 10
+max_epoch = 100
 
 
 if LOAD:

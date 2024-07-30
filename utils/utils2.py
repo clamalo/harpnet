@@ -29,8 +29,8 @@ def setup(domain):
 
 def create_grid_domains():
     ds = xr.open_dataset(f'{constants.nc_dir}1979-10.nc', chunks={'time': 100})
-    start_lat, start_lon = 35, -125
-    end_lat, end_lon = 50, -103
+    start_lat, start_lon = 33, -125
+    end_lat, end_lon = 54, -103
     start_lat_idx = ds.lat.values.searchsorted(start_lat)
     end_lat_idx = ds.lat.values.searchsorted(end_lat)
     start_lon_idx = ds.lon.values.searchsorted(start_lon)
