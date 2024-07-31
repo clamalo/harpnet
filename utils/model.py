@@ -107,9 +107,9 @@ class UNetWithAttention(nn.Module):
             x = x.unsqueeze(1)
 
         output_shape = self.output_shape
-        x = nn.functional.interpolate(x, size=output_shape, mode='bilinear', align_corners=True)
+        interpolated_x = nn.functional.interpolate(x, size=output_shape, mode='nearest')#, align_corners=True)
 
-        enc1 = self.enc1(x)
+        enc1 = self.enc1(interpolated_x)
         enc2 = self.enc2(self.pool(enc1))
         enc3 = self.enc3(self.pool(enc2))
         enc4 = self.enc4(self.pool(enc3))
@@ -152,4 +152,5 @@ class UNetWithAttention(nn.Module):
         final = self.final_conv(dec1)
         
         final = torch.clamp(final, min=0)
-        return final.squeeze(1)
+
+        return interpolated_x.squeeze(1), final.squeeze(1)
