@@ -20,15 +20,16 @@ np.random.seed(42)
 torch.manual_seed(42)
 
 
-for domain in range(21,27):
+# for domain in range(14,16):
+for domain in [7,8,14,15]:
     # domain = 18
-    LOAD = True
+    LOAD = False
     first_month = (1979, 10)
     last_month = (1981, 9)
     train_test = 0.2
-    continue_epoch = None
-    max_epoch = 1
-    pad = False
+    continue_epoch = 1
+    max_epoch = 4
+    pad = True
 
 
     if LOAD:

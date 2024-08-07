@@ -19,22 +19,15 @@ if not os.path.exists(fig_dir):
 
 # Constants
 start_time, end_time = 40, 72
-num_times = end_time - start_time
-year, month = 2017, 2
-nc_file = f'{constants.nc_dir}{year}-{month:02d}.nc'
-reference_file = f'{constants.base_dir}reference_ds.grib2'
-grid_domains_file = f'{constants.domains_dir}grid_domains.pkl'
+num_times = 32
+reference_file = f'reference_ds.grib2'
+grid_domains_file = f'grid_domains.pkl'
 device = 'mps'
 pad = True
 
 
 # Load and filter master dataset
-master_ds = xr.open_dataset(nc_file)
-time_index = pd.DatetimeIndex(master_ds.time.values)
-filtered_times = time_index[time_index.hour.isin([3, 6, 9, 12, 15, 18, 21, 0])]
-master_ds = master_ds.sel(time=filtered_times).sortby('time')
-master_ds = master_ds.sel(time=master_ds.time[start_time:end_time])
-master_ds['days'] = master_ds.time.dt.dayofyear
+master_ds = xr.open_dataset('master_ds.nc')
 
 
 # Initialize master fine latitude and longitude sets
