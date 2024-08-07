@@ -80,13 +80,16 @@ def xr_to_np(domain, first_month, last_month):
         cropped_reference_ds = reference_ds.sel(latitude=slice(min_lat, max_lat-0.25), longitude=slice(min_lon, max_lon-0.25))
         cropped_reference_ds_latitudes = cropped_reference_ds.latitude.values
         cropped_reference_ds_longitudes = cropped_reference_ds.longitude.values
+        cropped_input_reference_ds = reference_ds.sel(latitude=slice(min_lat-0.25, max_lat), longitude=slice(min_lon-0.25, max_lon))
+        cropped_input_reference_ds_latitudes = cropped_input_reference_ds.latitude.values
+        cropped_input_reference_ds_longitudes = cropped_input_reference_ds.longitude.values
         
         scale_factor = 4
         fine_lats = scale_coordinates(cropped_reference_ds_latitudes, scale_factor)
         fine_lons = scale_coordinates(cropped_reference_ds_longitudes, scale_factor)
 
         fine_ds = ds.interp(lat=fine_lats, lon=fine_lons)
-        coarse_ds = ds.interp(lat=cropped_reference_ds_latitudes, lon=cropped_reference_ds_longitudes)
+        coarse_ds = ds.interp(lat=cropped_input_reference_ds_latitudes, lon=cropped_input_reference_ds_longitudes)
 
         np.save(f'{constants.domains_dir}{domain}/input_{year}_{month:02d}.npy', coarse_ds.tp.values.astype('float32'))
         np.save(f'{constants.domains_dir}{domain}/target_{year}_{month:02d}.npy', fine_ds.tp.values.astype('float32'))
@@ -107,12 +110,15 @@ def get_lats_lons(domain):
     cropped_reference_ds = reference_ds.sel(latitude=slice(min_lat, max_lat-0.25), longitude=slice(min_lon, max_lon-0.25))
     cropped_reference_ds_latitudes = cropped_reference_ds.latitude.values
     cropped_reference_ds_longitudes = cropped_reference_ds.longitude.values
+    cropped_input_reference_ds = reference_ds.sel(latitude=slice(min_lat-0.25, max_lat), longitude=slice(min_lon-0.25, max_lon))
+    cropped_input_reference_ds_latitudes = cropped_input_reference_ds.latitude.values
+    cropped_input_reference_ds_longitudes = cropped_input_reference_ds.longitude.values
     
     scale_factor = 4
     fine_lats = scale_coordinates(cropped_reference_ds_latitudes, scale_factor)
     fine_lons = scale_coordinates(cropped_reference_ds_longitudes, scale_factor)
 
-    return fine_lats, fine_lons, cropped_reference_ds_latitudes, cropped_reference_ds_longitudes
+    return fine_lats, fine_lons, cropped_input_reference_ds_latitudes, cropped_input_reference_ds_longitudes
 
 
 def create_paths(domain, first_month, last_month, train_test):
@@ -197,9 +203,14 @@ def train(domain, model, dataloader, criterion, optimizer, device, plot=False):
     for i, (inputs, targets) in tqdm(enumerate(dataloader), total=len(dataloader)):
         inputs, targets = inputs.to(device), targets.to(device)
         optimizer.zero_grad()
-        outputs = model(inputs)
+        interpolated_inputs, outputs = model(inputs)
+
+        # print the mean of the interpolated inputs and the mean of the outputs
+        sum_loss = criterion(interpolated_inputs.mean(), outputs.mean())*1e2
 
         loss = criterion(outputs, targets)
+
+        loss = loss + sum_loss
 
         loss.backward()
         optimizer.step()
@@ -228,22 +239,21 @@ def test(domain, model, dataloader, criterion, device):
     lats, lons, input_lats, input_lons = get_lats_lons(domain)
     model.eval()
     losses = []
-    bilinear_losses = []
 
     random_10 = np.random.choice(range(len(dataloader)), 10, replace=False)
     plotted = 0
 
     for i, (inputs, targets) in tqdm(enumerate(dataloader), total=len(dataloader)):
         inputs, targets = inputs.to(device), targets.to(device)
-        outputs = model(inputs)
+        interpolated_inputs, outputs = model(inputs)
+
+        sum_loss = criterion(interpolated_inputs.mean(), outputs.mean())*1e2
 
         loss = criterion(outputs, targets)
-        
-        interpolated_inputs = torch.nn.functional.interpolate(inputs.unsqueeze(1), size=(64, 64), mode='bilinear').squeeze(1)
-        bilinear_loss = criterion(interpolated_inputs, targets)
+
+        loss = loss + sum_loss
 
         losses.append(loss.item())
-        bilinear_losses.append(bilinear_loss.item())
 
         if i in random_10:
             fig, axs = plt.subplots(1, 3, figsize=(12, 4), subplot_kw={'projection': cartopy.crs.PlateCarree()})
@@ -261,7 +271,7 @@ def test(domain, model, dataloader, criterion, device):
             plt.close()
             plotted += 1
 
-    return np.mean(losses), np.mean(bilinear_losses)
+    return np.mean(losses)
 
 
 

@@ -4,18 +4,17 @@ import numpy as np
 from tqdm import tqdm
 import matplotlib.pyplot as plt
 import os
-# ulimit -n 4096 do this command below
 os.system('ulimit -n 1024')
 from datetime import datetime
 from utils.model import UNetWithAttention
-from utils.utils3 import *
+from utils.utils3_pad import *
 import matplotlib.pyplot as plt
 import cartopy
 from metpy.plots import USCOUNTIES
 import matplotlib.patches as patches
 import warnings
 warnings.filterwarnings("ignore")
-import random
+import random 
 np.random.seed(42)
 torch.manual_seed(42)
 
@@ -23,7 +22,7 @@ torch.manual_seed(42)
 domain = 15
 LOAD = False
 first_month = (1979, 10)
-last_month = (1984, 9)
+last_month = (1989, 9)
 train_test = 0.2
 continue_epoch = None
 max_epoch = 100
@@ -43,7 +42,7 @@ print(len(train_dataloader), next(iter(train_dataloader))[0].numpy().shape, next
 print(len(test_dataloader), next(iter(test_dataloader))[0].numpy().shape, next(iter(test_dataloader))[1].numpy().shape)
 
 model = UNetWithAttention(1, 1, output_shape=(64,64)).to('mps')
-optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
+optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
 criterion = nn.MSELoss()
 
 if continue_epoch:
@@ -53,8 +52,8 @@ if continue_epoch:
 
 for epoch in range(continue_epoch or 0, max_epoch):
     train_loss = train(domain, model, train_dataloader, criterion, optimizer, 'mps', plot=False)
-    test_loss, bilinear_loss = test(domain, model, test_dataloader, criterion, 'mps')
-    print(f'Epoch {epoch} - Train Loss: {train_loss:.4f} - Test Loss: {test_loss:.4f} - Bilinear Loss: {bilinear_loss:.4f}')
+    test_loss = test(domain, model, test_dataloader, criterion, 'mps')
+    print(f'Epoch {epoch} - Train Loss: {train_loss:.4f} - Test Loss: {test_loss:.4f}')
     checkpoint = {
         'model_state_dict': model.state_dict(),
         'optimizer_state_dict': optimizer.state_dict(),
