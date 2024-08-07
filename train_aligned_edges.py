@@ -23,10 +23,10 @@ torch.manual_seed(42)
 domain = 15
 LOAD = False
 first_month = (1979, 10)
-last_month = (1984, 9)
+last_month = (2022, 9)
 train_test = 0.2
 continue_epoch = None
-max_epoch = 100
+max_epoch = 20
 
 
 if LOAD:

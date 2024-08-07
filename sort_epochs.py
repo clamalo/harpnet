@@ -1,10 +1,11 @@
 import torch
+from tqdm import tqdm
 
-patch = 33
+patch = 15
 
 best_members = []
 
-for epoch in range(8):
+for epoch in tqdm(range(31)):
     checkpoint = torch.load(f'checkpoints/{patch}/{epoch}_model.pt')
     train_loss = checkpoint['train_loss']
     test_loss = checkpoint['test_loss']
