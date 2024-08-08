@@ -11,3 +11,4 @@ data_prep/
 figures/test/
 figures/train/
 figures/stitch/
+runs/

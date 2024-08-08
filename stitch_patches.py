@@ -88,7 +88,7 @@ for domain in tqdm(available_domains):
         coarse_ds = master_ds.interp(lat=cropped_input_reference_ds_latitudes, lon=cropped_input_reference_ds_longitudes)
 
 
-    checkpoint_path = f'checkpoints/{domain}/6_model.pt'
+    checkpoint_path = f'checkpoints/{domain}/3_model.pt'
     if os.path.exists(checkpoint_path):
         checkpoint = torch.load(checkpoint_path)
         model.load_state_dict(checkpoint['model_state_dict'])
