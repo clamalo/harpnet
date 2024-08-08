@@ -20,7 +20,7 @@ The input data was constructed by interpolating the 4km 3-hourly summed CONUS404
 
 Hourly precipitation data from 0z October 1, 1979 through 23z September 30, 2022 was used in the creation of HARPNET. This hourly data was summed into 3-hourly chunks, since HARPNET predicts 3-hourly precipitation. These 3-hourly chunks were from 0-3z, 3-6z, 6-9z, etc.
 
-The training and test sets were generated using random 20% train/test split. Consistent random seeding was employed in numpy, pytorch, and Python's random package to ensure consistent train/test splits across patches and across different runs.
+The training and test sets were generated using a random 20% train/test split. Consistent random seeding was employed in numpy, pytorch, and Python's random package to ensure consistent train/test splits across patches and across different runs.
 
 HARPNET is trained to predict 64x64 target grid patches at 0.0625 degree resolution. These patches can be stitched together to downscale large areas at a time while remaining computationally efficient. The input grids were cropped to give a 0.25 degree buffer around the target grids to ensure no information was lost around the edges of the domain.
 
