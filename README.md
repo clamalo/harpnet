@@ -20,20 +20,23 @@ The input data was constructed by interpolating the 4km 3-hourly summed CONUS404
 
 Hourly precipitation data from 0z October 1, 1979 through 23z September 30, 2022 was used in the creation of HARPNET. This hourly data was summed into 3-hourly chunks, since HARPNET predicts 3-hourly precipitation. These 3-hourly chunks were from 0-3z, 3-6z, 6-9z, etc.
 
-The training set was comprised of data from 0z October 1, 1979 through 21z September 30, 2020. The test set was comprised of data from 0z October 1, 2020 through 21z September 30, 2022.
+The training and test sets were generated using random 20% train/test split. Consistent random seeding was employed in numpy, pytorch, and Python's random package to ensure consistent train/test splits across patches and across different runs.
 
-The target grids were cropped to a desired domain. The input grids were cropped to give a 0.5 degree buffer around the target grids to ensure no information is lost around the edges of the domain.
-
-A separate version of the HARPNET model was developed to process grids with shape 64x64 @ 4km. These patches can be stitched together to downscale large areas at a time while remaining computationally efficient.
+HARPNET is trained to predict 64x64 target grid patches at 0.0625 degree resolution. These patches can be stitched together to downscale large areas at a time while remaining computationally efficient. The input grids were cropped to give a 0.25 degree buffer around the target grids to ensure no information was lost around the edges of the domain.
 
 ## Training
-HARPNET was trained on a 2023 M2 MacBook Pro. The following hyperparameters were used:
+HARPNET was trained on a 2023 M2 Max MacBook Pro. The following hyperparameters were used:
 - Optimizer: Adam
 - Learning rate: 1e-3
-- Batch size: 256
+- Batch size: 64
 - Epochs: 50
 
 After each epoch, the model and optimizer states were saved as checkpoints.
 
 ## HARPNET Ensemble
 HARPNET was trained to be able to have an ensemble component, as well (HARPNET-E). By treating each epoch checkpoint state dict as a different member, HARPNET-E accounts for uncertainty in the downscaling process and can create an ensemble of solutions from a single deterministic input. Some members are more skillful than others, but the ensemble mean has proven to be more skillful than any given individual member.
+
+## Future Work
+- Upgrading from 0.0625 degree resolution to 0.03125 degree resolution
+- Employing generative adversarial networks to generate even more realistic downscaled forecasts
+- Mixed training dataset to allow the model to predict hourly, 3-hourly, and 6-hourly data
