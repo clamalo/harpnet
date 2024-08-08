@@ -16,19 +16,20 @@ import matplotlib.patches as patches
 import warnings
 warnings.filterwarnings("ignore")
 import random
+random.seed(42)
 np.random.seed(42)
 torch.manual_seed(42)
 
 
 # for domain in range(14,16):
+# for domain in [7,8,14,15]:
 for domain in [7,8,14,15]:
-    # domain = 18
     LOAD = False
     first_month = (1979, 10)
-    last_month = (1981, 9)
+    last_month = (2022, 9)
     train_test = 0.2
-    continue_epoch = 1
-    max_epoch = 4
+    continue_epoch = 7
+    max_epoch = 20
     pad = True
 
 
@@ -50,13 +51,13 @@ for domain in [7,8,14,15]:
     criterion = nn.MSELoss()
 
     if continue_epoch:
-        checkpoint = torch.load(f'checkpoints/{domain}/{continue_epoch}_model.pt')
+        checkpoint = torch.load(f'checkpoints/{domain}/{continue_epoch-1}_model.pt')
         model.load_state_dict(checkpoint['model_state_dict'])
         optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
 
     for epoch in range(continue_epoch or 0, max_epoch):
         train_loss = train(domain, model, train_dataloader, criterion, optimizer, 'mps', pad=pad, plot=False)
-        test_loss, bilinear_loss = test(domain, model, test_dataloader, criterion, 'mps', pad=pad, plot=True)
+        test_loss, bilinear_loss = test(domain, model, test_dataloader, criterion, 'mps', pad=pad, plot=False)
         print(f'Epoch {epoch} - Train Loss: {train_loss:.4f} - Test Loss: {test_loss:.4f} - Bilinear Loss: {bilinear_loss:.4f}')
         checkpoint = {
             'model_state_dict': model.state_dict(),

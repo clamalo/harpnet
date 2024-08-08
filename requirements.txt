@@ -1,0 +1,14 @@
+Cartopy==0.22.0
+cftime==1.6.3
+dask==2024.4.2
+ecmwf_opendata==0.3.8
+matplotlib==3.8.4
+MetPy==1.6.2
+numpy==2.0.1
+pandas==2.2.2
+python_dateutil==2.9.0
+Requests==2.32.3
+scipy==1.14.0
+torch==2.3.0
+tqdm==4.66.2
+xarray==2024.3.0

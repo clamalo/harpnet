@@ -14,6 +14,7 @@ from metpy.plots import USCOUNTIES
 import matplotlib.patches as patches
 import torch
 import random
+random.seed(42)
 np.random.seed(42)
 torch.manual_seed(42)
 
@@ -184,7 +185,7 @@ class MemMapDataset(Dataset):
         return self.data[idx], self.labels[idx]
     
 
-def create_dataloader(input_file_paths, target_file_paths, batch_size=32, shuffle=True):
+def create_dataloader(input_file_paths, target_file_paths, batch_size=64, shuffle=True):
     def load_files_in_batches(file_paths, batch_size=32):
         arrays = []
         for i in tqdm(range(0, len(file_paths), batch_size)):
