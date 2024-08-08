@@ -1,18 +1,13 @@
 import torch.nn as nn
 import torch
 import numpy as np
-from tqdm import tqdm
-import matplotlib.pyplot as plt
 import os
 # ulimit -n 4096 do this command below
 os.system('ulimit -n 1024')
-from datetime import datetime
 from utils.model import UNetWithAttention
 from utils.utils import *
 import matplotlib.pyplot as plt
-import cartopy
 from metpy.plots import USCOUNTIES
-import matplotlib.patches as patches
 import warnings
 warnings.filterwarnings("ignore")
 import random
@@ -22,13 +17,13 @@ torch.manual_seed(42)
 
 
 # for domain in [7,8,14,15]:
-for domain in [7]:
-    LOAD = False
+for domain in [11,12]:
+    LOAD = True
     first_month = (1979, 10)
-    last_month = (2022, 9)
+    last_month = (1981, 9)
     train_test = 0.2
     continue_epoch = False
-    max_epoch = 2
+    max_epoch = 3
     pad = True
 
 
