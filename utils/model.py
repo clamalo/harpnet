@@ -58,7 +58,6 @@ class UNetWithAttention(nn.Module):
 
         self.pool = nn.MaxPool2d(kernel_size=2, stride=2)
 
-        # self.bridge = ResConvBlock(512, 1024, (4,4))
         self.bridge = ResConvBlock(1024, 2048, (2,2))
 
         self.attn_block5 = AttentionBlock(1024, 2048)

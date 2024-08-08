@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 import cartopy.crs as ccrs
 import cartopy.feature as cfeature
 from tqdm import tqdm
-from utils.utils3 import *
+from utils.utils import *
 from utils.model import UNetWithAttention
 
 # Create stitch figure directory if it doesn't exist
