@@ -12,7 +12,7 @@ from utils.utils import *
 from utils.model import UNetWithAttention
 from metpy.plots import USCOUNTIES
 from sort_epochs import sort_epochs
-# sort_epochs()
+sort_epochs()
 
 # Create stitch figure directory if it doesn't exist
 fig_dir = 'figures/stitch'
@@ -21,7 +21,7 @@ if not os.path.exists(fig_dir):
 
 
 # Constants
-start_time, end_time = 48, 64
+start_time, end_time = 48, 185
 num_times = end_time - start_time
 year, month = 2017, 2
 nc_file = f'{constants.nc_dir}{year}-{month:02d}.nc'
@@ -47,24 +47,28 @@ time_index = pd.DatetimeIndex(master_ds.time.values)
 filtered_times = time_index[time_index.hour.isin([3, 6, 9, 12, 15, 18, 21, 0])]
 master_ds = master_ds.sel(time=filtered_times).sortby('time')
 master_ds = master_ds.sel(time=master_ds.time[start_time:end_time])
-master_ds['days'] = master_ds.time.dt.dayofyear
+times = master_ds.time.values
 
 
 # Initialize master fine latitude and longitude sets
 available_domains = range(0, 49)
 master_fine_lats, master_fine_lons = set(), set()
-
+master_coarse_lats, master_coarse_lons = set(), set()
 for domain in available_domains:
-    fine_lats, fine_lons, _, _ = get_lats_lons(domain, pad=False)
+    fine_lats, fine_lons, coarse_lats, coarse_lons = get_lats_lons(domain, pad=False)
     master_fine_lats.update(fine_lats)
     master_fine_lons.update(fine_lons)
-
+    master_coarse_lats.update(coarse_lats)
+    master_coarse_lons.update(coarse_lons)
 master_fine_lats = np.sort(np.array(list(master_fine_lats)))
 master_fine_lons = np.sort(np.array(list(master_fine_lons)))
+master_coarse_lats = np.sort(np.array(list(master_coarse_lats)))
+master_coarse_lons = np.sort(np.array(list(master_coarse_lons)))
 
 
 # Initialize fake data array
 fake_data = np.zeros((num_times, len(master_fine_lats), len(master_fine_lons)))
+fake_coarse_data = np.zeros((num_times, len(master_coarse_lats), len(master_coarse_lons)))
 
 
 # Load reference dataset
@@ -85,6 +89,8 @@ model = UNetWithAttention(1, 1, output_shape=(64, 64)).to(device)
 # Process each domain
 start_lat_idx, end_lat_idx = 0, 64
 start_lon_idx, end_lon_idx = 0, 64
+start_coarse_lat_idx, end_coarse_lat_idx = 0, 16
+start_coarse_lon_idx, end_coarse_lon_idx = 0, 16
 
 for domain in tqdm(available_domains):
     min_lat, max_lat, min_lon, max_lon = grid_domains[domain]
@@ -105,6 +111,9 @@ for domain in tqdm(available_domains):
     if os.path.exists(checkpoint_path):
         print(checkpoint_path)
         checkpoint = torch.load(checkpoint_path)
+        #print the test and bilinear loss
+        percent_error_reduction = (1-(np.sqrt(checkpoint['test_loss'])/np.sqrt(checkpoint['bilinear_loss'])))*100
+        print(f'{domain}: {percent_error_reduction:.2f}%')
         model.load_state_dict(checkpoint['model_state_dict'])
         model.eval()
 
@@ -113,13 +122,19 @@ for domain in tqdm(available_domains):
         fake_data[:, start_lat_idx:end_lat_idx, start_lon_idx:end_lon_idx] = output
     else:
         fake_data[:, start_lat_idx:end_lat_idx, start_lon_idx:end_lon_idx] = np.nan
+    fake_coarse_data[:, start_coarse_lat_idx:end_coarse_lat_idx, start_coarse_lon_idx:end_coarse_lon_idx] = coarse_ds.tp.values[:, 1:-1, 1:-1]*0.0393701
 
     start_lon_idx += 64
     end_lon_idx += 64
+    start_coarse_lon_idx += 16
+    end_coarse_lon_idx += 16
     if end_lon_idx > len(master_fine_lons):
         start_lon_idx, end_lon_idx = 0, 64
         start_lat_idx += 64
         end_lat_idx += 64
+        start_coarse_lon_idx, end_coarse_lon_idx = 0, 16
+        start_coarse_lat_idx += 16
+        end_coarse_lat_idx += 16
 
 fake_data_sum = np.sum(fake_data, axis=0)
 
@@ -138,10 +153,13 @@ for i in tqdm(range(num_times)):
     ax.add_feature(cfeature.STATES.with_scale('10m'))
     ax.add_feature(USCOUNTIES.with_scale('5m'), edgecolor='black', alpha=0.75, linewidth=0.5)
     ax.set_extent([min_lon, max_lon, min_lat, max_lat], crs=ccrs.PlateCarree())
-    cf = ax.pcolormesh(master_fine_lons, master_fine_lats, fake_data[i], transform=ccrs.PlateCarree(), cmap=colormap, norm=norm)
-    plt.colorbar(cf, ax=ax, orientation='horizontal', label='Domain')
-    plt.tight_layout()
+    cf = ax.pcolormesh(master_fine_lons, master_fine_lats, fake_data[i], transform=ccrs.PlateCarree(), vmin=0, vmax=0.5)#, cmap=colormap, norm=norm)
+    # cf = ax.contourf(master_fine_lons, master_fine_lats, fake_data[i], transform=ccrs.PlateCarree(), levels=bounds, cmap=colormap, norm=norm)
+    plt.colorbar(cf, ax=ax, orientation='horizontal', label='tp (in)', pad=0.02)
+    plt.subplots_adjust(top=0.9)
+    plt.suptitle(f'HARPNET Output {times[i]}', y=0.95)  # Increase the y parameter to move the title up
     plt.savefig(f'{fig_dir}/{i}.png', bbox_inches='tight')
+    plt.close()
 
 # Plot the sum with the calculated extent
 fig, ax = plt.subplots(figsize=(10, 10), subplot_kw={'projection': ccrs.PlateCarree()})
@@ -149,7 +167,57 @@ ax.coastlines()
 ax.add_feature(cfeature.STATES.with_scale('10m'))
 ax.add_feature(USCOUNTIES.with_scale('5m'), edgecolor='black', alpha=0.75, linewidth=0.5)
 ax.set_extent([min_lon, max_lon, min_lat, max_lat], crs=ccrs.PlateCarree())
-cf = ax.pcolormesh(master_fine_lons, master_fine_lats, fake_data_sum, transform=ccrs.PlateCarree(), cmap=colormap, norm=norm)
-plt.colorbar(cf, ax=ax, orientation='horizontal', label='Domain')
-plt.tight_layout()
+cf = ax.pcolormesh(master_fine_lons, master_fine_lats, fake_data_sum, transform=ccrs.PlateCarree())#, cmap=colormap, norm=norm)
+# cf = ax.contourf(master_fine_lons, master_fine_lats, fake_data_sum, transform=ccrs.PlateCarree(), levels=bounds, cmap=colormap, norm=norm)
+plt.colorbar(cf, ax=ax, orientation='horizontal', label='tp (in)', pad=0.02)
+plt.subplots_adjust(top=0.9)
+plt.suptitle(f'HARPNET Summed Output: {times[0]}-{times[-1]}')
 plt.savefig(f'{fig_dir}/sum.png', bbox_inches='tight')
+plt.close()
+
+#create an xarray dataset from master_fine_lons, master_fine_lats, and fake_data
+ds = xr.Dataset(
+    {
+        'tp': (['time', 'lat', 'lon'], fake_data)
+    },
+    coords={
+        'time': times,
+        'lat': master_fine_lats,
+        'lon': master_fine_lons
+    }
+)
+
+coarse_ds = xr.Dataset(
+    {
+        'tp': (['time', 'lat', 'lon'], fake_coarse_data)
+    },
+    coords={
+        'time': times,
+        'lat': master_coarse_lats,
+        'lon': master_coarse_lons
+    }
+)
+
+# ds cumsum
+ds['tp'] = ds.tp.cumsum(dim='time')
+coarse_ds['tp'] = coarse_ds.tp.cumsum(dim='time')
+coarse_ds = coarse_ds.interp(lat=ds.lat, lon=ds.lon)
+
+echo_peak = (38.85, -120.08)
+palisades_tahoe = (39.19, -120.27)
+mt_rose = (39.32, -119.89)
+
+# plot the cumulative precipitation at each point from ds as a time series
+fig, ax = plt.subplots(figsize=(10, 5))
+ds.tp.sel(lat=echo_peak[0], lon=echo_peak[1], method='nearest').plot(ax=ax, label='Echo Peak')
+ds.tp.sel(lat=palisades_tahoe[0], lon=palisades_tahoe[1], method='nearest').plot(ax=ax, label='Palisades Tahoe')
+ds.tp.sel(lat=mt_rose[0], lon=mt_rose[1], method='nearest').plot(ax=ax, label='Mt. Rose')
+ax.set_xlabel('Time')
+ax.set_ylabel('tp (in)')
+ax.set_title('Cumulative Precipitation at Various Points')
+ax.legend()
+plt.show()
+
+print(ds.tp.sel(lat=echo_peak[0], lon=echo_peak[1], method='nearest').values[-1], coarse_ds.tp.sel(lat=echo_peak[0], lon=echo_peak[1], method='nearest').values[-1])
+print(ds.tp.sel(lat=palisades_tahoe[0], lon=palisades_tahoe[1], method='nearest').values[-1], coarse_ds.tp.sel(lat=palisades_tahoe[0], lon=palisades_tahoe[1], method='nearest').values[-1])
+print(ds.tp.sel(lat=mt_rose[0], lon=mt_rose[1], method='nearest').values[-1], coarse_ds.tp.sel(lat=mt_rose[0], lon=mt_rose[1], method='nearest').values[-1])
