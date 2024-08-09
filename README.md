@@ -29,7 +29,7 @@ HARPNET was trained on a 2023 M2 Max MacBook Pro. The following hyperparameters 
 - Optimizer: Adam
 - Learning rate: 1e-3
 - Batch size: 64
-- Epochs: 50
+- Epochs: 20
 
 After each epoch, the model and optimizer states were saved as checkpoints.
 
