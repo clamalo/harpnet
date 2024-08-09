@@ -41,3 +41,5 @@ HARPNET was trained to be able to have an ensemble component, as well (HARPNET-E
 - Employing generative adversarial networks to generate even more realistic downscaled forecasts
 - Mixed training dataset to allow the model to predict hourly, 3-hourly, and 6-hourly data
 - Native models trained for each model resolution (ICON, GDPS, Sflux, etc)
+- Train with other variable inputs (Pressure levels of U/V, Temp, GH, as well as PWAT, CAPE, TEMP)
+- Custom loss to encourage even better patch-to-patch continuity
