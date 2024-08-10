@@ -278,3 +278,38 @@ def test(domain, model, dataloader, criterion, device, pad=False, plot=True):
             plotted += 1
 
     return np.mean(losses), np.mean(bilinear_losses)
+
+
+def sort_epochs(patches=None):
+    if not os.path.exists(f'{constants.checkpoints_dir}best/'):
+        os.makedirs(f'{constants.checkpoints_dir}best/')
+
+    if patches is None:
+        patches = [f for f in os.listdir(constants.checkpoints_dir) if f != 'best' and f != '.DS_Store']
+
+    for patch in patches:
+        checkpoint_dir = f'{constants.checkpoints_dir}{patch}/'
+
+        # Get all checkpoint files in the directory
+        checkpoint_files = [f for f in os.listdir(checkpoint_dir) if f.endswith('_model.pt')]
+
+        if len(checkpoint_files) == 0:
+            continue
+
+        best_members = []
+
+        for checkpoint_file in tqdm(checkpoint_files):
+            # Extract the epoch number from the filename
+            epoch = int(checkpoint_file.split('_')[0])
+            
+            checkpoint = torch.load(os.path.join(checkpoint_dir, checkpoint_file))
+            train_loss = checkpoint['train_loss']
+            test_loss = checkpoint['test_loss']
+            best_members.append((epoch, train_loss, test_loss))
+
+        # Sort by test_loss (ascending) and select the top 5
+        best_members = sorted(best_members, key=lambda x: x[2])[:5]
+
+        best_member = best_members[0]
+        best_checkpoint = torch.load(os.path.join(checkpoint_dir, f'{best_member[0]}_model.pt'))
+        torch.save(best_checkpoint, os.path.join(f'{constants.checkpoints_dir}best/', f'{patch}_model.pt'))

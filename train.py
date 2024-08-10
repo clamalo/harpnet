@@ -2,7 +2,6 @@ import torch.nn as nn
 import torch
 import numpy as np
 import os
-# ulimit -n 4096 do this command below
 os.system('ulimit -n 1024')
 from utils.model import UNetWithAttention
 from utils.utils import *
@@ -16,14 +15,13 @@ np.random.seed(42)
 torch.manual_seed(42)
 
 
-# for domain in [7,8,14,15]:
-for domain in [11,12]:
+for domain in [18, 19, 24, 30, 29, 35]:
     LOAD = True
     first_month = (1979, 10)
-    last_month = (1981, 9)
+    last_month = (2022, 9)
     train_test = 0.2
     continue_epoch = False
-    max_epoch = 3
+    max_epoch = 20
     pad = True
 
 
