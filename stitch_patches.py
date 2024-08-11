@@ -20,9 +20,6 @@ if not os.path.exists(fig_dir):
     os.makedirs(fig_dir)
 
 # Constants
-start_time, end_time = 0, 224
-num_times = end_time - start_time
-year, month = 2017, 2
 device = 'mps'
 pad = True
 
@@ -37,12 +34,14 @@ norm = colors.BoundaryNorm(boundaries=bounds, ncolors=len(bounds))
 
 
 # Load and filter master dataset
-master_ds = xr.open_dataset(f'{constants.nc_dir}{year}-{month:02d}.nc')
+master_ds = xr.open_dataset(f'{constants.nc_dir}{2017}-{2:02d}.nc')
 time_index = pd.DatetimeIndex(master_ds.time.values)
 filtered_times = time_index[time_index.hour.isin([3, 6, 9, 12, 15, 18, 21, 0])]
 master_ds = master_ds.sel(time=filtered_times).sortby('time')
-master_ds = master_ds.sel(time=master_ds.time[start_time:end_time])
+# master_ds = master_ds.sel(time=master_ds.time[0:224])
+master_ds = master_ds.sel(time=master_ds.time[0:100])
 times = master_ds.time.values
+num_times = len(times)
 
 
 # Initialize master fine latitude and longitude sets
@@ -126,12 +125,10 @@ for domain in tqdm(available_domains):
         tp = torch.tensor(coarse_ds.tp.values, dtype=torch.float32).to(device)
         output = model(tp).cpu().detach().numpy() * 0.0393701
         fine_arr[:, fine_lat_idx:fine_lat_idx+fine_lat_step, fine_lon_idx:fine_lon_idx+fine_lon_step] = output
+        coarse_arr[:, coarse_lat_idx:coarse_lat_idx+coarse_lat_step, coarse_lon_idx:coarse_lon_idx+coarse_lon_step] = coarse_ds.tp.values[:, 1:-1, 1:-1] * 0.0393701
     else:
         fine_arr[:, fine_lat_idx:fine_lat_idx+fine_lat_step, fine_lon_idx:fine_lon_idx+fine_lon_step] = np.nan
-
-    # Update the coarse array
-    coarse_arr[:, coarse_lat_idx:coarse_lat_idx+coarse_lat_step, coarse_lon_idx:coarse_lon_idx+coarse_lon_step] = \
-        coarse_ds.tp.values[:, 1:-1, 1:-1] * 0.0393701
+        coarse_arr[:, coarse_lat_idx:coarse_lat_idx+coarse_lat_step, coarse_lon_idx:coarse_lon_idx+coarse_lon_step] = np.nan
 
     # Increment longitude indices for the next domain
     fine_lon_idx += fine_lon_step
@@ -145,6 +142,7 @@ for domain in tqdm(available_domains):
         coarse_lat_idx += coarse_lat_step
 
 fine_arr_sum = np.sum(fine_arr, axis=0)
+coarse_arr_sum = np.sum(coarse_arr, axis=0)
 
 # Determine the extent based on non-NaN data
 non_nan_indices = np.where(~np.isnan(fine_arr_sum))
@@ -182,6 +180,36 @@ plt.colorbar(cf, ax=ax, orientation='horizontal', label='tp (in)', pad=0.02)
 plt.subplots_adjust(top=0.9)
 plt.suptitle(f'HARPNET Summed Output: {times[0]}-{times[-1]}')
 plt.savefig(f'{fig_dir}/sum.png', bbox_inches='tight')
+plt.close()
+
+
+#now plot the fine and coarse sum arrays side by side
+fig, ax = plt.subplots(1, 2, figsize=(20, 10), subplot_kw={'projection': ccrs.PlateCarree()})
+ax[0].coastlines()
+ax[0].add_feature(cfeature.STATES.with_scale('10m'))
+ax[0].add_feature(USCOUNTIES.with_scale('5m'), edgecolor='black', alpha=0.75, linewidth=0.5)
+ax[0].set_extent([min_lon, max_lon, min_lat, max_lat], crs=ccrs.PlateCarree())
+vmin = 0
+vmax = np.nanmax(fine_arr_sum)
+# cf = ax[0].pcolormesh(master_fine_lons, master_fine_lats, fine_arr_sum, transform=ccrs.PlateCarree())#, cmap=colormap, norm=norm)
+cf = ax[0].pcolormesh(master_fine_lons, master_fine_lats, fine_arr_sum, transform=ccrs.PlateCarree(), vmin=vmin, vmax=vmax)
+# cf = ax[0].contourf(master_fine_lons, master_fine_lats, fine_arr_sum, transform=ccrs.PlateCarree(), levels=bounds, cmap=colormap, norm=norm)
+plt.colorbar(cf, ax=ax[0], orientation='horizontal', label='tp (in)', pad=0.02)
+ax[0].set_title('Fine Sum')
+
+ax[1].coastlines()
+ax[1].add_feature(cfeature.STATES.with_scale('10m'))
+ax[1].add_feature(USCOUNTIES.with_scale('5m'), edgecolor='black', alpha=0.75, linewidth=0.5)
+ax[1].set_extent([min_lon, max_lon, min_lat, max_lat], crs=ccrs.PlateCarree())
+# cf = ax[1].pcolormesh(master_coarse_lons, master_coarse_lats, coarse_arr_sum, transform=ccrs.PlateCarree())#, cmap=colormap, norm=norm)
+cf = ax[1].pcolormesh(master_coarse_lons, master_coarse_lats, coarse_arr_sum, transform=ccrs.PlateCarree(), vmin=vmin, vmax=vmax)
+# cf = ax[1].contourf(master_coarse_lons, master_coarse_lats, coarse_arr_sum, transform=ccrs.PlateCarree(), levels=bounds, cmap=colormap, norm=norm)
+plt.colorbar(cf, ax=ax[1], orientation='horizontal', label='tp (in)', pad=0.02)
+ax[1].set_title('Coarse Sum')
+
+plt.subplots_adjust(top=0.9)
+plt.suptitle(f'HARPNET Summed Output: {times[0]}-{times[-1]}')
+plt.savefig(f'{fig_dir}/sum_side_by_side.png', bbox_inches='tight')
 plt.close()
 
 
@@ -227,6 +255,7 @@ ax.set_ylabel('tp (in)')
 ax.set_title('Cumulative Precipitation at Various Points')
 ax.legend()
 plt.savefig(f'{fig_dir}/points_cumsum.png', bbox_inches='tight')
+plt.close()
 
 for point in points:
     print(f'{point}: {ds.tp.sel(lat=points[point][0], lon=points[point][1], method="nearest").values[-1]}", {coarse_ds.tp.sel(lat=points[point][0], lon=points[point][1], method="nearest").values[-1]}"')
