@@ -15,14 +15,15 @@ random.seed(42)
 np.random.seed(42)
 torch.manual_seed(42)
 
-domains = [25, 28, 35, 21, 22, 23, 16, 36, 25, 9, 10, 11, 12, 37, 38, 39, 40, 31, 32, 33, 26, 0, 1, 2, 3, 4, 5, 6, 42, 43, 44, 45, 46, 47, 48, 41, 34, 27, 20, 13]
+# domains = [25, 28, 35, 21, 22, 23, 16, 36, 25, 9, 10, 11, 12, 37, 38, 39, 40, 31, 32, 33, 26, 0, 1, 2, 3, 4, 5, 6, 42, 43, 44, 45, 46, 47, 48, 41, 34, 27, 20, 13]
+domains = [41, 34, 27, 20, 13]
 
 for domain in domains:
     LOAD = True
     first_month = (1979, 10)
     last_month = (2022, 9)
     train_test = 0.2
-    continue_epoch = 16
+    continue_epoch = False
     max_epoch = 20
     pad = True
 
@@ -60,4 +61,6 @@ for domain in domains:
             'test_loss': test_loss,
             'bilinear_loss': bilinear_loss
         }
+        #make sure directory exists
+        os.makedirs(f'{constants.checkpoints_dir}{domain}', exist_ok=True)
         torch.save(checkpoint, f'{constants.checkpoints_dir}{domain}/{epoch}_model.pt')

@@ -12,7 +12,7 @@ from tqdm import tqdm
 from utils.utils import *
 from utils.model import UNetWithAttention
 from metpy.plots import USCOUNTIES
-sort_epochs([29])
+# sort_epochs()
 
 # Create stitch figure directory if it doesn't exist
 fig_dir = 'figures/stitch'
@@ -84,6 +84,9 @@ coarse_lat_idx, coarse_lon_idx = 0, 0
 fine_lat_step, fine_lon_step = 64, 64
 coarse_lat_step, coarse_lon_step = 16, 16
 
+test_losses = []
+bilinear_losses = []
+
 # Iterate through each available domain
 for domain in tqdm(available_domains):
     min_lat, max_lat, min_lon, max_lon = grid_domains[domain]
@@ -116,6 +119,8 @@ for domain in tqdm(available_domains):
         # Calculate and print the percentage error reduction
         percent_error_reduction = (1 - (np.sqrt(checkpoint['test_loss']) / np.sqrt(checkpoint['bilinear_loss']))) * 100
         print(f'{domain}: {percent_error_reduction:.2f}%')
+        test_losses.append(checkpoint['test_loss'])
+        bilinear_losses.append(checkpoint['bilinear_loss'])
 
         # Load model state and set to evaluation mode
         model.load_state_dict(checkpoint['model_state_dict'])
@@ -154,11 +159,10 @@ min_lon, max_lon = master_fine_lons[min_lon_idx], master_fine_lons[max_lon_idx]
 
 # Plot each time step with the calculated extent
 for i in tqdm(range(num_times)):
-    continue
     fig, ax = plt.subplots(figsize=(10, 10), subplot_kw={'projection': ccrs.PlateCarree()})
     ax.coastlines()
     ax.add_feature(cfeature.STATES.with_scale('10m'))
-    ax.add_feature(USCOUNTIES.with_scale('5m'), edgecolor='black', alpha=0.75, linewidth=0.5)
+    # ax.add_feature(USCOUNTIES.with_scale('5m'), edgecolor='black', alpha=0.75, linewidth=0.5)
     ax.set_extent([min_lon, max_lon, min_lat, max_lat], crs=ccrs.PlateCarree())
     cf = ax.pcolormesh(master_fine_lons, master_fine_lats, fine_arr[i], transform=ccrs.PlateCarree(), vmin=0, vmax=0.5)#, cmap=colormap, norm=norm)
     # cf = ax.contourf(master_fine_lons, master_fine_lats, fine_arr[i], transform=ccrs.PlateCarree(), levels=bounds, cmap=colormap, norm=norm)
@@ -172,7 +176,7 @@ for i in tqdm(range(num_times)):
 fig, ax = plt.subplots(figsize=(10, 10), subplot_kw={'projection': ccrs.PlateCarree()})
 ax.coastlines()
 ax.add_feature(cfeature.STATES.with_scale('10m'))
-ax.add_feature(USCOUNTIES.with_scale('5m'), edgecolor='black', alpha=0.75, linewidth=0.5)
+# ax.add_feature(USCOUNTIES.with_scale('5m'), edgecolor='black', alpha=0.75, linewidth=0.5)
 ax.set_extent([min_lon, max_lon, min_lat, max_lat], crs=ccrs.PlateCarree())
 cf = ax.pcolormesh(master_fine_lons, master_fine_lats, fine_arr_sum, transform=ccrs.PlateCarree())#, cmap=colormap, norm=norm)
 # cf = ax.contourf(master_fine_lons, master_fine_lats, fine_arr_sum, transform=ccrs.PlateCarree(), levels=bounds, cmap=colormap, norm=norm)
@@ -187,7 +191,7 @@ plt.close()
 fig, ax = plt.subplots(1, 2, figsize=(20, 10), subplot_kw={'projection': ccrs.PlateCarree()})
 ax[0].coastlines()
 ax[0].add_feature(cfeature.STATES.with_scale('10m'))
-ax[0].add_feature(USCOUNTIES.with_scale('5m'), edgecolor='black', alpha=0.75, linewidth=0.5)
+# ax[0].add_feature(USCOUNTIES.with_scale('5m'), edgecolor='black', alpha=0.75, linewidth=0.5)
 ax[0].set_extent([min_lon, max_lon, min_lat, max_lat], crs=ccrs.PlateCarree())
 vmin = 0
 vmax = np.nanmax(fine_arr_sum)
@@ -199,7 +203,7 @@ ax[0].set_title('Fine Sum')
 
 ax[1].coastlines()
 ax[1].add_feature(cfeature.STATES.with_scale('10m'))
-ax[1].add_feature(USCOUNTIES.with_scale('5m'), edgecolor='black', alpha=0.75, linewidth=0.5)
+# ax[1].add_feature(USCOUNTIES.with_scale('5m'), edgecolor='black', alpha=0.75, linewidth=0.5)
 ax[1].set_extent([min_lon, max_lon, min_lat, max_lat], crs=ccrs.PlateCarree())
 # cf = ax[1].pcolormesh(master_coarse_lons, master_coarse_lats, coarse_arr_sum, transform=ccrs.PlateCarree())#, cmap=colormap, norm=norm)
 cf = ax[1].pcolormesh(master_coarse_lons, master_coarse_lats, coarse_arr_sum, transform=ccrs.PlateCarree(), vmin=vmin, vmax=vmax)
@@ -259,3 +263,7 @@ plt.close()
 
 for point in points:
     print(f'{point}: {ds.tp.sel(lat=points[point][0], lon=points[point][1], method="nearest").values[-1]}", {coarse_ds.tp.sel(lat=points[point][0], lon=points[point][1], method="nearest").values[-1]}"')
+    
+print('Average Test Loss:', np.mean(test_losses))
+print('Average Bilinear Loss:', np.mean(bilinear_losses))
+print('Average Percent Error Reduction:', (1 - (np.sqrt(np.mean(test_losses)) / np.sqrt(np.mean(bilinear_losses)))) * 100)

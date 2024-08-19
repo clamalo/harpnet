@@ -146,7 +146,9 @@ if __name__ == "__main__":
     tar_dir = '/Users/clamalo/documents/harpnet/data_prep/tar/'
     raw_dir = '/Users/clamalo/documents/harpnet/data_prep/raw/'
     summed_dir = '/Users/clamalo/documents/harpnet/data_prep/summed/'
-    monthly_dir = '/Users/clamalo/documents/harpnet/data_prep/monthly/'
+    # monthly_dir = '/Users/clamalo/documents/harpnet/data_prep/monthly/'
+    monthly_dir = '/Volumes/T9/monthly/'
+    
 
     create_dirs(tar_dir, raw_dir, summed_dir, monthly_dir)
 

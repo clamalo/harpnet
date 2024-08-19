@@ -24,8 +24,8 @@ def setup(domain):
         os.makedirs(f'{constants.domains_dir}')
     if not os.path.exists(f'{constants.domains_dir}/{domain}/'):
         os.makedirs(f'{constants.domains_dir}/{domain}/')
-    if not os.path.exists(f'checkpoints/{domain}/'):
-        os.makedirs(f'checkpoints/{domain}/')
+    if not os.path.exists(f'{constants.checkpoints_dir}'):
+        os.makedirs(f'{constants.checkpoints_dir}')
 
 
 
