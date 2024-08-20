@@ -3,3 +3,4 @@ base_dir = '/Volumes/T9/'
 nc_dir = f'{base_dir}monthly/'
 domains_dir = f'{base_dir}domains/'
 checkpoints_dir = f'{base_dir}checkpoints/'
+scale_factor = 4

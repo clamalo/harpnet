@@ -15,18 +15,38 @@ random.seed(42)
 np.random.seed(42)
 torch.manual_seed(42)
 
-# domains = [25, 28, 35, 21, 22, 23, 16, 36, 25, 9, 10, 11, 12, 37, 38, 39, 40, 31, 32, 33, 26, 0, 1, 2, 3, 4, 5, 6, 42, 43, 44, 45, 46, 47, 48, 41, 34, 27, 20, 13]
-domains = [6]
+
+def test_bilinear(domain, model, dataloader, criterion, device, pad=False, plot=True):
+    bilinear_losses = []
+
+    for i, (inputs, targets) in tqdm(enumerate(dataloader), total=len(dataloader)):
+        inputs, targets = inputs.to(device), targets.to(device)
+        
+        cropped_inputs = inputs[:, 1:-1, 1:-1]
+        interpolated_inputs = torch.nn.functional.interpolate(cropped_inputs.unsqueeze(1), size=(64, 64), mode='bilinear').squeeze(1)
+        
+        bilinear_loss = criterion(interpolated_inputs, targets)
+
+        bilinear_losses.append(bilinear_loss.item())
+
+    return np.mean(bilinear_losses)
+
+
+domains = [1]
 
 for domain in domains:
-    LOAD = True
+    print(domain)
+    #check if corresponding domain directory exists
+    if not os.path.exists(f'{constants.domains_dir}{domain}'):
+        LOAD = True
+    else:
+        LOAD = False
     first_month = (1979, 10)
     last_month = (2022, 9)
     train_test = 0.2
     continue_epoch = False
-    max_epoch = 20
+    max_epoch = 1
     pad = True
-
 
     if LOAD:
         setup(domain)
@@ -51,16 +71,18 @@ for domain in domains:
         optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
 
     for epoch in range(continue_epoch or 0, max_epoch):
-        train_loss = train(domain, model, train_dataloader, criterion, optimizer, 'mps', pad=pad, plot=False)
-        test_loss, bilinear_loss = test(domain, model, test_dataloader, criterion, 'mps', pad=pad, plot=False)
+        # train_loss = train(domain, model, train_dataloader, criterion, optimizer, 'mps', pad=pad, plot=False)
+        bilinear_loss = test_bilinear(domain, model, test_dataloader, criterion, 'mps', pad=pad, plot=False)
+        train_loss, test_loss = 100, 100
         print(f'Epoch {epoch} - Train Loss: {train_loss:.4f} - Test Loss: {test_loss:.4f} - Bilinear Loss: {bilinear_loss:.4f}')
-        checkpoint = {
-            'model_state_dict': model.state_dict(),
-            'optimizer_state_dict': optimizer.state_dict(),
-            'train_loss': train_loss,
-            'test_loss': test_loss,
-            'bilinear_loss': bilinear_loss
-        }
-        #make sure directory exists
+        
+        #load each model checkpoint
         os.makedirs(f'{constants.checkpoints_dir}{domain}', exist_ok=True)
-        torch.save(checkpoint, f'{constants.checkpoints_dir}{domain}/{epoch}_model.pt')
+        for checkpoint_file in os.listdir(f'{constants.checkpoints_dir}{domain}'):
+            checkpoint = torch.load(f'{constants.checkpoints_dir}{domain}/{checkpoint_file}')
+            print(checkpoint['bilinear_loss'])
+            checkpoint['bilinear_loss'] = bilinear_loss
+            print(checkpoint['bilinear_loss'])
+            print(checkpoint['test_loss'])
+            print()
+            torch.save(checkpoint, f'{constants.checkpoints_dir}{domain}/{checkpoint_file}')

@@ -86,9 +86,8 @@ def xr_to_np(domain, first_month, last_month, pad=False):
             cropped_input_reference_ds_latitudes = cropped_input_reference_ds.latitude.values
             cropped_input_reference_ds_longitudes = cropped_input_reference_ds.longitude.values
         
-        scale_factor = 4
-        fine_lats = scale_coordinates(cropped_reference_ds_latitudes, scale_factor)
-        fine_lons = scale_coordinates(cropped_reference_ds_longitudes, scale_factor)
+        fine_lats = scale_coordinates(cropped_reference_ds_latitudes, constants.scale_factor)
+        fine_lons = scale_coordinates(cropped_reference_ds_longitudes, constants.scale_factor)
 
         fine_ds = ds.interp(lat=fine_lats, lon=fine_lons)
         if pad:
@@ -120,9 +119,8 @@ def get_lats_lons(domain, pad):
         cropped_input_reference_ds_latitudes = cropped_input_reference_ds.latitude.values
         cropped_input_reference_ds_longitudes = cropped_input_reference_ds.longitude.values
     
-    scale_factor = 4
-    fine_lats = scale_coordinates(cropped_reference_ds_latitudes, scale_factor)
-    fine_lons = scale_coordinates(cropped_reference_ds_longitudes, scale_factor)
+    fine_lats = scale_coordinates(cropped_reference_ds_latitudes, constants.scale_factor)
+    fine_lons = scale_coordinates(cropped_reference_ds_longitudes, constants.scale_factor)
 
     if pad:
         return fine_lats, fine_lons, cropped_input_reference_ds_latitudes, cropped_input_reference_ds_longitudes
@@ -255,23 +253,30 @@ def test(domain, model, dataloader, criterion, device, pad=False, plot=True):
 
         loss = criterion(outputs, targets)
         
-        interpolated_inputs = torch.nn.functional.interpolate(inputs.unsqueeze(1), size=(64, 64), mode='bilinear').squeeze(1)
+        cropped_inputs = inputs[:, 1:-1, 1:-1]
+        interpolated_inputs = torch.nn.functional.interpolate(cropped_inputs.unsqueeze(1), size=(64, 64), mode='bilinear').squeeze(1)
+        
         bilinear_loss = criterion(interpolated_inputs, targets)
 
         losses.append(loss.item())
         bilinear_losses.append(bilinear_loss.item())
 
         if plot and i in random_10:
-            fig, axs = plt.subplots(1, 3, figsize=(12, 4), subplot_kw={'projection': cartopy.crs.PlateCarree()})
+            fig, axs = plt.subplots(1, 4, figsize=(16, 4), subplot_kw={'projection': cartopy.crs.PlateCarree()})
             axs[0].pcolormesh(input_lons, input_lats, inputs[0].cpu().numpy(), transform=cartopy.crs.PlateCarree(), vmin=0, vmax=10)
-            axs[1].pcolormesh(lons, lats, outputs[0].cpu().detach().numpy(), transform=cartopy.crs.PlateCarree(), vmin=0, vmax=10)
-            axs[2].pcolormesh(lons, lats, targets[0].cpu().numpy(), transform=cartopy.crs.PlateCarree(), vmin=0, vmax=10)
+            axs[1].pcolormesh(lons, lats, interpolated_inputs[0].cpu().numpy(), transform=cartopy.crs.PlateCarree(), vmin=0, vmax=10)
+            axs[2].pcolormesh(lons, lats, outputs[0].cpu().detach().numpy(), transform=cartopy.crs.PlateCarree(), vmin=0, vmax=10)
+            axs[3].pcolormesh(lons, lats, targets[0].cpu().numpy(), transform=cartopy.crs.PlateCarree(), vmin=0, vmax=10)
             for ax in axs:
                 ax.coastlines()
                 ax.add_feature(USCOUNTIES.with_scale('5m'), edgecolor='gray')
             box = patches.Rectangle((lons[0], lats[0]), lons[-1] - lons[0], lats[-1] - lats[0],
                                     linewidth=1, edgecolor='r', facecolor='none')
             axs[0].add_patch(box)
+            axs[0].set_title('Input')
+            axs[1].set_title('Bilinear')
+            axs[2].set_title('HARPNET Output')
+            axs[3].set_title('Target')
             plt.suptitle(f'Loss: {criterion(outputs[0], targets[0]).item():.3f}')
             plt.savefig(f'figures/test/{plotted}.png')
             plt.close()
