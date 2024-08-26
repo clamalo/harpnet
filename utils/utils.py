@@ -7,7 +7,6 @@ import xarray as xr
 import pickle
 import pandas as pd
 from tqdm import tqdm
-import constants
 import matplotlib.pyplot as plt
 import cartopy
 from metpy.plots import USCOUNTIES
@@ -18,6 +17,8 @@ random.seed(42)
 np.random.seed(42)
 torch.manual_seed(42)
 
+import utils.constants as constants
+
 
 def setup(domain):
     if not os.path.exists(f'{constants.domains_dir}'):
@@ -26,25 +27,12 @@ def setup(domain):
         os.makedirs(f'{constants.domains_dir}/{domain}/')
     if not os.path.exists(f'{constants.checkpoints_dir}'):
         os.makedirs(f'{constants.checkpoints_dir}')
-
-
-
-def create_grid_domains():
-    start_lat, start_lon = 30, -125
-    end_lat, end_lon = 55, -100
-    grid_domains = {}
-    total_domains = 0
-    for lat in range(start_lat, end_lat, 4):
-        for lon in range(start_lon, end_lon, 4):
-            grid_domains[total_domains] = [lat, lat + 4, lon, lon + 4]
-            total_domains += 1
-    with open(f'{constants.domains_dir}grid_domains.pkl', 'wb') as f:
-        pickle.dump(grid_domains, f)
         
         
+
 def create_grid_domains():
-    start_lat, start_lon = 41, -93
-    end_lat, end_lon = 49, -82
+    start_lat, start_lon = constants.start_lat, constants.start_lon
+    end_lat, end_lon = constants.end_lat, constants.end_lon
     grid_domains = {}
     total_domains = 0
     for lat in range(start_lat, end_lat, 4):
@@ -139,6 +127,7 @@ def get_lats_lons(domain, pad):
         return fine_lats, fine_lons, cropped_input_reference_ds_latitudes, cropped_input_reference_ds_longitudes
     else:
         return fine_lats, fine_lons, cropped_reference_ds_latitudes, cropped_reference_ds_longitudes
+
 
 
 def create_paths(domain, first_month, last_month, train_test):

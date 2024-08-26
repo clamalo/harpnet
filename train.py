@@ -3,17 +3,20 @@ import torch
 import numpy as np
 import os
 os.system('ulimit -n 1024')
-from utils.model import UNetWithAttention
-from utils.utils import *
-import matplotlib.pyplot as plt
-from metpy.plots import USCOUNTIES
+import sys
 import warnings
 warnings.filterwarnings("ignore")
-import constants
 import random
 random.seed(42)
 np.random.seed(42)
 torch.manual_seed(42)
+
+cwd_dir = (os.path.abspath(os.path.join(os.getcwd())))
+sys.path.insert(0, cwd_dir)
+from utils.model import UNetWithAttention
+from utils.utils import *
+import utils.constants as constants
+
 
 domains = [2, 5, 3, 0]
 

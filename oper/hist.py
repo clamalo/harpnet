@@ -9,10 +9,16 @@ import matplotlib.colors as colors
 import cartopy.crs as ccrs
 import cartopy.feature as cfeature
 from tqdm import tqdm
+import sys
+from metpy.plots import USCOUNTIES
+import requests
+import glob
+
+cwd_dir = (os.path.abspath(os.path.join(os.getcwd())))
+sys.path.insert(0, cwd_dir)
 from utils.utils import *
 from utils.model import UNetWithAttention
-from metpy.plots import USCOUNTIES
-sort_epochs([0])
+import utils.constants as constants
 
 
 # Create stitch figure directory if it doesn't exist
@@ -23,6 +29,7 @@ if not os.path.exists(fig_dir):
 # Constants
 device = 'mps'
 pad = True
+# sort_epochs([0])
 
 
 def weatherbell_precip_colormap():
@@ -46,7 +53,7 @@ num_times = len(times)
 
 
 # Initialize master fine latitude and longitude sets
-available_domains = range(0, 6)
+available_domains = range(0, 49)
 master_fine_lats, master_fine_lons = set(), set()
 master_coarse_lats, master_coarse_lons = set(), set()
 for domain in available_domains:
@@ -73,6 +80,7 @@ reference_ds = reference_ds.sortby('latitude', ascending=True)
 
 
 # Load grid domains
+create_grid_domains()
 with open(f'{constants.domains_dir}grid_domains.pkl', 'rb') as f:
     grid_domains = pickle.load(f)
 
@@ -91,6 +99,9 @@ bilinear_losses = []
 # Iterate through each available domain
 for domain in tqdm(available_domains):
     min_lat, max_lat, min_lon, max_lon = grid_domains[domain]
+
+    print(f'Domain {domain}: {min_lat} to {max_lat}, {min_lon} to {max_lon}')
+    quit()
 
     # Crop reference dataset based on whether padding is applied
     if pad:
