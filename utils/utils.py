@@ -40,6 +40,19 @@ def create_grid_domains():
             total_domains += 1
     with open(f'{constants.domains_dir}grid_domains.pkl', 'wb') as f:
         pickle.dump(grid_domains, f)
+        
+        
+def create_grid_domains():
+    start_lat, start_lon = 41, -93
+    end_lat, end_lon = 49, -82
+    grid_domains = {}
+    total_domains = 0
+    for lat in range(start_lat, end_lat, 4):
+        for lon in range(start_lon, end_lon, 4):
+            grid_domains[total_domains] = [lat, lat + 4, lon, lon + 4]
+            total_domains += 1
+    with open(f'{constants.domains_dir}grid_domains.pkl', 'wb') as f:
+        pickle.dump(grid_domains, f)
 
 
 

@@ -15,8 +15,7 @@ random.seed(42)
 np.random.seed(42)
 torch.manual_seed(42)
 
-# domains = [25, 28, 35, 21, 22, 23, 16, 36, 25, 9, 10, 11, 12, 37, 38, 39, 40, 31, 32, 33, 26, 0, 1, 2, 3, 4, 5, 6, 42, 43, 44, 45, 46, 47, 48, 41, 34, 27, 20, 13]
-domains = [6]
+domains = [2, 5, 3, 0]
 
 for domain in domains:
     LOAD = True

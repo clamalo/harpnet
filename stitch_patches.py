@@ -12,7 +12,8 @@ from tqdm import tqdm
 from utils.utils import *
 from utils.model import UNetWithAttention
 from metpy.plots import USCOUNTIES
-# sort_epochs()
+sort_epochs([0])
+
 
 # Create stitch figure directory if it doesn't exist
 fig_dir = 'figures/stitch'
@@ -34,18 +35,18 @@ norm = colors.BoundaryNorm(boundaries=bounds, ncolors=len(bounds))
 
 
 # Load and filter master dataset
-master_ds = xr.open_dataset(f'{constants.nc_dir}{2017}-{2:02d}.nc')
+master_ds = xr.open_dataset(f'{constants.nc_dir}{2022}-{1:02d}.nc')
 time_index = pd.DatetimeIndex(master_ds.time.values)
 filtered_times = time_index[time_index.hour.isin([3, 6, 9, 12, 15, 18, 21, 0])]
 master_ds = master_ds.sel(time=filtered_times).sortby('time')
 # master_ds = master_ds.sel(time=master_ds.time[0:224])
-master_ds = master_ds.sel(time=master_ds.time[0:100])
+master_ds = master_ds.sel(time=master_ds.time[26:62])
 times = master_ds.time.values
 num_times = len(times)
 
 
 # Initialize master fine latitude and longitude sets
-available_domains = range(0, 49)
+available_domains = range(0, 6)
 master_fine_lats, master_fine_lons = set(), set()
 master_coarse_lats, master_coarse_lons = set(), set()
 for domain in available_domains:
