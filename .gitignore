@@ -1,6 +1,7 @@
 .DS_Store
 checkpoints/
 8km_checkpoints/
+croix_checkpoints/
 load_data/
 oper/data/
 __pycache__/
@@ -12,4 +13,6 @@ figures/test/
 figures/train/
 figures/stitch/
 runs/
-oper/data/
+utils/data/
+domains/
+utils/reference_ds.grib2.9093e.idx

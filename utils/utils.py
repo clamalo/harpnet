@@ -8,10 +8,19 @@ import pickle
 import pandas as pd
 from tqdm import tqdm
 import matplotlib.pyplot as plt
+import matplotlib.colors as colors
 import cartopy
 from metpy.plots import USCOUNTIES
 import matplotlib.patches as patches
 import torch
+import requests
+import json
+import aiohttp
+import aiofiles
+from tqdm.asyncio import tqdm as atqdm
+import asyncio
+import pandas as pd  # Ensure pandas is imported
+from ecmwf.opendata import Client
 import random
 random.seed(42)
 np.random.seed(42)
@@ -20,13 +29,25 @@ torch.manual_seed(42)
 import utils.constants as constants
 
 
-def setup(domain):
+def setup(domain=None):
     if not os.path.exists(f'{constants.domains_dir}'):
         os.makedirs(f'{constants.domains_dir}')
-    if not os.path.exists(f'{constants.domains_dir}/{domain}/'):
-        os.makedirs(f'{constants.domains_dir}/{domain}/')
+    if domain is not None:
+        if not os.path.exists(f'{constants.domains_dir}/{domain}/'):
+            os.makedirs(f'{constants.domains_dir}/{domain}/')
     if not os.path.exists(f'{constants.checkpoints_dir}'):
         os.makedirs(f'{constants.checkpoints_dir}')
+    # create utils/data
+    if not os.path.exists(f'utils/data/'):
+        os.makedirs(f'utils/data/')
+    if not os.path.exists(f'{constants.figures_dir}'):
+        os.makedirs(f'{constants.figures_dir}')
+    if not os.path.exists(f'{constants.figures_dir}train/'):
+        os.makedirs(f'{constants.figures_dir}train/')
+    if not os.path.exists(f'{constants.figures_dir}test/'):
+        os.makedirs(f'{constants.figures_dir}test/')
+    if not os.path.exists(f'{constants.figures_dir}stitch/'):
+        os.makedirs(f'{constants.figures_dir}stitch/')
         
         
 
@@ -63,7 +84,7 @@ def xr_to_np(domain, first_month, last_month, pad=False):
         grid_domains = pickle.load(f)
     min_lat, max_lat, min_lon, max_lon = grid_domains[domain]
 
-    reference_ds = xr.load_dataset(f'{constants.base_dir}reference_ds.grib2', engine='cfgrib')
+    reference_ds = xr.load_dataset(f'utils/reference_ds.grib2', engine='cfgrib')
     reference_ds = reference_ds.assign_coords(longitude=(((reference_ds.longitude + 180) % 360) - 180)).sortby('longitude')
     reference_ds = reference_ds.sortby('latitude', ascending=True)
 
@@ -108,7 +129,7 @@ def get_lats_lons(domain, pad):
 
     min_lat, max_lat, min_lon, max_lon = grid_domains[domain]
     
-    reference_ds = xr.load_dataset(f'{constants.base_dir}reference_ds.grib2', engine='cfgrib')
+    reference_ds = xr.load_dataset(f'utils/reference_ds.grib2', engine='cfgrib')
     reference_ds = reference_ds.assign_coords(longitude=(((reference_ds.longitude + 180) % 360) - 180)).sortby('longitude')
     reference_ds = reference_ds.sortby('latitude', ascending=True)
 
@@ -232,7 +253,7 @@ def train(domain, model, dataloader, criterion, optimizer, device, pad=False, pl
                                     linewidth=1, edgecolor='r', facecolor='none')
             axs[0].add_patch(box)
             plt.suptitle(f'Loss: {criterion(outputs[0], targets[0]).item():.3f}')
-            plt.savefig(f'figures/train/{plotted}.png')
+            plt.savefig(f'{constants.figures_dir}train/{plotted}.png')
             plt.close()
             plotted += 1
 
@@ -280,7 +301,7 @@ def test(domain, model, dataloader, criterion, device, pad=False, plot=True):
             axs[2].set_title('HARPNET Output')
             axs[3].set_title('Target')
             plt.suptitle(f'Loss: {criterion(outputs[0], targets[0]).item():.3f}')
-            plt.savefig(f'figures/test/{plotted}.png')
+            plt.savefig(f'{constants.figures_dir}test/{plotted}.png')
             plt.close()
             plotted += 1
 
@@ -320,3 +341,80 @@ def sort_epochs(patches=None):
         best_member = best_members[0]
         best_checkpoint = torch.load(os.path.join(checkpoint_dir, f'{best_member[0]}_model.pt'))
         torch.save(best_checkpoint, os.path.join(f'{constants.checkpoints_dir}best/', f'{patch}_model.pt'))
+
+
+def weatherbell_precip_colormap():
+    cmap = colors.ListedColormap(['#ffffff', '#bdbfbd','#aba5a5', '#838383', '#6e6e6e', '#b5fbab', '#95f58b','#78f572', '#50f150','#1eb51e', '#0ea10e', '#1464d3', '#2883f1', '#50a5f5','#97d3fb', '#b5f1fb','#fffbab', '#ffe978', '#ffc13c', '#ffa100', '#ff6000','#ff3200', '#e11400','#c10000', '#a50000', '#870000', '#643c31', '#8d6558','#b58d83', '#c7a095','#f1ddd3', '#cecbdc'])#, '#aca0c7', '#9b89bd', '#725ca3','#695294', '#770077','#8d008d', '#b200b2', '#c400c4', '#db00db'])
+    cmap.set_over(color='#aca0c7')
+    bounds = [0,0.01,0.03,0.05,0.075,0.1,0.15,0.2,0.25,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1,1.2,1.4,1.6,1.8,2,2.5,3,3.5,4,5,6,7,8,9,10]#,11,12,13,14,15,16,17,18,19,20])
+    norm = colors.BoundaryNorm(boundaries=bounds, ncolors=len(bounds))
+    return cmap, norm, bounds
+
+
+def ingest_gfs_data(datestr, cycle, frame):
+    idx_url = f'https://noaa-gfs-bdp-pds.s3.amazonaws.com/gfs.{datestr}/{cycle}/atmos/gfs.t{cycle}z.pgrb2.0p25.f{frame:03d}.idx'
+    start_byte = requests.get(idx_url).text.split('\n')[595].split(':')[1]
+    end_byte = requests.get(idx_url).text.split('\n')[596].split(':')[1]
+    gfs_url = f'https://noaa-gfs-bdp-pds.s3.amazonaws.com/gfs.{datestr}/{cycle}/atmos/gfs.t{cycle}z.pgrb2.0p25.f{frame:03d}'
+    r = requests.get(gfs_url, headers={'Range': f'bytes={start_byte}-{end_byte}'}, allow_redirects=True)
+    open(f'utils/data/gfs.f{frame:03d}.grib', 'wb').write(r.content)
+def ingest_ecmwf_data(datestr,cycle,frames):
+    client = Client("ecmwf", beta=True)
+    parameters = ['tp']
+    client.retrieve(
+        date=datestr,
+        time=cycle,
+        step=frames,
+        stream="oper",
+        type="fc",
+        levtype="sfc",
+        param=parameters,
+        target=f'utils/data/ecmwf.grib'
+    )
+async def ingest_eps_data(date, cycle, step, req_param, req_level, output_file, mode='wb'):
+
+    SEMAPHORE_LIMIT = 10
+    async def fetch(session, url):
+        async with session.get(url) as response:
+            return await response.text()
+    async def parse_idx(session, idx_link):
+        r = await fetch(session, idx_link)
+        idx = [json.loads(line) for line in r.splitlines()]
+        idx_df = pd.DataFrame(idx)
+        idx_df.drop(columns=["domain", "stream", "date", "time", "expver", "class", "step"], inplace=True)
+        idx_df["member"] = idx_df["number"].apply(lambda x: f"p{int(x):02d}" if not pd.isna(x) else "c00")
+        idx_df.drop(columns=["number"], inplace=True)
+        idx_df["level"] = idx_df.apply(lambda x: x["levtype"] if x["levtype"] == "sfc" else x["levelist"] + " hPa", axis=1)
+        idx_df.drop(columns=["levtype", "levelist"], inplace=True)
+        idx_df.rename(columns={"_offset": "start"}, inplace=True)
+        idx_df["end"] = idx_df["start"] + idx_df["_length"]
+        return idx_df
+    async def download(session, url, start, end, semaphore):
+        async with semaphore:
+            async with session.get(url, headers={"Range": f"bytes={start}-{end}"}) as response:
+                return await response.read()
+
+    ROOT = "https://ai4edataeuwest.blob.core.windows.net/ecmwf"
+    host = f"{ROOT}/{date}/{cycle}z/ifs/0p25/enfo"
+    idx_link = f"{host}/{date}{cycle}0000-{step}h-enfo-ef.index"
+    
+    semaphore = asyncio.Semaphore(SEMAPHORE_LIMIT)
+    
+    async with aiohttp.ClientSession() as session:
+        idx_df = await parse_idx(session, idx_link)
+        if req_level is None:
+            idx_df = idx_df[(idx_df.param.isin(req_param))]
+        else:
+            idx_df = idx_df[(idx_df.param.isin(req_param)) & (idx_df.level.isin(req_level))]
+        
+        idx = idx_df.to_dict(orient="records")
+        pgrb2_link = f"{host}/{date}{cycle}0000-{step}h-enfo-ef.grib2"
+
+        tasks = [download(session, pgrb2_link, record["start"], record["end"], semaphore) for record in idx]
+        
+        with atqdm(total=len(tasks)) as pbar:
+            async with aiofiles.open(output_file, mode) as f:
+                for task in asyncio.as_completed(tasks):
+                    content = await task
+                    await f.write(content)
+                    pbar.update(1)
