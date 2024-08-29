@@ -27,8 +27,8 @@ pad = True
 realtime = True
 rt_model = 'ecmwf'
 ingest = True
-datestr, cycle = '20240827', '12'
-frames = range(3, 13, 3)
+datestr, cycle = '20240828', '18'
+frames = range(3, 91, 3)
 # sort_epochs([0])
 
 
@@ -94,7 +94,7 @@ available_domains = range(0, num_domains)
 master_fine_lats, master_fine_lons = set(), set()
 master_coarse_lats, master_coarse_lons = set(), set()
 for domain in available_domains:
-    fine_lats, fine_lons, coarse_lats, coarse_lons = get_lats_lons(domain, pad=True)
+    fine_lats, fine_lons, coarse_lats, coarse_lons = get_lats_lons(domain, pad=False)
     master_fine_lats.update(fine_lats)
     master_fine_lons.update(fine_lons)
     master_coarse_lats.update(coarse_lats)
