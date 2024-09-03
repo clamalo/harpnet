@@ -32,29 +32,30 @@ This fact opens the door up for a variety of future work, including seeing if ad
 ## Data
 HARPNET was trained using CONUS404, a 4km reanalysis dataset over CONUS prepared by the NOAA. CONUS404 was created by dynamically downscaling hourly native ERA5 data from ~25km to ~4km using WRF.
 
-The input data was constructed by interpolating the 4km 3-hourly summed CONUS404 data to a 0.25-degree reference grid, emulating the input conditions of a global model like the GFS or ECMWF (or their ensemble counterparts). The output data was coarsened to 0.0625 degree resolution, exactly 1/4th the grid spacing of a 0.25 degree model so that the edges of the coarse and fine grids can be perfectly aligned
+The input data was constructed by interpolating the 4km 3-hourly summed CONUS404 data to a 0.25-degree reference grid, emulating the input conditions of a global model like the GFS or ECMWF (or their ensemble counterparts). The target data was native 4km CONUS404 data remapped to a WGS84 coordinate reference system and coarsened to 0.0625 degree resolution, exactly 1/4th the grid spacing of a 0.25 degree model so that the edges of the coarse and fine grids can be perfectly aligned. 
 
 Hourly precipitation data from 0z October 1, 1979 through 23z September 30, 2022 was used in the creation of HARPNET. This hourly data was summed into 3-hourly chunks, since HARPNET predicts 3-hourly precipitation. These 3-hourly chunks were from 0-3z, 3-6z, 6-9z, etc. The training and test sets were generated using a random 20% train/test split. Consistent random seeding was employed in numpy, pytorch, and Python's random package to ensure consistent train/test splits across patches and across different runs.
 
-HARPNET is trained to predict 64x64 target grid patches. Training smaller patch models rather than a single larger models allows for increased computational efficiency and more modularity; these patches can be stitched together to downscale large areas at a time while remaining computationally efficient. The input grids were cropped to give a 0.25 degree buffer around the target grids to ensure no input information was lost around the edges of each domain.
+HARPNET is trained to predict 64x64 target grid patches. Training smaller patch models rather than a single larger models allows for increased computational efficiency and more modularity; these patches can be stitched together to downscale large areas at a time while remaining computationally efficient. The input grids were cropped to give exactly 0.25 degrees of buffer around the target grids to ensure no input information was lost around the edges of each domain; this was done thanks to remapping the CONUS404 data so the edges perfectly line up with the 0.25 degree input grids.
 
 ## Training
 HARPNET was trained on a 2023 M2 Max MacBook Pro. The following hyperparameters were used for each patch:
 - Optimizer: Adam
 - Learning rate: 1e-4
-- Batch size: 64
+- Batch size: 32
 - Epochs: 20
 
 After each epoch, the model and optimizer states were saved as checkpoints.
 
 ## HARPNET Ensemble
-HARPNET was trained to be able to have an ensemble component, as well (HARPNET-E). By treating each epoch checkpoint state dictionary as a different member, HARPNET-E accounts for uncertainty in the downscaling process and can create an ensemble of solutions from a single deterministic input. Some members are more skillful than others, but the ensemble mean has proven to be more skillful than any given individual member.
+HARPNET was trained to be able to have an ensemble component, as well (HARPNET-E). By treating each epoch checkpoint state dictionary as a different member, HARPNET-E accounts for uncertainty in the downscaling process and can create an ensemble of solutions from a single deterministic input. Some members are more skillful than others, but the ensemble mean has proven to be more skillful than any given individual member across a large enough sample size of events ***(need to test)***.
 
 ## Future Work
 - Additional batches of trained patches staggered by 50% latitude/longitude, outputs are blended among the overlapping patches to almost eliminate edge-to-edge discontinuity
 - Train using ERA5 precip input... maybe ERA5 -(WRF)> CONUS404 -(coarsen)> != ERA5, so much so that the model only learns how to predict high-res using coarsened high-res?
 - Upgrading from 0.0625 degree resolution to 0.03125 degree resolution
 - Employing generative adversarial networks to generate even more realistic downscaled forecasts
+- Use entire training set... 3-hourly chunks every hour instead of every 3 hours
 - Mixed training dataset to allow the model to predict hourly, 3-hourly, and 6-hourly data
 - Native models trained for each model resolution (ICON, GDPS, Sflux, etc)
 - Train with other variable inputs (Pressure levels of U/V, Temp, GH, as well as PWAT, CAPE, TEMP)
