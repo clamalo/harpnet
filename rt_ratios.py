@@ -1,12 +1,7 @@
 """
-This script is used to generate a stitched precipitation forecast from the HARPNET model. The script loads the model
-checkpoints, iterates through each domain, and processes the coarse data with the model. The script then generates
-stitched precipitation forecast images for each time step and a summed stitched precipitation forecast image. The script
-also generates a side-by-side comparison of the fine and coarse stitched precipitation forecast images. The script
-generates a time series plot of the cumulative precipitation at various points. The script prints the precipitation
-forecast values at various points and the average test loss, average bilinear loss, and average percent error reduction.
-Works with either real-time data from the GFS or ECMWF, or historical data.
+Produces a stitched figure of the downscale ratios for the HARPNET model.
 """
+
 
 import os
 import numpy as np
@@ -208,7 +203,7 @@ for domain in tqdm(available_domains):
         # Process the coarse dataset with the model
         tp = torch.tensor(coarse_ds.tp.values, dtype=torch.float32).to(constants.device)
 
-        batched_tp = torch.split(tp, constants.operational_batch_size, dim=0)
+        batched_tp = torch.split(tp, constants.max_batch_size, dim=0)
         output = []
         for tp_batch in batched_tp:
             output.append(model(tp_batch).cpu().detach().numpy() * 0.0393701)
@@ -229,6 +224,7 @@ for domain in tqdm(available_domains):
         fine_lat_idx += fine_lat_step
         coarse_lat_idx += coarse_lat_step
 
+
 fine_arr_sum = np.sum(fine_arr, axis=0)
 coarse_arr_sum = np.sum(coarse_arr, axis=0)
 
@@ -241,65 +237,6 @@ min_lat, max_lat = master_fine_lats[min_lat_idx], master_fine_lats[max_lat_idx]
 min_lon, max_lon = master_fine_lons[min_lon_idx], master_fine_lons[max_lon_idx]
 
 colormap, norm, bounds = weatherbell_precip_colormap()
-
-# Plot each time step with the calculated extent
-for i in tqdm(range(num_times)):
-    fig, ax = plt.subplots(figsize=(10, 10), subplot_kw={'projection': ccrs.PlateCarree()})
-    ax.coastlines()
-    ax.add_feature(cfeature.STATES.with_scale('10m'))
-    # ax.add_feature(USCOUNTIES.with_scale('5m'), edgecolor='black', alpha=0.75, linewidth=0.5)
-    ax.set_extent([min_lon, max_lon, min_lat, max_lat], crs=ccrs.PlateCarree())
-    cf = ax.pcolormesh(master_fine_lons, master_fine_lats, fine_arr[i], transform=ccrs.PlateCarree(), vmin=0, vmax=0.5)#, cmap=colormap, norm=norm)
-    # cf = ax.contourf(master_fine_lons, master_fine_lats, fine_arr[i], transform=ccrs.PlateCarree(), levels=bounds, cmap=colormap, norm=norm)
-    plt.colorbar(cf, ax=ax, orientation='horizontal', label='tp (in)', pad=0.02)
-    plt.subplots_adjust(top=0.9)
-    plt.suptitle(f'HARPNET Output {times[i]}', y=0.95)  # Increase the y parameter to move the title up
-    plt.savefig(f'{fig_dir}/{i}.png', bbox_inches='tight')
-    plt.close()
-
-# Plot the sum with the calculated extent
-fig, ax = plt.subplots(figsize=(10, 10), subplot_kw={'projection': ccrs.PlateCarree()})
-ax.coastlines()
-ax.add_feature(cfeature.STATES.with_scale('10m'))
-# ax.add_feature(USCOUNTIES.with_scale('5m'), edgecolor='black', alpha=0.75, linewidth=0.5)
-ax.set_extent([min_lon, max_lon, min_lat, max_lat], crs=ccrs.PlateCarree())
-cf = ax.pcolormesh(master_fine_lons, master_fine_lats, fine_arr_sum, transform=ccrs.PlateCarree())#, cmap=colormap, norm=norm)
-# cf = ax.contourf(master_fine_lons, master_fine_lats, fine_arr_sum, transform=ccrs.PlateCarree(), levels=bounds, cmap=colormap, norm=norm)
-plt.colorbar(cf, ax=ax, orientation='horizontal', label='tp (in)', pad=0.02)
-plt.subplots_adjust(top=0.9)
-plt.suptitle(f'HARPNET Summed Output: {times[0]}-{times[-1]}')
-plt.savefig(f'{fig_dir}/sum.png', bbox_inches='tight')
-plt.close()
-
-
-#now plot the fine and coarse sum arrays side by side
-fig, ax = plt.subplots(1, 2, figsize=(20, 10), subplot_kw={'projection': ccrs.PlateCarree()})
-ax[0].coastlines()
-ax[0].add_feature(cfeature.STATES.with_scale('10m'))
-# ax[0].add_feature(USCOUNTIES.with_scale('5m'), edgecolor='black', alpha=0.75, linewidth=0.5)
-ax[0].set_extent([min_lon, max_lon, min_lat, max_lat], crs=ccrs.PlateCarree())
-vmin = 0
-vmax = np.nanmax(fine_arr_sum)
-# cf = ax[0].pcolormesh(master_fine_lons, master_fine_lats, fine_arr_sum, transform=ccrs.PlateCarree())#, cmap=colormap, norm=norm)
-cf = ax[0].pcolormesh(master_fine_lons, master_fine_lats, fine_arr_sum, transform=ccrs.PlateCarree(), vmin=vmin, vmax=vmax)
-# cf = ax[0].contourf(master_fine_lons, master_fine_lats, fine_arr_sum, transform=ccrs.PlateCarree(), levels=bounds, cmap=colormap, norm=norm)
-plt.colorbar(cf, ax=ax[0], orientation='horizontal', label='tp (in)', pad=0.02)
-ax[0].set_title('Fine Sum')
-
-ax[1].coastlines()
-ax[1].add_feature(cfeature.STATES.with_scale('10m'))
-# ax[1].add_feature(USCOUNTIES.with_scale('5m'), edgecolor='black', alpha=0.75, linewidth=0.5)
-ax[1].set_extent([min_lon, max_lon, min_lat, max_lat], crs=ccrs.PlateCarree())
-# cf = ax[1].pcolormesh(master_coarse_lons, master_coarse_lats, coarse_arr_sum, transform=ccrs.PlateCarree())#, cmap=colormap, norm=norm)
-cf = ax[1].pcolormesh(master_coarse_lons, master_coarse_lats, coarse_arr_sum, transform=ccrs.PlateCarree(), vmin=vmin, vmax=vmax)
-# cf = ax[1].contourf(master_coarse_lons, master_coarse_lats, coarse_arr_sum, transform=ccrs.PlateCarree(), levels=bounds, cmap=colormap, norm=norm)
-plt.colorbar(cf, ax=ax[1], orientation='horizontal', label='tp (in)', pad=0.02)
-ax[1].set_title('Coarse Sum')
-
-plt.subplots_adjust(top=0.9)
-plt.suptitle(f'HARPNET Summed Output: {times[0]}-{times[-1]}')
-plt.savefig(f'{fig_dir}/sum_side_by_side.png', bbox_inches='tight')
-plt.close()
 
 
 ds = xr.Dataset(
@@ -324,6 +261,47 @@ coarse_ds = xr.Dataset(
     }
 )
 
+sum_ds = ds.sum(dim='time')
+sum_coarse_ds = coarse_ds.sum(dim='time')
+sum_ratio_ds = sum_coarse_ds.interp(lat=ds.lat, lon=ds.lon)
+sum_ratio_ds = sum_ds/sum_ratio_ds
+
+
+ratio_ds = coarse_ds.interp(lat=ds.lat, lon=ds.lon)
+ratio_ds['tp'] = ds['tp']/ratio_ds['tp']
+
+
+# Plot each time step with the calculated extent
+for i in tqdm(range(num_times)):
+    fig, ax = plt.subplots(figsize=(10, 10), subplot_kw={'projection': ccrs.PlateCarree()})
+    ax.coastlines()
+    ax.add_feature(cfeature.STATES.with_scale('10m'))
+    # ax.add_feature(USCOUNTIES.with_scale('5m'), edgecolor='black', alpha=0.75, linewidth=0.5)
+    # ax.set_extent([min_lon, max_lon, min_lat, max_lat], crs=ccrs.PlateCarree())
+    # set extent over washington state
+    ax.set_extent([-125, -116, 46, 53], crs=ccrs.PlateCarree())
+    # cf = ax.pcolormesh(master_fine_lons, master_fine_lats, fine_arr[i], transform=ccrs.PlateCarree(), vmin=0, vmax=0.5)#, cmap=colormap, norm=norm)
+    cf = ax.pcolormesh(ratio_ds.lon, ratio_ds.lat, ratio_ds.tp[i], transform=ccrs.PlateCarree(), vmin=0, vmax=2, cmap='coolwarm')
+    plt.colorbar(cf, ax=ax, orientation='horizontal', label='tp (in)', pad=0.02)
+    plt.subplots_adjust(top=0.9)
+    plt.suptitle(f'HARPNET Output {times[i]}', y=0.95)  # Increase the y parameter to move the title up
+    plt.savefig(f'{fig_dir}/{i}.png', bbox_inches='tight')
+    plt.close()
+
+fig, ax = plt.subplots(figsize=(10, 10), subplot_kw={'projection': ccrs.PlateCarree()})
+ax.coastlines()
+ax.add_feature(cfeature.STATES.with_scale('10m'))
+# ax.add_feature(USCOUNTIES.with_scale('5m'), edgecolor='black', alpha=0.75, linewidth=0.5)
+# ax.set_extent([min_lon, max_lon, min_lat, max_lat], crs=ccrs.PlateCarree())
+# set extent over washington state
+ax.set_extent([-125, -116, 46, 53], crs=ccrs.PlateCarree())
+cf = ax.pcolormesh(sum_ratio_ds.lon, sum_ratio_ds.lat, sum_ratio_ds.tp, transform=ccrs.PlateCarree(), vmin=0, vmax=2, cmap='coolwarm')
+plt.colorbar(cf, ax=ax, orientation='horizontal', label='tp (in)', pad=0.02)
+plt.subplots_adjust(top=0.9)
+plt.suptitle(f'HARPNET Summed Output: {times[0]}-{times[-1]}')
+plt.savefig(f'{fig_dir}/sum.png', bbox_inches='tight')
+plt.close()
+
 # ds cumsum
 ds['tp'] = ds.tp.cumsum(dim='time')
 coarse_ds['tp'] = coarse_ds.tp.cumsum(dim='time')
@@ -337,11 +315,12 @@ points = {
 
 # plot the cumulative precipitation at each point from ds as a time series
 fig, ax = plt.subplots(figsize=(10, 5))
+plt.axhline(y=1, color='black', linestyle='--')
 for point in points:
-    ds.tp.sel(lat=points[point][0], lon=points[point][1], method='nearest').plot(ax=ax, label=point)
+    ratio_ds.tp.sel(lat=points[point][0], lon=points[point][1], method='nearest').plot(ax=ax, label=point)
 ax.set_xlabel('Time')
 ax.set_ylabel('tp (in)')
-ax.set_title('Cumulative Precipitation at Various Points')
+ax.set_title('Downscale Ratios at Various Points')
 ax.legend()
 plt.savefig(f'{fig_dir}/points_cumsum.png', bbox_inches='tight')
 plt.close()
