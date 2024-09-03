@@ -1,5 +1,5 @@
 # HARPNET - High-Resolution Attention Res-UNet Precipitation Network
-### OpenSnow's Next-Generation Precipitation Downscaling System
+### Next-Generation Machine Learning Precipitation Downscaling System
 
 ## Model Architecture
 ![alt text](https://github.com/clamalo/harpnet/blob/master/figures/harpnet.png?raw=true)
