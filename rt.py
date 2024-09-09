@@ -169,7 +169,7 @@ for domain in tqdm(available_domains):
 
     # Load checkpoint and evaluate the model if the checkpoint exists
     checkpoint_path = f'{constants.checkpoints_dir}best/{domain}_model.pt'
-    if os.path.exists(checkpoint_path):
+    if os.path.exists(checkpoint_path) and domain in [11, 12, 18, 19]:
 
         min_lat, max_lat, min_lon, max_lon = grid_domains[domain]
 
@@ -330,9 +330,8 @@ coarse_ds['tp'] = coarse_ds.tp.cumsum(dim='time')
 coarse_ds = coarse_ds.interp(lat=ds.lat, lon=ds.lon)
 
 points = {
-    'Paradise': (46.78408, -121.74122),
-    'Rainier Summit': (46.85291, -121.76079),
-    'Seattle': (47.60621, -122.33207),
+    'Snowmass (Top)': (39.16288, -106.96418),
+    'Snowmass (Bottom)': (39.21004, -106.94727),
 }
 
 # plot the cumulative precipitation at each point from ds as a time series

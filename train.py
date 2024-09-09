@@ -23,7 +23,7 @@ domains = [2]
 
 setup()
 for domain in domains:
-    LOAD = True
+    LOAD = False
     first_month = (1979, 10)
     last_month = (1980, 9)
     train_test = 0.2
@@ -46,6 +46,7 @@ for domain in domains:
     print(len(test_dataloader), next(iter(test_dataloader))[0].numpy().shape, next(iter(test_dataloader))[1].numpy().shape)
 
     model = UNetWithAttention(1, 1, output_shape=(64,64)).to(constants.device)
+    print(f'Number of parameters: {sum(p.numel() for p in model.parameters())}')
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
     criterion = nn.MSELoss()
 

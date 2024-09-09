@@ -1,7 +1,12 @@
 """
-Produces a stitched figure of the downscale ratios for the HARPNET model.
+This script is used to generate a stitched precipitation forecast from the HARPNET model. The script loads the model
+checkpoints, iterates through each domain, and processes the coarse data with the model. The script then generates
+stitched precipitation forecast images for each time step and a summed stitched precipitation forecast image. The script
+also generates a side-by-side comparison of the fine and coarse stitched precipitation forecast images. The script
+generates a time series plot of the cumulative precipitation at various points. The script prints the precipitation
+forecast values at various points and the average test loss, average bilinear loss, and average percent error reduction.
+Works with either real-time data from the GFS or ECMWF, or historical data.
 """
-
 
 import os
 import numpy as np
@@ -34,11 +39,8 @@ rt_model = 'gfs'
 ingest = False
 datestr, cycle = '20231202', '00'
 frames = range(3, 241, 3)
+members = [18,19]
 # sort_epochs([0])
-plot_extent = [-109, -104, 37, 41]
-# plot_extent = [-125, -100, 30, 55]
-
-
 
 
 setup()
@@ -113,8 +115,8 @@ master_coarse_lons = np.sort(np.array(list(master_coarse_lons)))
 
 
 # Initialize fake data array
-fine_arr = np.full((num_times, len(master_fine_lats), len(master_fine_lons)), np.nan)
-coarse_arr = np.full((num_times, len(master_coarse_lats), len(master_coarse_lons)), np.nan)
+fine_arr = np.full((num_times, len(members), len(master_fine_lats), len(master_fine_lons)), np.nan)
+coarse_arr = np.full((num_times, len(members), len(master_coarse_lats), len(master_coarse_lons)), np.nan)
 
 
 # Load reference dataset
@@ -164,12 +166,10 @@ bilinear_losses = []
 # Iterate through each available domain
 for domain in tqdm(available_domains):
 
-    # Load checkpoint and evaluate the model if the checkpoint exists
-    checkpoint_path = f'{constants.checkpoints_dir}best/{domain}_model.pt'
-    if os.path.exists(checkpoint_path) and domain in [18, 19, 11, 12]:
+    if domain in [11, 12, 18, 19]:
+
 
         min_lat, max_lat, min_lon, max_lon = grid_domains[domain]
-
         # Crop reference dataset based on whether padding is applied
         if pad:
             cropped_reference_ds = reference_ds.sel(
@@ -181,39 +181,33 @@ for domain in tqdm(available_domains):
                 latitude=slice(min_lat, max_lat - 0.25),
                 longitude=slice(min_lon, max_lon - 0.25)
             )
-
         # Extract latitudes and longitudes from the cropped reference dataset
         cropped_lats = cropped_reference_ds.latitude.values
         cropped_lons = cropped_reference_ds.longitude.values
-
         # Interpolate the master dataset to match the reference dataset's grid
         coarse_ds = master_ds.interp(lat=cropped_lats, lon=cropped_lons)
 
-        print(f"Loading checkpoint: {checkpoint_path}")
-        checkpoint = torch.load(checkpoint_path)
 
-        # Calculate and print the percentage error reduction
-        percent_error_reduction = (1 - (np.sqrt(checkpoint['test_loss']) / np.sqrt(checkpoint['bilinear_loss']))) * 100
-        print(f'{domain}: {percent_error_reduction:.2f}%')
-        test_losses.append(checkpoint['test_loss'])
-        bilinear_losses.append(checkpoint['bilinear_loss'])
+        for member in members:
+            member_idx = members.index(member)
+            member_path = f'{constants.checkpoints_dir}{domain}/{member}_model.pt'
 
-        # Load model state and set to evaluation mode
-        model.load_state_dict(checkpoint['model_state_dict'])
-        model.eval()
+            checkpoint = torch.load(member_path)
 
-        # Process the coarse dataset with the model
-        tp = torch.tensor(coarse_ds.tp.values, dtype=torch.float32).to(constants.device)
+            model.load_state_dict(checkpoint['model_state_dict'])
+            model.eval()
 
-        batched_tp = torch.split(tp, constants.operational_batch_size, dim=0)
-        output = []
-        for tp_batch in batched_tp:
-            output.append(model(tp_batch).cpu().detach().numpy() * 0.0393701)
-        output = np.concatenate(output, axis=0)
+            # Process the coarse dataset with the model
+            tp = torch.tensor(coarse_ds.tp.values, dtype=torch.float32).to(constants.device)
 
-        fine_arr[:, fine_lat_idx:fine_lat_idx+fine_lat_step, fine_lon_idx:fine_lon_idx+fine_lon_step] = output
-        coarse_arr[:, coarse_lat_idx:coarse_lat_idx+coarse_lat_step, coarse_lon_idx:coarse_lon_idx+coarse_lon_step] = coarse_ds.tp.values[:, 1:-1, 1:-1] * 0.0393701
+            batched_tp = torch.split(tp, constants.operational_batch_size, dim=0)
+            output = []
+            for tp_batch in batched_tp:
+                output.append(model(tp_batch).cpu().detach().numpy() * 0.0393701)
+            output = np.concatenate(output, axis=0)
 
+            fine_arr[:, member_idx, fine_lat_idx:fine_lat_idx+fine_lat_step, fine_lon_idx:fine_lon_idx+fine_lon_step] = output
+            coarse_arr[:, member_idx, coarse_lat_idx:coarse_lat_idx+coarse_lat_step, coarse_lon_idx:coarse_lon_idx+coarse_lon_step] = coarse_ds.tp.values[:, 1:-1, 1:-1] * 0.0393701
 
     # Increment longitude indices for the next domain
     fine_lon_idx += fine_lon_step
@@ -226,9 +220,15 @@ for domain in tqdm(available_domains):
         fine_lat_idx += fine_lat_step
         coarse_lat_idx += coarse_lat_step
 
+fine_arr = np.mean(fine_arr, axis=1)
+coarse_arr = np.mean(coarse_arr, axis=1)
 
 fine_arr_sum = np.sum(fine_arr, axis=0)
 coarse_arr_sum = np.sum(coarse_arr, axis=0)
+
+
+
+
 
 # Determine the extent based on non-NaN data
 non_nan_indices = np.where(~np.isnan(fine_arr_sum))
@@ -239,6 +239,65 @@ min_lat, max_lat = master_fine_lats[min_lat_idx], master_fine_lats[max_lat_idx]
 min_lon, max_lon = master_fine_lons[min_lon_idx], master_fine_lons[max_lon_idx]
 
 colormap, norm, bounds = weatherbell_precip_colormap()
+
+# Plot each time step with the calculated extent
+for i in tqdm(range(num_times)):
+    fig, ax = plt.subplots(figsize=(10, 10), subplot_kw={'projection': ccrs.PlateCarree()})
+    ax.coastlines()
+    ax.add_feature(cfeature.STATES.with_scale('10m'))
+    # ax.add_feature(USCOUNTIES.with_scale('5m'), edgecolor='black', alpha=0.75, linewidth=0.5)
+    ax.set_extent([min_lon, max_lon, min_lat, max_lat], crs=ccrs.PlateCarree())
+    cf = ax.pcolormesh(master_fine_lons, master_fine_lats, fine_arr[i], transform=ccrs.PlateCarree(), vmin=0, vmax=0.5)#, cmap=colormap, norm=norm)
+    # cf = ax.contourf(master_fine_lons, master_fine_lats, fine_arr[i], transform=ccrs.PlateCarree(), levels=bounds, cmap=colormap, norm=norm)
+    plt.colorbar(cf, ax=ax, orientation='horizontal', label='tp (in)', pad=0.02)
+    plt.subplots_adjust(top=0.9)
+    plt.suptitle(f'HARPNET Output {times[i]}', y=0.95)  # Increase the y parameter to move the title up
+    plt.savefig(f'{fig_dir}/{i}.png', bbox_inches='tight')
+    plt.close()
+
+# Plot the sum with the calculated extent
+fig, ax = plt.subplots(figsize=(10, 10), subplot_kw={'projection': ccrs.PlateCarree()})
+ax.coastlines()
+ax.add_feature(cfeature.STATES.with_scale('10m'))
+# ax.add_feature(USCOUNTIES.with_scale('5m'), edgecolor='black', alpha=0.75, linewidth=0.5)
+ax.set_extent([min_lon, max_lon, min_lat, max_lat], crs=ccrs.PlateCarree())
+cf = ax.pcolormesh(master_fine_lons, master_fine_lats, fine_arr_sum, transform=ccrs.PlateCarree())#, cmap=colormap, norm=norm)
+# cf = ax.contourf(master_fine_lons, master_fine_lats, fine_arr_sum, transform=ccrs.PlateCarree(), levels=bounds, cmap=colormap, norm=norm)
+plt.colorbar(cf, ax=ax, orientation='horizontal', label='tp (in)', pad=0.02)
+plt.subplots_adjust(top=0.9)
+plt.suptitle(f'HARPNET Summed Output: {times[0]}-{times[-1]}')
+plt.savefig(f'{fig_dir}/sum.png', bbox_inches='tight')
+plt.close()
+
+
+#now plot the fine and coarse sum arrays side by side
+fig, ax = plt.subplots(1, 2, figsize=(20, 10), subplot_kw={'projection': ccrs.PlateCarree()})
+ax[0].coastlines()
+ax[0].add_feature(cfeature.STATES.with_scale('10m'))
+# ax[0].add_feature(USCOUNTIES.with_scale('5m'), edgecolor='black', alpha=0.75, linewidth=0.5)
+ax[0].set_extent([min_lon, max_lon, min_lat, max_lat], crs=ccrs.PlateCarree())
+vmin = 0
+vmax = np.nanmax(fine_arr_sum)
+# cf = ax[0].pcolormesh(master_fine_lons, master_fine_lats, fine_arr_sum, transform=ccrs.PlateCarree())#, cmap=colormap, norm=norm)
+cf = ax[0].pcolormesh(master_fine_lons, master_fine_lats, fine_arr_sum, transform=ccrs.PlateCarree(), vmin=vmin, vmax=vmax)
+# cf = ax[0].contourf(master_fine_lons, master_fine_lats, fine_arr_sum, transform=ccrs.PlateCarree(), levels=bounds, cmap=colormap, norm=norm)
+plt.colorbar(cf, ax=ax[0], orientation='horizontal', label='tp (in)', pad=0.02)
+ax[0].set_title('Fine Sum')
+
+ax[1].coastlines()
+ax[1].add_feature(cfeature.STATES.with_scale('10m'))
+# ax[1].add_feature(USCOUNTIES.with_scale('5m'), edgecolor='black', alpha=0.75, linewidth=0.5)
+ax[1].set_extent([min_lon, max_lon, min_lat, max_lat], crs=ccrs.PlateCarree())
+# cf = ax[1].pcolormesh(master_coarse_lons, master_coarse_lats, coarse_arr_sum, transform=ccrs.PlateCarree())#, cmap=colormap, norm=norm)
+cf = ax[1].pcolormesh(master_coarse_lons, master_coarse_lats, coarse_arr_sum, transform=ccrs.PlateCarree(), vmin=vmin, vmax=vmax)
+# cf = ax[1].contourf(master_coarse_lons, master_coarse_lats, coarse_arr_sum, transform=ccrs.PlateCarree(), levels=bounds, cmap=colormap, norm=norm)
+plt.colorbar(cf, ax=ax[1], orientation='horizontal', label='tp (in)', pad=0.02)
+ax[1].set_title('Coarse Sum')
+
+plt.subplots_adjust(top=0.9)
+plt.suptitle(f'HARPNET Summed Output: {times[0]}-{times[-1]}')
+plt.savefig(f'{fig_dir}/sum_side_by_side.png', bbox_inches='tight')
+plt.close()
 
 
 ds = xr.Dataset(
@@ -263,59 +322,23 @@ coarse_ds = xr.Dataset(
     }
 )
 
-sum_ds = ds.sum(dim='time')
-sum_coarse_ds = coarse_ds.sum(dim='time')
-sum_ratio_ds = sum_coarse_ds.interp(lat=ds.lat, lon=ds.lon)
-sum_ratio_ds = sum_ds/sum_ratio_ds
-
-
-ratio_ds = coarse_ds.interp(lat=ds.lat, lon=ds.lon)
-ratio_ds['tp'] = ds['tp']/ratio_ds['tp']
-
-
-# Plot each time step with the calculated extent
-for i in tqdm(range(num_times)):
-    fig, ax = plt.subplots(figsize=(10, 10), subplot_kw={'projection': ccrs.PlateCarree()})
-    ax.coastlines()
-    ax.add_feature(cfeature.STATES.with_scale('10m'))
-    ax.set_extent(plot_extent, crs=ccrs.PlateCarree())
-    # ax.add_feature(USCOUNTIES.with_scale('5m'), edgecolor='gray')
-    cf = ax.pcolormesh(ratio_ds.lon, ratio_ds.lat, ratio_ds.tp[i], transform=ccrs.PlateCarree(), vmin=0, vmax=2, cmap='coolwarm')
-    plt.colorbar(cf, ax=ax, orientation='horizontal', label='tp (in)', pad=0.02)
-    plt.subplots_adjust(top=0.9)
-    plt.suptitle(f'HARPNET Output {times[i]}', y=0.95)  # Increase the y parameter to move the title up
-    plt.savefig(f'{fig_dir}/{i}.png', bbox_inches='tight')
-    plt.close()
-
-fig, ax = plt.subplots(figsize=(10, 10), subplot_kw={'projection': ccrs.PlateCarree()})
-ax.coastlines()
-ax.add_feature(cfeature.STATES.with_scale('10m'))
-ax.set_extent(plot_extent, crs=ccrs.PlateCarree())
-# ax.add_feature(USCOUNTIES.with_scale('5m'), edgecolor='gray')
-cf = ax.pcolormesh(sum_ratio_ds.lon, sum_ratio_ds.lat, sum_ratio_ds.tp, transform=ccrs.PlateCarree(), vmin=0, vmax=2, cmap='coolwarm')
-plt.colorbar(cf, ax=ax, orientation='horizontal', label='tp (in)', pad=0.02)
-plt.subplots_adjust(top=0.9)
-plt.suptitle(f'HARPNET Summed Output: {times[0]}-{times[-1]}')
-plt.savefig(f'{fig_dir}/sum.png', bbox_inches='tight')
-plt.close()
-
 # ds cumsum
 ds['tp'] = ds.tp.cumsum(dim='time')
 coarse_ds['tp'] = coarse_ds.tp.cumsum(dim='time')
 coarse_ds = coarse_ds.interp(lat=ds.lat, lon=ds.lon)
 
 points = {
-    'Indian Peaks': (40.10171, -105.61226),
+    'Snowmass (Top)': (39.16288, -106.96418),
+    'Snowmass (Bottom)': (39.21004, -106.94727),
 }
 
 # plot the cumulative precipitation at each point from ds as a time series
 fig, ax = plt.subplots(figsize=(10, 5))
-plt.axhline(y=1, color='black', linestyle='--')
 for point in points:
-    ratio_ds.tp.sel(lat=points[point][0], lon=points[point][1], method='nearest').plot(ax=ax, label=point)
+    ds.tp.sel(lat=points[point][0], lon=points[point][1], method='nearest').plot(ax=ax, label=point)
 ax.set_xlabel('Time')
-ax.set_ylabel('Downscale Ratio')
-ax.set_title('Downscale Ratios at Various Points')
+ax.set_ylabel('tp (in)')
+ax.set_title('Cumulative Precipitation at Various Points')
 ax.legend()
 plt.savefig(f'{fig_dir}/points_cumsum.png', bbox_inches='tight')
 plt.close()

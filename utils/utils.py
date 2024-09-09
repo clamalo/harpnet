@@ -221,6 +221,20 @@ def create_dataloader(input_file_paths, target_file_paths, batch_size=constants.
     return dataset, dataloader
 
 
+def create_dataset(input_file_paths, target_file_paths, batch_size=constants.training_batch_size, shuffle=True):
+    def load_files_in_batches(file_paths, batch_size=32):
+        arrays = []
+        for i in tqdm(range(0, len(file_paths), batch_size)):
+            batch_paths = file_paths[i:i + batch_size]
+            batch_arrays = [np.load(fp, mmap_mode='r') for fp in batch_paths]
+            arrays.append(np.concatenate(batch_arrays, axis=0))
+        return np.concatenate(arrays, axis=0)
+    input_arr = load_files_in_batches(input_file_paths, batch_size=batch_size)
+    target_arr = load_files_in_batches(target_file_paths, batch_size=batch_size)
+    dataset = MemMapDataset(input_arr, target_arr)
+    return dataset
+
+
 def train(domain, model, dataloader, criterion, optimizer, device, pad=False, plot=False):
     model.train()
     losses = []
