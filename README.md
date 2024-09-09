@@ -53,6 +53,7 @@ HARPNET was trained to be able to have an ensemble component, as well (HARPNET-E
 FUTURE WORK: train ensemble via:
 - Perturbing the CONUS404 data with noise, then re-coarsening, training unique members on noised data
 - Bagging: train models on subsets of the data
+   - Aggregate at the parameter-level by combining weights rather than aggregating the outputs...
 
 ## Future Work
 - Additional batches of trained patches staggered by 50% latitude/longitude, outputs are blended among the overlapping patches to almost eliminate edge-to-edge discontinuity
