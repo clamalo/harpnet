@@ -50,6 +50,8 @@ After each epoch, the model and optimizer states were saved as checkpoints.
 ## HARPNET Ensemble
 HARPNET was trained to be able to have an ensemble component, as well (HARPNET-E). By treating each epoch checkpoint state dictionary as a different member, HARPNET-E accounts for uncertainty in the downscaling process and can create an ensemble of solutions from a single deterministic input. Some members are more skillful than others, but the ensemble mean has proven to be more skillful than any given individual member across a large enough sample size of events ***(need to test)***.
 
+FUTURE WORK: train ensemble by perturbing the input/output data, training unique members.
+
 ## Future Work
 - Additional batches of trained patches staggered by 50% latitude/longitude, outputs are blended among the overlapping patches to almost eliminate edge-to-edge discontinuity
 - Train using ERA5 precip input... maybe ERA5 -(WRF)> CONUS404 -(coarsen)> != ERA5, so much so that the model only learns how to predict high-res using coarsened high-res?
