@@ -271,6 +271,11 @@ def train(domain, model, dataloader, criterion, optimizer, device, pad=False, pl
             plt.close()
             plotted += 1
 
+    #clear memory
+    del inputs
+    del targets
+    del outputs
+
     return np.mean(losses)
 
 
@@ -320,6 +325,85 @@ def test(domain, model, dataloader, criterion, device, pad=False, plot=True):
             plotted += 1
 
     return np.mean(losses), np.mean(bilinear_losses)
+
+
+
+from torch.func import stack_module_state, functional_call, vmap
+import copy
+def test_ens(domain, models, dataloader, criterion, device, pad=False, plot=True):
+    losses = []
+    bilinear_losses = []
+
+    if plot:
+        lats, lons, input_lats, input_lons = get_lats_lons(domain, pad)
+        random_10 = np.random.choice(range(len(dataloader)), 10, replace=False)
+        plotted = 0
+        
+    for model in models:
+        model.eval()
+
+    # Stack the parameters and buffers of the models
+    params, buffers = stack_module_state(models)
+    
+    # Create a "stateless" base model
+    base_model = copy.deepcopy(models[0])
+    base_model = base_model.to('meta')  # Meta makes it stateless
+
+    # Define the forward function to be used with vmap
+    def fmodel(params, buffers, x):
+        return functional_call(base_model, (params, buffers), (x,))
+
+    for i, (inputs, targets) in tqdm(enumerate(dataloader), total=len(dataloader)):
+        inputs, targets = inputs.to(device), targets.to(device)
+        
+        # Expand the inputs to match the number of models
+        inputs_expanded = inputs.unsqueeze(0).expand(len(models), *inputs.shape)
+        
+        # Use vmap to vectorize the forward pass
+        outputs_vmap = vmap(fmodel)(params, buffers, inputs_expanded)
+
+        # Calculate the mean across models
+        outputs = torch.nanmean(outputs_vmap, axis=0)
+        
+        print(outputs.shape, targets.shape)
+
+        # Compute the loss
+        loss = criterion(outputs, targets)
+        
+        del params
+        
+        cropped_inputs = inputs[:, 1:-1, 1:-1]
+        interpolated_inputs = torch.nn.functional.interpolate(cropped_inputs.unsqueeze(1), size=(64, 64), mode='bilinear').squeeze(1)
+        
+        bilinear_loss = criterion(interpolated_inputs, targets)
+
+        losses.append(loss.item())
+        bilinear_losses.append(bilinear_loss.item())
+
+        if plot and i in random_10:
+            fig, axs = plt.subplots(1, 4, figsize=(16, 4), subplot_kw={'projection': cartopy.crs.PlateCarree()})
+            axs[0].pcolormesh(input_lons, input_lats, inputs[0].cpu().numpy(), transform=cartopy.crs.PlateCarree(), vmin=0, vmax=10)
+            axs[1].pcolormesh(lons, lats, interpolated_inputs[0].cpu().numpy(), transform=cartopy.crs.PlateCarree(), vmin=0, vmax=10)
+            axs[2].pcolormesh(lons, lats, outputs[0].cpu().detach().numpy(), transform=cartopy.crs.PlateCarree(), vmin=0, vmax=10)
+            axs[3].pcolormesh(lons, lats, targets[0].cpu().numpy(), transform=cartopy.crs.PlateCarree(), vmin=0, vmax=10)
+            for ax in axs:
+                ax.coastlines()
+                ax.add_feature(USCOUNTIES.with_scale('5m'), edgecolor='gray')
+            box = patches.Rectangle((lons[0], lats[0]), lons[-1] - lons[0], lats[-1] - lats[0],
+                                    linewidth=1, edgecolor='r', facecolor='none')
+            axs[0].add_patch(box)
+            axs[0].set_title('Input')
+            axs[1].set_title('Bilinear')
+            axs[2].set_title('HARPNET Output')
+            axs[3].set_title('Target')
+            plt.suptitle(f'Loss: {criterion(outputs[0], targets[0]).item():.3f}')
+            plt.savefig(f'{constants.figures_dir}test/{plotted}.png')
+            plt.close()
+            plotted += 1
+
+    return np.mean(losses), np.mean(bilinear_losses)
+
+
 
 
 def sort_epochs(patches=None):

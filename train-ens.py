@@ -23,12 +23,13 @@ domains = [17]
 
 setup()
 for domain in domains:
-    LOAD = True
+    LOAD = False
     first_month = (1979, 10)
     last_month = (1980, 9)
     train_test = 0.2
     continue_epoch = False
-    max_epoch = 1
+    max_epoch = 10
+    num_members = 5
     pad = True
 
 
@@ -49,10 +50,9 @@ for domain in domains:
         dataloader = DataLoader(dataset, batch_size=batch_size, sampler=sampler)
         return dataloader
     
-    train_dataloaders = [create_bagging_dataloader(train_dataset, constants.training_batch_size, int(len(train_dataset)*0.5)) for _ in range(3)]
+    train_dataloaders = [create_bagging_dataloader(train_dataset, constants.training_batch_size, int(len(train_dataset)*0.5)) for _ in range(num_members)]
 
-
-    models = [UNetWithAttention(1, 1, output_shape=(64,64)).to(constants.device) for _ in range(3)]
+    models = [UNetWithAttention(1, 1, output_shape=(64,64)).to(constants.device) for _ in range(num_members)]
     print(f'Number of parameters: {sum(p.numel() for p in models[0].parameters())}')
     optimizers = [torch.optim.Adam(model.parameters(), lr=1e-4) for model in models]
     criterion = nn.MSELoss()
@@ -62,13 +62,41 @@ for domain in domains:
         for model, optimizer, train_dataloader in zip(models, optimizers, train_dataloaders):
             train_loss = train(domain, model, train_dataloader, criterion, optimizer, constants.device, pad=pad, plot=False)
 
-        model = models[0]  # Initialize with the first model
-        for model_i in models[1:]:
-            for param, param_i in zip(model.parameters(), model_i.parameters()):
-                param.data += param_i.data  # Sum parameters
-        for param in model.parameters():
-            param.data /= len(models)  # Average parameters
+            #clear memory
+            torch.cuda.empty_cache()
+            del model
+            del optimizer
+            del train_dataloader
+            import gc
+            gc.collect()
 
+        model = models[0]
+        
+        
+        
+        model_state_dicts = [model.state_dict() for model in models]
+        from collections import OrderedDict
+        def average_state_dicts(state_dicts):
+            # Initialize an empty OrderedDict to hold the averaged state_dict
+            avg_state_dict = OrderedDict()
+            # Get the keys from the first state_dict
+            keys = state_dicts[0].keys()
+            # Initialize the avg_state_dict with zeros
+            for key in keys:
+                avg_state_dict[key] = state_dicts[0][key].clone().zero_()
+            # Sum the values from each state_dict
+            for state_dict in state_dicts:
+                for key in keys:
+                    avg_state_dict[key] += state_dict[key]
+            # Divide by the number of state_dicts to get the average
+            for key in avg_state_dict:
+                avg_state_dict[key] /= len(state_dicts)
+            return avg_state_dict
+        model_state_dict = average_state_dicts(model_state_dicts)
+        model.load_state_dict(model_state_dict)
+        model.eval()
+        
+        
 
-        test_loss, bilinear_loss = test(domain, model, test_dataloader, criterion, constants.device, pad=pad, plot=True)
+        test_loss, bilinear_loss = test_ens(domain, models, test_dataloader, criterion, constants.device, pad=pad, plot=False)
         print(f'Epoch {epoch} - Test Loss: {test_loss} - Bilinear Loss: {bilinear_loss}')

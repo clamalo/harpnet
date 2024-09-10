@@ -58,7 +58,8 @@ class UNetWithAttention(nn.Module):
 
         self.pool = nn.MaxPool2d(kernel_size=2, stride=2)
 
-        self.bridge = ResConvBlock(1024, 2048, (2,2))
+        # self.bridge = ResConvBlock(1024, 2048, (2,2))
+        self.bridge = ResConvBlock(512, 1024, (4,4))
 
         self.attn_block5 = AttentionBlock(1024, 2048)
         self.attn_block4 = AttentionBlock(512, 1024)
@@ -94,17 +95,20 @@ class UNetWithAttention(nn.Module):
         enc2 = self.enc2(self.pool(enc1))
         enc3 = self.enc3(self.pool(enc2))
         enc4 = self.enc4(self.pool(enc3))
-        enc5 = self.enc5(self.pool(enc4))
+        # enc5 = self.enc5(self.pool(enc4))
 
-        bridge = self.bridge(self.pool(enc5))
+        # bridge = self.bridge(self.pool(enc5))
+        bridge = self.bridge(self.pool(enc4))
         
-        gating5 = self.attn_block5(enc5, bridge)
-        up5 = self.upconv5(bridge)
-        up5 = torch.cat([up5, gating5], dim=1)
-        dec5 = self.dec5(up5)
+        # gating5 = self.attn_block5(enc5, bridge)
+        # up5 = self.upconv5(bridge)
+        # up5 = torch.cat([up5, gating5], dim=1)
+        # dec5 = self.dec5(up5)
 
-        gating4 = self.attn_block4(enc4, dec5)
-        up4 = self.upconv4(dec5)
+        # gating4 = self.attn_block4(enc4, dec5)
+        # up4 = self.upconv4(dec5)
+        gating4 = self.attn_block4(enc4, bridge)
+        up4 = self.upconv4(bridge)
         up4 = torch.cat([up4, gating4], dim=1)
         dec4 = self.dec4(up4)
 
