@@ -58,7 +58,92 @@ class UNetWithAttention(nn.Module):
 
         self.pool = nn.MaxPool2d(kernel_size=2, stride=2)
 
-        # self.bridge = ResConvBlock(1024, 2048, (2,2))
+        self.bridge = ResConvBlock(1024, 2048, (2,2))
+
+        self.attn_block5 = AttentionBlock(1024, 2048)
+        self.attn_block4 = AttentionBlock(512, 1024)
+        self.attn_block3 = AttentionBlock(256, 512)
+        self.attn_block2 = AttentionBlock(128, 256)
+        self.attn_block1 = AttentionBlock(64, 128)
+
+        self.upconv5 = nn.ConvTranspose2d(2048, 1024, kernel_size=2, stride=2)
+        self.upconv4 = nn.ConvTranspose2d(1024, 512, kernel_size=2, stride=2)
+        self.upconv3 = nn.ConvTranspose2d(512, 256, kernel_size=2, stride=2)
+        self.upconv2 = nn.ConvTranspose2d(256, 128, kernel_size=2, stride=2)
+        self.upconv1 = nn.ConvTranspose2d(128, 64, kernel_size=2, stride=2)
+        
+        self.dec5 = ResConvBlock(2048, 1024, (4,4), dropout_rate=0.5)
+        self.dec4 = ResConvBlock(1024, 512, (8,8), dropout_rate=0.5)
+        self.dec3 = ResConvBlock(512, 256, (16,16), dropout_rate=0.3)
+        self.dec2 = ResConvBlock(256, 128, (32,32), dropout_rate=0.3)
+        self.dec1 = ResConvBlock(128, 64, (64,64), dropout_rate=0.1)
+
+        self.final_conv = nn.Conv2d(64, out_channels, kernel_size=1)
+
+        self.output_shape = output_shape
+
+    def forward(self, x):#, elevation):
+
+        if len(x.shape) == 3:
+            x = x.unsqueeze(1)
+
+        output_shape = self.output_shape
+        interpolated_x = nn.functional.interpolate(x, size=output_shape, mode='nearest')#, align_corners=True)
+
+        enc1 = self.enc1(interpolated_x)
+        enc2 = self.enc2(self.pool(enc1))
+        enc3 = self.enc3(self.pool(enc2))
+        enc4 = self.enc4(self.pool(enc3))
+        enc5 = self.enc5(self.pool(enc4))
+
+        bridge = self.bridge(self.pool(enc5))
+        
+        gating5 = self.attn_block5(enc5, bridge)
+        up5 = self.upconv5(bridge)
+        up5 = torch.cat([up5, gating5], dim=1)
+        dec5 = self.dec5(up5)
+
+        gating4 = self.attn_block4(enc4, dec5)
+        up4 = self.upconv4(dec5)
+        up4 = torch.cat([up4, gating4], dim=1)
+        dec4 = self.dec4(up4)
+
+        gating3 = self.attn_block3(enc3, dec4)
+        up3 = self.upconv3(dec4)
+        up3 = torch.cat([up3, gating3], dim=1)
+        dec3 = self.dec3(up3)
+
+        gating2 = self.attn_block2(enc2, dec3)
+        up2 = self.upconv2(dec3)
+        up2 = torch.cat([up2, gating2], dim=1)
+        dec2 = self.dec2(up2)
+
+        gating1 = self.attn_block1(enc1, dec2)
+        up1 = self.upconv1(dec2)
+        up1 = torch.cat([up1, gating1], dim=1)
+        dec1 = self.dec1(up1)
+
+        final = self.final_conv(dec1)
+        
+        final = torch.clamp(final, min=0)
+
+        return final.squeeze(1)
+    
+
+
+
+class UNetWithAttentionMini(nn.Module):
+    def __init__(self, in_channels, out_channels, output_shape=(64, 64)):
+        super(UNetWithAttentionMini, self).__init__()
+
+        self.enc1 = ResConvBlock(in_channels, 64, (64,64))
+        self.enc2 = ResConvBlock(64, 128, (32,32))
+        self.enc3 = ResConvBlock(128, 256, (16,16))
+        self.enc4 = ResConvBlock(256, 512, (8,8))
+        self.enc5 = ResConvBlock(512, 1024, (4,4))
+
+        self.pool = nn.MaxPool2d(kernel_size=2, stride=2)
+
         self.bridge = ResConvBlock(512, 1024, (4,4))
 
         self.attn_block5 = AttentionBlock(1024, 2048)
@@ -95,18 +180,9 @@ class UNetWithAttention(nn.Module):
         enc2 = self.enc2(self.pool(enc1))
         enc3 = self.enc3(self.pool(enc2))
         enc4 = self.enc4(self.pool(enc3))
-        # enc5 = self.enc5(self.pool(enc4))
 
-        # bridge = self.bridge(self.pool(enc5))
         bridge = self.bridge(self.pool(enc4))
-        
-        # gating5 = self.attn_block5(enc5, bridge)
-        # up5 = self.upconv5(bridge)
-        # up5 = torch.cat([up5, gating5], dim=1)
-        # dec5 = self.dec5(up5)
 
-        # gating4 = self.attn_block4(enc4, dec5)
-        # up4 = self.upconv4(dec5)
         gating4 = self.attn_block4(enc4, bridge)
         up4 = self.upconv4(bridge)
         up4 = torch.cat([up4, gating4], dim=1)

@@ -221,19 +221,6 @@ def create_dataloader(input_file_paths, target_file_paths, batch_size=constants.
     return dataset, dataloader
 
 
-def create_dataset(input_file_paths, target_file_paths, batch_size=constants.training_batch_size, shuffle=True):
-    def load_files_in_batches(file_paths, batch_size=32):
-        arrays = []
-        for i in tqdm(range(0, len(file_paths), batch_size)):
-            batch_paths = file_paths[i:i + batch_size]
-            batch_arrays = [np.load(fp, mmap_mode='r') for fp in batch_paths]
-            arrays.append(np.concatenate(batch_arrays, axis=0))
-        return np.concatenate(arrays, axis=0)
-    input_arr = load_files_in_batches(input_file_paths, batch_size=batch_size)
-    target_arr = load_files_in_batches(target_file_paths, batch_size=batch_size)
-    dataset = MemMapDataset(input_arr, target_arr)
-    return dataset
-
 
 def train(domain, model, dataloader, criterion, optimizer, device, pad=False, plot=False):
     model.train()
@@ -271,12 +258,8 @@ def train(domain, model, dataloader, criterion, optimizer, device, pad=False, pl
             plt.close()
             plotted += 1
 
-    #clear memory
-    del inputs
-    del targets
-    del outputs
-
     return np.mean(losses)
+
 
 
 def test(domain, model, dataloader, criterion, device, pad=False, plot=True):
@@ -325,84 +308,6 @@ def test(domain, model, dataloader, criterion, device, pad=False, plot=True):
             plotted += 1
 
     return np.mean(losses), np.mean(bilinear_losses)
-
-
-
-from torch.func import stack_module_state, functional_call, vmap
-import copy
-def test_ens(domain, models, dataloader, criterion, device, pad=False, plot=True):
-    losses = []
-    bilinear_losses = []
-
-    if plot:
-        lats, lons, input_lats, input_lons = get_lats_lons(domain, pad)
-        random_10 = np.random.choice(range(len(dataloader)), 10, replace=False)
-        plotted = 0
-        
-    for model in models:
-        model.eval()
-
-    # Stack the parameters and buffers of the models
-    params, buffers = stack_module_state(models)
-    
-    # Create a "stateless" base model
-    base_model = copy.deepcopy(models[0])
-    base_model = base_model.to('meta')  # Meta makes it stateless
-
-    # Define the forward function to be used with vmap
-    def fmodel(params, buffers, x):
-        return functional_call(base_model, (params, buffers), (x,))
-
-    for i, (inputs, targets) in tqdm(enumerate(dataloader), total=len(dataloader)):
-        inputs, targets = inputs.to(device), targets.to(device)
-        
-        # Expand the inputs to match the number of models
-        inputs_expanded = inputs.unsqueeze(0).expand(len(models), *inputs.shape)
-        
-        # Use vmap to vectorize the forward pass
-        outputs_vmap = vmap(fmodel)(params, buffers, inputs_expanded)
-
-        # Calculate the mean across models
-        outputs = torch.nanmean(outputs_vmap, axis=0)
-        
-        print(outputs.shape, targets.shape)
-
-        # Compute the loss
-        loss = criterion(outputs, targets)
-        
-        del params
-        
-        cropped_inputs = inputs[:, 1:-1, 1:-1]
-        interpolated_inputs = torch.nn.functional.interpolate(cropped_inputs.unsqueeze(1), size=(64, 64), mode='bilinear').squeeze(1)
-        
-        bilinear_loss = criterion(interpolated_inputs, targets)
-
-        losses.append(loss.item())
-        bilinear_losses.append(bilinear_loss.item())
-
-        if plot and i in random_10:
-            fig, axs = plt.subplots(1, 4, figsize=(16, 4), subplot_kw={'projection': cartopy.crs.PlateCarree()})
-            axs[0].pcolormesh(input_lons, input_lats, inputs[0].cpu().numpy(), transform=cartopy.crs.PlateCarree(), vmin=0, vmax=10)
-            axs[1].pcolormesh(lons, lats, interpolated_inputs[0].cpu().numpy(), transform=cartopy.crs.PlateCarree(), vmin=0, vmax=10)
-            axs[2].pcolormesh(lons, lats, outputs[0].cpu().detach().numpy(), transform=cartopy.crs.PlateCarree(), vmin=0, vmax=10)
-            axs[3].pcolormesh(lons, lats, targets[0].cpu().numpy(), transform=cartopy.crs.PlateCarree(), vmin=0, vmax=10)
-            for ax in axs:
-                ax.coastlines()
-                ax.add_feature(USCOUNTIES.with_scale('5m'), edgecolor='gray')
-            box = patches.Rectangle((lons[0], lats[0]), lons[-1] - lons[0], lats[-1] - lats[0],
-                                    linewidth=1, edgecolor='r', facecolor='none')
-            axs[0].add_patch(box)
-            axs[0].set_title('Input')
-            axs[1].set_title('Bilinear')
-            axs[2].set_title('HARPNET Output')
-            axs[3].set_title('Target')
-            plt.suptitle(f'Loss: {criterion(outputs[0], targets[0]).item():.3f}')
-            plt.savefig(f'{constants.figures_dir}test/{plotted}.png')
-            plt.close()
-            plotted += 1
-
-    return np.mean(losses), np.mean(bilinear_losses)
-
 
 
 
