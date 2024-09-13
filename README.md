@@ -66,3 +66,15 @@ FUTURE WORK: train ensemble via:
 - Native models trained for each model resolution (ICON, GDPS, Sflux, etc)
 - Train with other variable inputs (Pressure levels of U/V, Temp, GH, as well as PWAT, CAPE, TEMP)
 - Custom loss to encourage even better patch-to-patch continuity
+
+## Future Work (Ranked)
+- Train with other variable inputs (Pressure levels of U/V, Temp, GH, as well as PWAT, CAPE, TEMP)
+- Train different models for each season
+- Employing generative adversarial networks to generate even more realistic downscaled forecasts
+- Additional batches of trained patches staggered by 50% latitude/longitude, outputs are blended among the overlapping patches to almost eliminate edge-to-edge discontinuity
+- Custom loss to encourage even better patch-to-patch continuity
+- Train using ERA5 precip input... maybe ERA5 -(WRF)> CONUS404 -(coarsen)> != ERA5, so much so that the model only learns how to predict high-res using coarsened high-res?
+- Native models trained for each model resolution (ICON, GDPS, Sflux, etc)
+- Use entire training set... 3-hourly chunks every hour instead of every 3 hours
+- Mixed training dataset to allow the model to predict hourly, 3-hourly, and 6-hourly data
+- Upgrading from 0.0625 degree resolution to 0.03125 degree resolution
