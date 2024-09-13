@@ -28,19 +28,17 @@ for domain in domains:
     last_month = (1980, 9)
     train_test = 0.2
     continue_epoch = False
-    max_epoch = 5
-    num_members = 1
+    max_epoch = 30
+    num_members = 5
     pad = True
 
 
     if LOAD:
         setup(domain)
-        quit()
         create_grid_domains()
         xr_to_np(domain, first_month, last_month, pad=pad)
 
     train_input_file_paths, train_target_file_paths, test_input_file_paths, test_target_file_paths = create_paths(domain, first_month, last_month, train_test)
-
 
     class MemMapDataset(Dataset):
         def __init__(self, data, labels):
@@ -98,19 +96,22 @@ for domain in domains:
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
     criterion = nn.MSELoss()
 
+    member_seeds = [42, 43, 44, 45, 46, 47, 48, 49, 50, 51]
 
     for epoch in range(continue_epoch or 0, max_epoch):
         for member_idx in range(num_members):
+            
+            member_seed = member_seeds[member_idx]
 
             train_dataloader = train_dataloaders[member_idx]
 
-            if epoch == 0:
-                print('New model')
-                model = UNetWithAttentionMini(1, 1, output_shape=(64,64)).to(constants.device)
-                optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
-            else:
-                model = UNetWithAttentionMini(1, 1, output_shape=(64,64)).to(constants.device)
-                optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
+            #random seed
+            torch.manual_seed(member_seed)
+            model = UNetWithAttentionMini(1, 1, output_shape=(64,64)).to(constants.device)
+            optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
+            torch.manual_seed(42)
+
+            if epoch != 0:
                 checkpoint = torch.load(f'{constants.checkpoints_dir}ens_{domain}_{member_idx}.pt')
                 model.load_state_dict(checkpoint['model_state_dict'])
                 optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
@@ -179,7 +180,8 @@ for domain in domains:
 
             if plot:
                 lats, lons, input_lats, input_lons = get_lats_lons(domain, pad)
-                random_10 = np.random.choice(range(len(dataloader)), 10, replace=False)
+                num_to_plot = min(len(dataloader), 10)
+                random_10 = np.random.choice(range(len(dataloader)), num_to_plot, replace=False)
                 plotted = 0
 
             for i, (inputs, targets) in tqdm(enumerate(dataloader), total=len(dataloader)):
@@ -233,7 +235,7 @@ for domain in domains:
             models[m].load_state_dict(checkpoint['model_state_dict'])
             models[m].eval()
 
-        test_loss, bilinear_loss = test_ens(domain, models, test_dataloader, criterion, constants.device, pad=pad, plot=True)
+        test_loss, bilinear_loss = test_ens(domain, models, test_dataloader, criterion, constants.device, pad=pad, plot=False)
         print(f'Epoch {epoch} - Test Loss: {test_loss} - Bilinear Loss: {bilinear_loss}')
 
         del models
