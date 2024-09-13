@@ -18,7 +18,7 @@ from utils.utils import *
 import utils.constants as constants
 
 
-domains = [17]
+domains = [2]
 
 
 setup()
@@ -29,7 +29,7 @@ for domain in domains:
     train_test = 0.2
     continue_epoch = False
     max_epoch = 5
-    num_members = 1
+    num_members = 3
     pad = True
 
 
@@ -91,7 +91,7 @@ for domain in domains:
         dataloader = DataLoader(dataset, batch_size=batch_size, sampler=sampler)
         return dataloader
     
-    train_dataloaders = [create_bagging_dataloader(train_dataset, constants.training_batch_size, int(len(train_dataset)*0.99999)) for _ in range(num_members)]
+    train_dataloaders = [create_bagging_dataloader(train_dataset, constants.training_batch_size, int(len(train_dataset)*0.3333)) for _ in range(num_members)]
 
     model = UNetWithAttentionMini(1, 1, output_shape=(64,64)).to(constants.device)
     print(f'Number of parameters: {sum(p.numel() for p in model.parameters())}')
