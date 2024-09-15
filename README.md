@@ -40,10 +40,10 @@ HARPNET is trained to predict 64x64 target grid patches. Training smaller patch 
 
 ## Training
 HARPNET was trained on a 2023 M2 Max MacBook Pro. The following hyperparameters were used for each patch:
-- Optimizer: Adam
-- Learning rate: 1e-4
-- Batch size: 32
-- Epochs: 20
+- **Optimizer:** Adam
+- **Learning rate:** 1e-4
+- **Batch size:** 32
+- **Epochs:** 20
 
 After each epoch, the model and optimizer states were saved as checkpoints.
 
