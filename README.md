@@ -1,5 +1,4 @@
 # HARPNET - High-Resolution Attention Res-UNet Precipitation Network
-### Next-Generation Machine Learning Precipitation Downscaling System
 
 ## The problem
 Many weather model grids are too coarse to resolve fine terrain influences, such as topography or even land/water borders, which has profound implications for the precipitation values within that grid. While a perfect model at that resolution would predict the correct mean for all the points within that grid, the actual values at higher resolution would vary from that mean significantly. The goal of downscaling is to accurately go from coarse, low-resolution grids to high-resolution grids that can accurately resolve these terrain influences.
