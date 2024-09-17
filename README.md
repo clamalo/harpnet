@@ -56,6 +56,7 @@ FUTURE WORK: train ensemble via:
 
 ## Future Work
 - Train with other variable inputs (Pressure levels of U/V, Temp, GH, as well as PWAT, CAPE, TEMP)
+    - Evaluate most important input features by feeding noise for certain inputs and seeing the impact on accuracy
 - Train different models for each season
 - Employing generative adversarial networks to generate even more realistic downscaled forecasts
 - Additional batches of trained patches staggered by 50% latitude/longitude, outputs are blended among the overlapping patches to almost eliminate edge-to-edge discontinuity
