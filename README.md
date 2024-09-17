@@ -55,6 +55,7 @@ FUTURE WORK: train ensemble via:
    - Aggregate at the parameter-level by combining weights rather than aggregating the outputs...
 
 ## Future Work
+- Train ECMWF/GFS specific model weights
 - Train with other variable inputs (Pressure levels of U/V, Temp, GH, as well as PWAT, CAPE, TEMP)
     - Evaluate most important input features by feeding noise for certain inputs and seeing the impact on accuracy
 - Physical preservation of grid precipitation totals
