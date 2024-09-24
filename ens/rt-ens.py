@@ -37,9 +37,9 @@ pad = True
 realtime = True
 rt_model = 'gfs'
 ingest = False
-datestr, cycle = '20231202', '00'
-frames = range(3, 241, 3)
-members = [18,19]
+datestr, cycle = '20240919', '00'
+frames = range(3, 121, 3)
+members = [16,17,18,19]
 # sort_epochs([0])
 
 
@@ -167,7 +167,6 @@ bilinear_losses = []
 for domain in tqdm(available_domains):
 
     if domain in [11, 12, 18, 19]:
-
 
         min_lat, max_lat, min_lon, max_lon = grid_domains[domain]
         # Crop reference dataset based on whether padding is applied

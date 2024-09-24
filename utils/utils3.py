@@ -189,6 +189,7 @@ def create_paths(domain, first_month, last_month, train_test):
 
     elif type(train_test) == float:
         indices = list(range(len(input_file_paths)))
+        random.seed(42)
         random.shuffle(indices)
         train_indices = indices[int(len(indices) * train_test):]
         test_indices = indices[:int(len(indices) * train_test)]
@@ -209,6 +210,16 @@ class MemMapDataset(Dataset):
     def __getitem__(self, idx):
         return self.data[idx], self.labels[idx]
     
+class MemMapDataset(Dataset):
+    def __init__(self, inputs, targets, times):
+        self.inputs = inputs
+        self.targets = targets
+        self.times = times
+    def __len__(self):
+        return self.inputs.shape[0]
+    def __getitem__(self, idx):
+        return self.inputs[idx], self.targets[idx], self.times[idx]
+    
 
 def create_dataloader(input_file_paths, target_file_paths, batch_size=constants.training_batch_size, shuffle=True):
     def load_files_in_batches(file_paths, batch_size=32):
@@ -221,6 +232,7 @@ def create_dataloader(input_file_paths, target_file_paths, batch_size=constants.
     input_arr = load_files_in_batches(input_file_paths, batch_size=batch_size)
     target_arr = load_files_in_batches(target_file_paths, batch_size=batch_size)
     dataset = MemMapDataset(input_arr, target_arr)
+    torch.random.manual_seed(42)
     dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=shuffle)
     return dataset, dataloader
 
@@ -235,7 +247,7 @@ def train(domain, model, dataloader, criterion, optimizer, device, pad=False, pl
         random_10 = np.random.choice(range(len(dataloader)), 10, replace=False)
         plotted = 0
 
-    for i, (inputs, targets) in tqdm(enumerate(dataloader), total=len(dataloader)):
+    for i, (inputs, targets, times) in tqdm(enumerate(dataloader), total=len(dataloader)):
         inputs, targets = inputs.to(device), targets.to(device)
         optimizer.zero_grad()
         outputs = model(inputs)
@@ -276,7 +288,7 @@ def test(domain, model, dataloader, criterion, device, pad=False, plot=True):
         random_10 = np.random.choice(range(len(dataloader)), 10, replace=False)
         plotted = 0
 
-    for i, (inputs, targets) in tqdm(enumerate(dataloader), total=len(dataloader)):
+    for i, (inputs, targets, times) in tqdm(enumerate(dataloader), total=len(dataloader)):
         inputs, targets = inputs.to(device), targets.to(device)
         outputs = model(inputs)
 

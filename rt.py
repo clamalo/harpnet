@@ -35,14 +35,11 @@ import utils.constants as constants
 # Constants
 pad = True
 realtime = True
-rt_model = 'gfs'
-ingest = False
-datestr, cycle = '20231202', '00'
-frames = range(3, 241, 3)
+rt_model = 'ecmwf'
+ingest = True
+datestr, cycle = '20240918', '00'
+frames = range(3, 145, 3)
 # sort_epochs([0])
-
-
-
 
 setup()
 
@@ -169,7 +166,7 @@ for domain in tqdm(available_domains):
 
     # Load checkpoint and evaluate the model if the checkpoint exists
     checkpoint_path = f'{constants.checkpoints_dir}best/{domain}_model.pt'
-    if os.path.exists(checkpoint_path) and domain in [11, 12, 18, 19]:
+    if os.path.exists(checkpoint_path):
 
         min_lat, max_lat, min_lon, max_lon = grid_domains[domain]
 

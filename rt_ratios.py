@@ -32,14 +32,12 @@ pad = True
 realtime = True
 rt_model = 'gfs'
 ingest = False
-datestr, cycle = '20231202', '00'
+datestr, cycle = '20240917', '12'
 frames = range(3, 241, 3)
 # sort_epochs([0])
-plot_extent = [-109, -104, 37, 41]
+# plot_extent = [-109, -104, 37, 41]
 # plot_extent = [-125, -100, 30, 55]
-
-
-
+plot_extent = False
 
 setup()
 
@@ -166,7 +164,7 @@ for domain in tqdm(available_domains):
 
     # Load checkpoint and evaluate the model if the checkpoint exists
     checkpoint_path = f'{constants.checkpoints_dir}best/{domain}_model.pt'
-    if os.path.exists(checkpoint_path) and domain in [18, 19, 11, 12]:
+    if os.path.exists(checkpoint_path):
 
         min_lat, max_lat, min_lon, max_lon = grid_domains[domain]
 
@@ -278,7 +276,8 @@ for i in tqdm(range(num_times)):
     fig, ax = plt.subplots(figsize=(10, 10), subplot_kw={'projection': ccrs.PlateCarree()})
     ax.coastlines()
     ax.add_feature(cfeature.STATES.with_scale('10m'))
-    ax.set_extent(plot_extent, crs=ccrs.PlateCarree())
+    if plot_extent is not False:
+        ax.set_extent(plot_extent, crs=ccrs.PlateCarree())
     # ax.add_feature(USCOUNTIES.with_scale('5m'), edgecolor='gray')
     cf = ax.pcolormesh(ratio_ds.lon, ratio_ds.lat, ratio_ds.tp[i], transform=ccrs.PlateCarree(), vmin=0, vmax=2, cmap='coolwarm')
     plt.colorbar(cf, ax=ax, orientation='horizontal', label='tp (in)', pad=0.02)
@@ -290,7 +289,8 @@ for i in tqdm(range(num_times)):
 fig, ax = plt.subplots(figsize=(10, 10), subplot_kw={'projection': ccrs.PlateCarree()})
 ax.coastlines()
 ax.add_feature(cfeature.STATES.with_scale('10m'))
-ax.set_extent(plot_extent, crs=ccrs.PlateCarree())
+if plot_extent is not False:
+    ax.set_extent(plot_extent, crs=ccrs.PlateCarree())
 # ax.add_feature(USCOUNTIES.with_scale('5m'), edgecolor='gray')
 cf = ax.pcolormesh(sum_ratio_ds.lon, sum_ratio_ds.lat, sum_ratio_ds.tp, transform=ccrs.PlateCarree(), vmin=0, vmax=2, cmap='coolwarm')
 plt.colorbar(cf, ax=ax, orientation='horizontal', label='tp (in)', pad=0.02)

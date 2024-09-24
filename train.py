@@ -18,12 +18,13 @@ from utils.utils import *
 import utils.constants as constants
 
 
-domains = [2]
+domains = [0]
+domains = list(range(0, 49))
 
 
 setup()
 for domain in domains:
-    LOAD = False
+    LOAD = True
     first_month = (1979, 10)
     last_month = (1980, 9)
     train_test = 0.2
