@@ -57,6 +57,8 @@ FUTURE WORK: train "true" ensemble by training multiple members in parallel:
 ## Results
 Our tests show that HARPNET improves high-resolution precipitation forecasts when compared to traditional upsampling methods such as bilinear interpolation and statistical downscaling.
 
+The model seems to pick up on atmospheric features that are not explicitly fed to the model; it downscales precipitation differently depending on wind direction, storm/synoptic setup, etc.
+
 ## Future Work
 - Train ECMWF/GFS specific model weights
 - Train with other variable inputs (Pressure levels of U/V, Temp, GH, as well as PWAT, CAPE, TEMP)
