@@ -49,10 +49,13 @@ After each epoch, the model and optimizer states were saved as checkpoints.
 ## HARPNET Ensemble
 HARPNET was trained to be able to have an ensemble component, as well (HARPNET-E). By treating each epoch checkpoint state dictionary as a different member, HARPNET-E accounts for uncertainty in the downscaling process and can create an ensemble of solutions from a single deterministic input. Some members are more skillful than others, but the ensemble mean has proven to be more skillful than any given individual member across a large enough sample size of events ***(need to test)***.
 
-FUTURE WORK: train ensemble via:
+FUTURE WORK: train "true" ensemble by training multiple members in parallel:
 - Perturbing the CONUS404 data with noise, then re-coarsening, training unique members on noised data
-- Bagging: train models on subsets of the data
+- Bagging: train models on subsets of the data and with different initial seeds
    - Aggregate at the parameter-level by combining weights rather than aggregating the outputs...
+ 
+## Results
+Our tests show that HARPNET improves high-resolution precipitation forecasts when compared to traditional upsampling methods such as bilinear interpolation and statistical downscaling.
 
 ## Future Work
 - Train ECMWF/GFS specific model weights
