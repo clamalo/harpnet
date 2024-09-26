@@ -61,7 +61,7 @@ The model seems to pick up on atmospheric features that are not explicitly fed t
 - Run through a few test-cases displaying synoptic awareness (operational or in test data?)
 
 ## Future Work
-- Train ECMWF/GFS specific model weights
+- Train ECMWF/GFS specific model weights (CONUS404 for ECMWF, HRRR for GFS?)
 - Train with other variable inputs (Pressure levels of U/V, Temp, GH, as well as PWAT, CAPE, TEMP)
     - Evaluate most important input features by feeding noise for certain inputs and seeing the impact on accuracy
 - Physical preservation of grid precipitation totals
