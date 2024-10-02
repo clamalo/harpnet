@@ -3,6 +3,10 @@ from utils.model import UNetWithAttention
 
 import cartopy.crs as ccrs
 
+random.seed(42)
+np.random.seed(42)
+torch.manual_seed(42)
+
 # sort_epochs()
 
 domains = [24,15]
