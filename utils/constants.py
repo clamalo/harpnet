@@ -2,7 +2,7 @@
 base_dir = '/Volumes/T9/'
 nc_dir = f'{base_dir}monthly/'
 domains_dir = f'{base_dir}domains/'
-checkpoints_dir = f'{base_dir}checkpoints/'
+checkpoints_dir = f'{base_dir}val_checkpoints/'
 figures_dir = f'/Users/clamalo/documents/harpnet/figures/'
 
 # COMPUTING CONTROLS
