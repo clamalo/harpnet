@@ -86,7 +86,7 @@ PLOTS:
 - Employing generative adversarial networks to generate even more realistic downscaled forecasts
 - Additional batches of trained tiles staggered by 50% latitude/longitude, outputs are blended among the overlapping tiles to almost eliminate edge-to-edge discontinuity
 - Custom loss to encourage even better tile-to-tile continuity
-- Train using ERA5 precip input... maybe ERA5 -(WRF)> CONUS404 -(coarsen)> != ERA5, so much so that the model only learns how to predict high-res using coarsened high-res?
+- Train using ERA5 precip input... maybe ERA5 --(WRF)-> CONUS404 --(coarsen)-> != ERA5, so much so that the model only learns how to predict high-res using coarsened high-res?
 - Native models trained for each model resolution (ICON, GDPS, Sflux, etc)
 - Use entire training set... 3-hourly chunks every hour instead of every 3 hours
 - Mixed training dataset to allow the model to predict hourly, 3-hourly, and 6-hourly data
