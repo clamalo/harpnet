@@ -63,19 +63,19 @@ The model seems to pick up on atmospheric features that are not explicitly fed t
 - Run through a few test-cases displaying synoptic awareness (operational or in test data?)
 
 PLOTS:
-1.) Data workflow
-2.) Low-res vs CONUS404 climatology by month (side by side 4 panel plots)
-3.) Train/test loss curves
-4.) Model high resolution MSE/RMSE by grid point compared to CONUS404
-5.) Bilinear interpolation high resolution MSE/RMSE by grid point compared to CONUS404
-6.) Statistically downscaled high resolution MSE/RMSE by grid point compared to CONUS404
-NEW CHARTS: 
-- Model MSE reduction compared to bilinear interpolation
-- Model MSE reduction compared to statistical downscaling
-7.) Dynamic ratios depending on wind (WY2021-2022)
-8.) Convection vs orographic ratios (WY2021-2022)
-9.) Station data (orographic event in WY2021-2022)
-10.) Station-validated metrics table
+- 1.) Data workflow
+- 2.) Low-res vs CONUS404 climatology by month (side by side 4 panel plots)
+- 3.) Train/test loss curves
+- 4.) Model high resolution MSE/RMSE by grid point compared to CONUS404
+- 5.) Bilinear interpolation high resolution MSE/RMSE by grid point compared to CONUS404
+- 6.) Statistically downscaled high resolution MSE/RMSE by grid point compared to CONUS404
+- NEW CHARTS: 
+  - Model MSE reduction compared to bilinear interpolation
+  - Model MSE reduction compared to statistical downscaling
+- 7.) Dynamic ratios depending on wind (WY2021-2022)
+- 8.) Convection vs orographic ratios (WY2021-2022)
+- 9.) Station data (orographic event in WY2021-2022)
+- 10.) Station-validated metrics table
 
 ## Future Work
 - Train ECMWF/GFS specific model weights (CONUS404 for ECMWF, HRRR for GFS?)
