@@ -33,12 +33,14 @@ HARPNET was trained using CONUS404, a 4km reanalysis dataset over CONUS prepared
 
 The input data was constructed by interpolating the 4km 3-hourly summed CONUS404 data to a 0.25-degree reference grid, emulating the input conditions of a global model like the GFS or ECMWF (or their ensemble counterparts). The target data was native 4km CONUS404 data remapped to a WGS84 coordinate reference system and coarsened to 0.0625 degree resolution, exactly 1/4th the grid spacing of a 0.25 degree model so that the edges of the coarse and fine grids can be perfectly aligned. 
 
-Hourly precipitation data from 0z October 1, 1979 through 23z September 30, 2022 was used in the creation of HARPNET. This hourly data was summed into 3-hourly chunks, since HARPNET predicts 3-hourly precipitation. These 3-hourly chunks were from 0-3z, 3-6z, 6-9z, etc. The training and test sets were generated using a random 20% train/test split. Consistent random seeding was employed in numpy, pytorch, and Python's random package to ensure consistent train/test splits across patches and across different runs.
+Hourly precipitation data from 0z October 1, 1979 through 23z September 30, 2022 was used in the creation of HARPNET. This hourly data was summed into 3-hourly chunks, since HARPNET predicts 3-hourly precipitation. These 3-hourly chunks were from 0-3z, 3-6z, 6-9z, etc. The training and test sets were generated with data from 0z October 1, 1979 to 23z September 30, 2021 using a random 20% train/test split. Consistent random seeding was employed in numpy, pytorch, and Python's random package to ensure consistent train/test splits across tiles and across different runs.
 
-HARPNET is trained to predict 64x64 target grid patches. Training smaller patch models rather than a single larger models allows for increased computational efficiency and more modularity; these patches can be stitched together to downscale large areas at a time while remaining computationally efficient. The input grids were cropped to give exactly 0.25 degrees of buffer around the target grids to ensure no input information was lost around the edges of each domain; this was done thanks to remapping the CONUS404 data so the edges perfectly line up with the 0.25 degree input grids.
+The validation set was constructed using data from 0z October 1, 2021 through 23z September 30, 2022 in order to have sequential unseen data to use in tests that are more temporally-dependent, such as station observations and complete storm cycles.
+
+HARPNET is trained to predict 64x64 target grid tiles. Training smaller til models rather than a single larger models allows for increased computational efficiency and more modularity; these tiles can be stitched together to downscale large areas at a time while remaining computationally efficient. The input grids were cropped to give exactly 0.25 degrees of buffer around the target grids to ensure no input information was lost around the edges of each domain; this was done thanks to remapping the CONUS404 data so the edges perfectly line up with the 0.25 degree input grids.
 
 ## Training
-HARPNET was trained on a 2023 M2 Max MacBook Pro. The following hyperparameters were used for each patch:
+HARPNET was trained on a 2023 M2 Max MacBook Pro. The following hyperparameters were used for each til:
 - **Optimizer:** Adam
 - **Learning rate:** 1e-4
 - **Batch size:** 32
@@ -60,6 +62,21 @@ Our tests show that HARPNET improves high-resolution precipitation forecasts whe
 The model seems to pick up on atmospheric features that are not explicitly fed to the model; it downscales precipitation differently depending on wind direction, storm/synoptic setup, etc.
 - Run through a few test-cases displaying synoptic awareness (operational or in test data?)
 
+PLOTS:
+- 1.) Data workflow
+- 2.) Low-res vs CONUS404 climatology by month (side by side 4 panel plots)
+- 3.) Train/test loss curves
+- 4.) Model high resolution MSE/RMSE by grid point compared to CONUS404
+- 5.) Bilinear interpolation high resolution MSE/RMSE by grid point compared to CONUS404
+- 6.) Statistically downscaled high resolution MSE/RMSE by grid point compared to CONUS404
+- NEW CHARTS: 
+  - Model MSE reduction compared to bilinear interpolation
+  - Model MSE reduction compared to statistical downscaling
+- 7.) Dynamic ratios depending on wind (WY2021-2022)
+- 8.) Convection vs orographic ratios (WY2021-2022)
+- 9.) Station data (orographic event in WY2021-2022)
+- 10.) Station-validated metrics table
+
 ## Future Work
 - Train ECMWF/GFS specific model weights (CONUS404 for ECMWF, HRRR for GFS?)
 - Train with other variable inputs (Pressure levels of U/V, Temp, GH, as well as PWAT, CAPE, TEMP)
@@ -67,9 +84,9 @@ The model seems to pick up on atmospheric features that are not explicitly fed t
 - Physical preservation of grid precipitation totals
 - Train different models for each season
 - Employing generative adversarial networks to generate even more realistic downscaled forecasts
-- Additional batches of trained patches staggered by 50% latitude/longitude, outputs are blended among the overlapping patches to almost eliminate edge-to-edge discontinuity
-- Custom loss to encourage even better patch-to-patch continuity
-- Train using ERA5 precip input... maybe ERA5 -(WRF)> CONUS404 -(coarsen)> != ERA5, so much so that the model only learns how to predict high-res using coarsened high-res?
+- Additional batches of trained tiles staggered by 50% latitude/longitude, outputs are blended among the overlapping tiles to almost eliminate edge-to-edge discontinuity
+- Custom loss to encourage even better tile-to-tile continuity
+- Train using ERA5 precip input... maybe ERA5 --(WRF)-> CONUS404 --(coarsen)-> != ERA5, so much so that the model only learns how to predict high-res using coarsened high-res?
 - Native models trained for each model resolution (ICON, GDPS, Sflux, etc)
 - Use entire training set... 3-hourly chunks every hour instead of every 3 hours
 - Mixed training dataset to allow the model to predict hourly, 3-hourly, and 6-hourly data
