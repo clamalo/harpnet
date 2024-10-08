@@ -7,16 +7,16 @@ random.seed(42)
 np.random.seed(42)
 torch.manual_seed(42)
 
-# sort_epochs()
 
 domains = [24,15]
-domain = domains[0]
+domain = domains[1]
 
 first_month = (1979, 10)
-last_month = (1980, 9)
+last_month = (2021, 9)
 train_test = 0.2
 
 
+# sort_epochs()
 # setup(domain)
 # create_grid_domains()
 # xr_to_np(domain, first_month, last_month, pad=True)
@@ -24,7 +24,7 @@ train_test = 0.2
 
 model = UNetWithAttention(1, 1, output_shape=(64,64)).to(constants.device)
 # model.load_state_dict(torch.load(f'{constants.checkpoints_dir}best/{domain}_model.pt')['model_state_dict'])
-model.load_state_dict(torch.load(f'{constants.checkpoints_dir}{domain}/19_model.pt')['model_state_dict'])
+model.load_state_dict(torch.load(f'{constants.checkpoints_dir}best/{domain}_model.pt')['model_state_dict'])
 print(f'Number of parameters: {sum(p.numel() for p in model.parameters())}')
 
 
@@ -84,51 +84,14 @@ train_dataloader, test_dataloader = generate_dataloaders(domain, first_month, la
 
 losses = []
 bilinear_losses = []
-for i, (inputs, targets, times) in enumerate(test_dataloader):
+for i, (inputs, targets, times) in tqdm(enumerate(test_dataloader), total=len(test_dataloader)):
+
     model.eval()
 
     inputs, targets = inputs.to(constants.device), targets.to(constants.device)
     outputs = model(inputs)
 
-    print(targets.shape, outputs.shape)
-
-    # compute a mean squared error with shape (64, 64) and store it in losses
-    # loss = ((outputs* - targets) ** 2).mean(dim=0).cpu().detach().numpy()
     loss = ((outputs - targets) ** 2).cpu().detach().numpy()
-
-
-    # #now plot side by side the model output and loss
-    # fig, ax = plt.subplots(1, 3, figsize=(30, 10), subplot_kw={'projection': ccrs.PlateCarree()})
-
-    # # First subplot: Target
-    # ax[0].coastlines()
-    # ax[0].set_extent([fine_lons[0], fine_lons[-1], fine_lats[0], fine_lats[-1]])
-    # ax[0].set_title('Target')
-    # cf0 = ax[0].imshow(targets[0].cpu().detach().numpy(), origin='upper', 
-    #                 extent=(fine_lons[0], fine_lons[-1], fine_lats[0], fine_lats[-1]), 
-    #                 transform=ccrs.PlateCarree())
-    # plt.colorbar(cf0, ax=ax[0], orientation='horizontal', label='Target')
-
-    # # Second subplot: Model Output
-    # ax[1].coastlines()
-    # ax[1].set_extent([fine_lons[0], fine_lons[-1], fine_lats[0], fine_lats[-1]])
-    # ax[1].set_title('Model Output')
-    # cf1 = ax[1].imshow(outputs[0].cpu().detach().numpy(), origin='upper', 
-    #                 extent=(fine_lons[0], fine_lons[-1], fine_lats[0], fine_lats[-1]), 
-    #                 transform=ccrs.PlateCarree())
-    # plt.colorbar(cf1, ax=ax[1], orientation='horizontal', label='Model Output')
-
-    # # Third subplot: Loss
-    # ax[2].coastlines()
-    # ax[2].set_extent([fine_lons[0], fine_lons[-1], fine_lats[0], fine_lats[-1]])
-    # ax[2].set_title('Loss')
-    # cf2 = ax[2].imshow(loss[0], origin='upper',
-    #                 extent=(fine_lons[0], fine_lons[-1], fine_lats[0], fine_lats[-1]),
-    #                 transform=ccrs.PlateCarree())
-    # plt.colorbar(cf2, ax=ax[2], orientation='horizontal', label='Loss')
-
-    # plt.show()
-
 
     # compute a bilinear interpolation of the inputs and store it in bilinear_losses
     cropped_inputs = inputs[:, 1:-1, 1:-1]
@@ -149,12 +112,24 @@ print(losses.shape)
 mean_losses = losses.mean(axis=0)
 mean_bilinear_losses = bilinear_losses.mean(axis=0)
 
+max_value = max(mean_losses.max(), mean_bilinear_losses.max())
+
 #plot the mean_losses with cartopy states 
 fig, ax = plt.subplots(1, 1, figsize=(10, 10))
 ax = plt.axes(projection=ccrs.PlateCarree())
 ax.coastlines()
 ax.set_extent([fine_lons[0], fine_lons[-1], fine_lats[0], fine_lats[-1]])
 ax.set_title('Mean Losses')
-cf = ax.imshow(mean_losses, origin='upper', extent=(fine_lons[0], fine_lons[-1], fine_lats[0], fine_lats[-1]), transform=ccrs.PlateCarree())
+cf = ax.imshow(mean_losses, origin='upper', extent=(fine_lons[0], fine_lons[-1], fine_lats[0], fine_lats[-1]), transform=ccrs.PlateCarree(), vmin=0, vmax=max_value)
 plt.colorbar(cf, ax=ax, orientation='horizontal', label='Mean Losses')
-plt.savefig('pnw.png')
+plt.savefig('utah.png')
+
+#plot the mean_bilinear_losses with cartopy states 
+fig, ax = plt.subplots(1, 1, figsize=(10, 10))
+ax = plt.axes(projection=ccrs.PlateCarree())
+ax.coastlines()
+ax.set_extent([fine_lons[0], fine_lons[-1], fine_lats[0], fine_lats[-1]])
+ax.set_title('Mean Losses')
+cf = ax.imshow(mean_bilinear_losses, origin='upper', extent=(fine_lons[0], fine_lons[-1], fine_lats[0], fine_lats[-1]), transform=ccrs.PlateCarree(), vmin=0, vmax=max_value)
+plt.colorbar(cf, ax=ax, orientation='horizontal', label='Mean Losses')
+plt.savefig('utah_bilinear.png')
