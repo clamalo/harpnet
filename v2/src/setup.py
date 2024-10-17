@@ -3,3 +3,5 @@ import os
 def setup(domain):
     if not os.path.exists(f'/Volumes/T9/domains/{domain}'):
         os.makedirs(f'/Volumes/T9/domains/{domain}')
+    if not os.path.exists(f'/Volumes/T9/v2_checkpoints/{domain}'):
+        os.makedirs(f'/Volumes/T9/v2_checkpoints/{domain}')

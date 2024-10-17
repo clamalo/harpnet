@@ -6,7 +6,7 @@ from src.train_test import train_test
 # Variables
 domain = 15
 start_month = (1979, 10)
-end_month = (1980, 9)
+end_month = (1980, 3)
 train_test_ratio = 0.2
 
 
