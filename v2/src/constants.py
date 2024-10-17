@@ -1,4 +1,4 @@
 # GRID CONTROLS
 scale_factor = 4
-start_lat, start_lon = 30, -125
-end_lat, end_lon = 51, -104
+min_lat, min_lon = 30, -125
+max_lat, max_lon = 51, -104

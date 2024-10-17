@@ -1,7 +1,11 @@
 import os
 
-def setup(domain):
-    if not os.path.exists(f'/Volumes/T9/domains/{domain}'):
-        os.makedirs(f'/Volumes/T9/domains/{domain}')
-    if not os.path.exists(f'/Volumes/T9/v2_checkpoints/{domain}'):
-        os.makedirs(f'/Volumes/T9/v2_checkpoints/{domain}')
+def setup(tile):
+    if not os.path.exists(f'/Volumes/T9/domains/{tile}'):
+        os.makedirs(f'/Volumes/T9/domains/{tile}')
+    if not os.path.exists(f'/Volumes/T9/v2_checkpoints/{tile}'):
+        os.makedirs(f'/Volumes/T9/v2_checkpoints/{tile}')
+
+    # figures
+    if not os.path.exists(f'figures'):
+        os.makedirs(f'figures')

@@ -6,7 +6,7 @@ from datetime import datetime
 from dateutil.relativedelta import relativedelta
 from src.get_coordinates import get_coordinates
 
-def xr_to_np(domain, start_month, end_month):
+def xr_to_np(tile, start_month, end_month):
     def save_array(file_path, array):
         np.save(file_path, array)
 
@@ -26,7 +26,7 @@ def xr_to_np(domain, start_month, end_month):
 
         times = month_ds.time.values
 
-        coarse_lats_pad, coarse_lons_pad, coarse_lats, coarse_lons, fine_lats, fine_lons = get_coordinates(domain)
+        coarse_lats_pad, coarse_lons_pad, coarse_lats, coarse_lons, fine_lats, fine_lons = get_coordinates(tile)
 
         month_ds = month_ds.sel(lat=slice(coarse_lats_pad[0]-0.25, coarse_lats_pad[-1]+0.25), lon=slice(coarse_lons_pad[0]-0.25, coarse_lons_pad[-1]+0.25))
 
@@ -36,9 +36,9 @@ def xr_to_np(domain, start_month, end_month):
         coarse_tp = coarse_ds.tp.values.astype('float32')
         fine_tp = fine_ds.tp.values.astype('float32')
 
-        input_path = f'/Volumes/T9/domains/{domain}/input_{year}_{month:02d}.npy'
-        target_path = f'/Volumes/T9/domains/{domain}/target_{year}_{month:02d}.npy'
-        times_path = f'/Volumes/T9/domains/{domain}/times_{year}_{month:02d}.npy'
+        input_path = f'/Volumes/T9/tiles/{tile}/input_{year}_{month:02d}.npy'
+        target_path = f'/Volumes/T9/tiles/{tile}/target_{year}_{month:02d}.npy'
+        times_path = f'/Volumes/T9/tiles/{tile}/times_{year}_{month:02d}.npy'
 
         with ThreadPoolExecutor() as executor:
             executor.submit(save_array, input_path, coarse_tp)

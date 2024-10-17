@@ -3,7 +3,7 @@ import torch.nn as nn
 from tqdm import tqdm
 from src.model import UNetWithAttention
 
-def train_test(domain, train_dataloader, test_dataloader, epochs=20):
+def train_test(tile, train_dataloader, test_dataloader, epochs=20):
 
     torch.manual_seed(42)
 
@@ -52,4 +52,4 @@ def train_test(domain, train_dataloader, test_dataloader, epochs=20):
             'train_loss': train_loss,
             'test_loss': test_loss,
             'bilinear_test_loss': bilinear_test_loss
-        }, f'/Volumes/T9/v2_checkpoints/{domain}/{epoch}_model.pt')
+        }, f'/Volumes/T9/v2_checkpoints/{tile}/{epoch}_model.pt')
