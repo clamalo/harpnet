@@ -1,5 +1,5 @@
 # DIRECTORIES
-base_dir = '/Volumes/seagate/'
+base_dir = '/Volumes/T9/'
 nc_dir = f'{base_dir}monthly/'
 # domains_dir = f'{base_dir}domains/'
 domains_dir = f'/Users/clamalo/documents/harpnet/domains/'

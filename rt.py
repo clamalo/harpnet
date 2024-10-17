@@ -37,8 +37,8 @@ pad = True
 realtime = True
 rt_model = 'ecmwf'
 ingest = True
-datestr, cycle = '20240918', '00'
-frames = range(3, 145, 3)
+datestr, cycle = '20241016', '12'
+frames = range(3, 121, 3)
 # sort_epochs([0])
 
 setup()
@@ -166,7 +166,7 @@ for domain in tqdm(available_domains):
 
     # Load checkpoint and evaluate the model if the checkpoint exists
     checkpoint_path = f'{constants.checkpoints_dir}best/{domain}_model.pt'
-    if os.path.exists(checkpoint_path):
+    if os.path.exists(checkpoint_path) and domain == 15:
 
         min_lat, max_lat, min_lon, max_lon = grid_domains[domain]
 
@@ -188,6 +188,7 @@ for domain in tqdm(available_domains):
 
         # Interpolate the master dataset to match the reference dataset's grid
         coarse_ds = master_ds.interp(lat=cropped_lats, lon=cropped_lons)
+
 
         print(f"Loading checkpoint: {checkpoint_path}")
         checkpoint = torch.load(checkpoint_path)
@@ -327,14 +328,14 @@ coarse_ds['tp'] = coarse_ds.tp.cumsum(dim='time')
 coarse_ds = coarse_ds.interp(lat=ds.lat, lon=ds.lon)
 
 points = {
-    'Snowmass (Top)': (39.16288, -106.96418),
-    'Snowmass (Bottom)': (39.21004, -106.94727),
+    'Alta': (40.5883, -111.6372),
 }
 
 # plot the cumulative precipitation at each point from ds as a time series
 fig, ax = plt.subplots(figsize=(10, 5))
 for point in points:
     ds.tp.sel(lat=points[point][0], lon=points[point][1], method='nearest').plot(ax=ax, label=point)
+    coarse_ds.tp.sel(lat=points[point][0], lon=points[point][1], method='nearest').plot(ax=ax, label=f'{point} (coarse)', linestyle='--')
 ax.set_xlabel('Time')
 ax.set_ylabel('tp (in)')
 ax.set_title('Cumulative Precipitation at Various Points')

@@ -19,13 +19,13 @@ import utils.constants as constants
 
 # 0 to 35
 domains = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35]
-domains = [0]
+domains = [12]
 
 setup()
 for domain in domains:
     LOAD = True
     first_month = (1979, 10)
-    last_month = (2022, 9)
+    last_month = (1980, 9)
     train_test = 0.2
     continue_epoch = False
     max_epoch = 1
@@ -35,6 +35,8 @@ for domain in domains:
         setup(domain)
         create_grid_domains()
         xr_to_np(domain, first_month, last_month, pad=pad)
+
+    quit()
 
     def generate_dataloaders(domain, first_month, last_month, train_test):
         input_file_paths = []
