@@ -1,4 +1,5 @@
 from src.create_grid_tiles import create_grid_tiles
+import src.constants as constants
 import numpy as np
 
 def get_coordinates(tile):
@@ -18,7 +19,7 @@ def get_coordinates(tile):
     coarse_lons_pad = np.arange(tile_min_lon-resolution, tile_max_lon+resolution, resolution)
     coarse_lats = np.arange(tile_min_lat, tile_max_lat, resolution)
     coarse_lons = np.arange(tile_min_lon, tile_max_lon, resolution)
-    fine_lats = scale_coordinates(coarse_lats, 4)
-    fine_lons = scale_coordinates(coarse_lons, 4)
+    fine_lats = scale_coordinates(coarse_lats, constants.scale_factor)
+    fine_lons = scale_coordinates(coarse_lons, constants.scale_factor)
 
     return coarse_lats_pad, coarse_lons_pad, coarse_lats, coarse_lons, fine_lats, fine_lons
