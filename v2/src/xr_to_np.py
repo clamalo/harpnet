@@ -1,10 +1,12 @@
 import xarray as xr
 import numpy as np
 import pandas as pd
+import os
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
 from src.get_coordinates import get_coordinates
+import src.constants as constants
 
 def xr_to_np(tile, start_month, end_month):
     def save_array(file_path, array):
@@ -18,7 +20,7 @@ def xr_to_np(tile, start_month, end_month):
         month = current_month.month
         print(f'Processing {year}-{month:02d}')
 
-        month_ds = xr.open_dataset(f'/Volumes/T9/monthly/{year}-{month:02d}.nc')
+        month_ds = xr.open_dataset(os.path.join(constants.raw_dir, f'{year}-{month:02d}.nc'))
 
         time_index = pd.DatetimeIndex(month_ds.time.values)
         filtered_times = time_index[time_index.hour.isin([3, 6, 9, 12, 15, 18, 21, 0])]
@@ -36,9 +38,9 @@ def xr_to_np(tile, start_month, end_month):
         coarse_tp = coarse_ds.tp.values.astype('float32')
         fine_tp = fine_ds.tp.values.astype('float32')
 
-        input_path = f'/Volumes/T9/tiles/{tile}/input_{year}_{month:02d}.npy'
-        target_path = f'/Volumes/T9/tiles/{tile}/target_{year}_{month:02d}.npy'
-        times_path = f'/Volumes/T9/tiles/{tile}/times_{year}_{month:02d}.npy'
+        input_path = os.path.join(constants.processed_dir, tile, f'input_{year}_{month:02d}.npy')
+        target_path = os.path.join(constants.processed_dir, tile, f'target_{year}_{month:02d}.npy')
+        times_path = os.path.join(constants.processed_dir, tile, f'times_{year}_{month:02d}.npy')
 
         with ThreadPoolExecutor() as executor:
             executor.submit(save_array, input_path, coarse_tp)

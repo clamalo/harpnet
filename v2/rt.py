@@ -6,7 +6,7 @@ from src.realtime_gfs import realtime_gfs
 datestr, cycle = '20241017', '12'
 frames = list(range(3, 121, 3))
 ingest = False
-tile = 16
+tile = 61
 
 ds = realtime_ecmwf(datestr, cycle, frames, ingest)
 # ds = realtime_gfs(datestr, cycle, frames, ingest)
@@ -27,7 +27,7 @@ tp = coarse_ds.tp.values
 tp = torch.tensor(coarse_ds.tp.values, dtype=torch.float32).to('mps')
 
 model = UNetWithAttention(1, 1, output_shape=(64,64)).to('mps')
-checkpoint = torch.load('19_model.pt')
+checkpoint = torch.load('/Volumes/T9/v2_checkpoints/best/61_model.pt',)
 model.load_state_dict(checkpoint['model_state_dict'])
 model.eval()
 with torch.no_grad():
@@ -41,7 +41,7 @@ with torch.no_grad():
 #     ax.add_feature(cartopy.feature.STATES)
 #     plt.savefig(f'figures/tp_{t}.png')
 #     plt.close()
-
+    
 #     fig = plt.figure(figsize=(10,10))
 #     ax = plt.axes(projection=ccrs.PlateCarree())
 #     ax.pcolormesh(fine_lons, fine_lats, output[t]*0.0393701, transform=ccrs.PlateCarree(), vmin=0, vmax=0.5)
@@ -68,4 +68,18 @@ ax.pcolormesh(fine_lons, fine_lats, total_tp*0.0393701, transform=ccrs.PlateCarr
 ax.add_feature(cartopy.feature.STATES)
 from metpy.plots import USCOUNTIES
 ax.add_feature(USCOUNTIES.with_scale('5m'), edgecolor='black', linewidth=0.5)
+# add a point at alta ski area
+ax.plot(-111.6400, 40.5881, 'ro', markersize=5, transform=ccrs.PlateCarree())
+# add a point at park city ski area
+ax.plot(-111.5354, 40.6461, 'ro', markersize=5, transform=ccrs.PlateCarree())
 plt.savefig('figures/total_tp.png')
+
+# closest to alta
+import numpy as np
+closest_lat_idx = np.abs(fine_lats - 40.5881).argmin()
+closest_lon_idx = np.abs(fine_lons - -111.6400).argmin()
+print(total_tp[closest_lat_idx, closest_lon_idx]*0.0393701)
+
+closest_lat_idx = np.abs(fine_lats - 40.6461).argmin()
+closest_lon_idx = np.abs(fine_lons - -111.5354).argmin()
+print(total_tp[closest_lat_idx, closest_lon_idx]*0.0393701)

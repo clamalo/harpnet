@@ -1,9 +1,10 @@
-from src.create_grid_tiles import create_grid_tiles
-import src.constants as constants
-
 import matplotlib.pyplot as plt
 import cartopy.crs as ccrs
 import cartopy.feature
+import os
+
+from src.create_grid_tiles import create_grid_tiles
+import src.constants as constants
 
 def plot_tiles():
     grid_tiles = create_grid_tiles()
@@ -19,4 +20,4 @@ def plot_tiles():
         ax.text((tile_min_lon + tile_max_lon) / 2, (tile_min_lat + tile_max_lat) / 2, str(tile),
                 horizontalalignment='center', verticalalignment='center', color='black', fontsize=10, transform=ccrs.PlateCarree())
     plt.title('HARPNET Tiles')
-    plt.savefig('figures/grid_tiles.png')
+    plt.savefig(os.path.join(constants.figures_dir, 'grid_tiles.png'))

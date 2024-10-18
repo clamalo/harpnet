@@ -16,3 +16,5 @@ runs/
 utils/data/
 domains/
 utils/reference_ds.grib2.9093e.idx
+v2/data/
+v2/figures/

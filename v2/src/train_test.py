@@ -1,7 +1,9 @@
 import torch
 import torch.nn as nn
 from tqdm import tqdm
+import os
 from src.model import UNetWithAttention
+import src.constants as constants
 
 def train_test(tile, train_dataloader, test_dataloader, epochs=20):
 
@@ -52,4 +54,4 @@ def train_test(tile, train_dataloader, test_dataloader, epochs=20):
             'train_loss': train_loss,
             'test_loss': test_loss,
             'bilinear_test_loss': bilinear_test_loss
-        }, f'/Volumes/T9/v2_checkpoints/{tile}/{epoch}_model.pt')
+        }, os.path.join(constants.checkpoint_dir, f'{tile}/{epoch}_model.pt'))

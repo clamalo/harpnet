@@ -1,8 +1,11 @@
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
 import numpy as np
+import os
 import torch
 from torch.utils.data import DataLoader, Dataset
+import src.constants as constants
+
 def generate_dataloaders(tile, first_month, last_month, train_test_ratio):
 
     class MemMapDataset(Dataset):
@@ -26,13 +29,13 @@ def generate_dataloaders(tile, first_month, last_month, train_test_ratio):
 
     # Create file paths using list comprehensions
     input_file_paths = [
-        f'/Volumes/T9/tiles/{tile}/input_{m.year}_{m.month:02d}.npy' for m in months
+        os.path.join(constants.processed_dir, tile, f'input_{m.year}_{m.month:02d}.npy') for m in months
     ]
     target_file_paths = [
-        f'/Volumes/T9/tiles/{tile}/target_{m.year}_{m.month:02d}.npy' for m in months
+        os.path.join(constants.processed_dir, tile, f'target_{m.year}_{m.month:02d}.npy') for m in months
     ]
     times_file_paths = [
-        f'/Volumes/T9/tiles/{tile}/times_{m.year}_{m.month:02d}.npy' for m in months
+        os.path.join(constants.processed_dir, tile, f'times_{m.year}_{m.month:02d}.npy') for m in months
     ]
 
     # Load and concatenate arrays
