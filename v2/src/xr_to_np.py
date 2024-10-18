@@ -38,9 +38,9 @@ def xr_to_np(tile, start_month, end_month):
         coarse_tp = coarse_ds.tp.values.astype('float32')
         fine_tp = fine_ds.tp.values.astype('float32')
 
-        input_path = os.path.join(constants.processed_dir, tile, f'input_{year}_{month:02d}.npy')
-        target_path = os.path.join(constants.processed_dir, tile, f'target_{year}_{month:02d}.npy')
-        times_path = os.path.join(constants.processed_dir, tile, f'times_{year}_{month:02d}.npy')
+        input_path = os.path.join(constants.processed_dir, str(tile), f'input_{year}_{month:02d}.npy')
+        target_path = os.path.join(constants.processed_dir, str(tile), f'target_{year}_{month:02d}.npy')
+        times_path = os.path.join(constants.processed_dir, str(tile), f'times_{year}_{month:02d}.npy')
 
         with ThreadPoolExecutor() as executor:
             executor.submit(save_array, input_path, coarse_tp)

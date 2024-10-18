@@ -5,7 +5,7 @@ from src.generate_dataloaders import generate_dataloaders
 from src.train_test import train_test
 
 # Variables
-tile = 61
+tile = 89
 start_month = (1979, 10)
 end_month = (2022, 9)
 train_test_ratio = 0.2
