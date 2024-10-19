@@ -17,8 +17,8 @@ from src.realtime_eps import realtime_eps
 
 datestr, cycle = '20241018', '00'
 frames = list(range(3, 145, 3))
-ingest = False
-tile = 61
+ingest = True
+tile = 89
 model = 'eps'
 
 
@@ -105,34 +105,34 @@ def weatherbell_precip_colormap():
 
 
 
-for t in tqdm(range(tp.shape[1]), desc="Plotting Time Steps"):
-    fig, axes = plt.subplots(5, 6, figsize=(30, 25), subplot_kw={'projection': ccrs.PlateCarree()})
-    axes = axes.flatten()
-    # for member in range(output.shape[0]):
-    for member in range(30):
-        ax = axes[member]
-        cf = ax.pcolormesh(
-            fine_lons, fine_lats, 
-            output[member, t, :, :] * 0.0393701,  # Convert to inches if needed
-            transform=ccrs.PlateCarree(), 
-            cmap=weatherbell_precip_colormap()[0], 
-            norm=weatherbell_precip_colormap()[1])
-        ax.add_feature(cartopy.feature.STATES, linewidth=0.5)
-        ax.add_feature(USCOUNTIES.with_scale('5m'), edgecolor='black', linewidth=0.5)
-        ax.set_title(f'Member {member + 1}', fontsize=12)
-    for idx in range(output.shape[0], len(axes)):
-        fig.delaxes(axes[idx])
-    cbar_ax = fig.add_axes([0.25, 0.05, 0.5, 0.02])  # [left, bottom, width, height]
-    fig.colorbar(cf, cax=cbar_ax, orientation='horizontal', label='Precipitation (inches)')
-    valid_time = coarse_ds.valid_time[t].values
-    if isinstance(valid_time, np.datetime64):
-        valid_time_str = np.datetime_as_string(valid_time, unit='h')
-    else:
-        valid_time_str = str(valid_time)
-    fig.suptitle(f'Precipitation Forecast at {valid_time_str}', fontsize=16)
-    plt.tight_layout(rect=[0, 0.1, 1, 0.95])
-    plt.savefig(f'figures/precipitation_t{int(t*3):03d}.png', dpi=300)
-    plt.close(fig)
+# for t in tqdm(range(tp.shape[1]), desc="Plotting Time Steps"):
+#     fig, axes = plt.subplots(5, 6, figsize=(30, 25), subplot_kw={'projection': ccrs.PlateCarree()})
+#     axes = axes.flatten()
+#     # for member in range(output.shape[0]):
+#     for member in range(30):
+#         ax = axes[member]
+#         cf = ax.pcolormesh(
+#             fine_lons, fine_lats, 
+#             output[member, t, :, :] * 0.0393701,  # Convert to inches if needed
+#             transform=ccrs.PlateCarree(), 
+#             cmap=weatherbell_precip_colormap()[0], 
+#             norm=weatherbell_precip_colormap()[1])
+#         ax.add_feature(cartopy.feature.STATES, linewidth=0.5)
+#         ax.add_feature(USCOUNTIES.with_scale('5m'), edgecolor='black', linewidth=0.5)
+#         ax.set_title(f'Member {member + 1}', fontsize=12)
+#     for idx in range(output.shape[0], len(axes)):
+#         fig.delaxes(axes[idx])
+#     cbar_ax = fig.add_axes([0.25, 0.05, 0.5, 0.02])  # [left, bottom, width, height]
+#     fig.colorbar(cf, cax=cbar_ax, orientation='horizontal', label='Precipitation (inches)')
+#     valid_time = coarse_ds.valid_time[t].values
+#     if isinstance(valid_time, np.datetime64):
+#         valid_time_str = np.datetime_as_string(valid_time, unit='h')
+#     else:
+#         valid_time_str = str(valid_time)
+#     fig.suptitle(f'Precipitation Forecast at {valid_time_str}', fontsize=16)
+#     plt.tight_layout(rect=[0, 0.1, 1, 0.95])
+#     plt.savefig(f'figures/precipitation_t{int(t*3):03d}.png', dpi=300)
+#     plt.close(fig)
 
 
 
@@ -146,8 +146,8 @@ ax = plt.axes(projection=ccrs.PlateCarree())
 cf = ax.pcolormesh(fine_lons, fine_lats, total_tp.mean(axis=0)*0.0393701, transform=ccrs.PlateCarree(), cmap=weatherbell_precip_colormap()[0], norm=weatherbell_precip_colormap()[1])
 ax.add_feature(cartopy.feature.STATES)
 ax.add_feature(USCOUNTIES.with_scale('5m'), edgecolor='black', linewidth=0.5)
-ax.plot(-111.6400, 40.5881, 'ro', markersize=5, transform=ccrs.PlateCarree())
-ax.plot(-111.5354, 40.6461, 'ro', markersize=5, transform=ccrs.PlateCarree())
+# ax.plot(-111.6400, 40.5881, 'ro', markersize=5, transform=ccrs.PlateCarree())
+# ax.plot(-111.5354, 40.6461, 'ro', markersize=5, transform=ccrs.PlateCarree())
 cbar = plt.colorbar(cf, orientation='horizontal', pad=0.03)
 plt.savefig(f'figures/total_tp.png')
 
@@ -156,7 +156,7 @@ ax = plt.axes(projection=ccrs.PlateCarree())
 cf = ax.pcolormesh(coarse_lons, coarse_lats, total_input_tp.mean(axis=0)[1:-1, 1:-1]*0.0393701, transform=ccrs.PlateCarree(), cmap=weatherbell_precip_colormap()[0], norm=weatherbell_precip_colormap()[1])
 ax.add_feature(cartopy.feature.STATES)
 ax.add_feature(USCOUNTIES.with_scale('5m'), edgecolor='black', linewidth=0.5)
-ax.plot(-111.6400, 40.5881, 'ro', markersize=5, transform=ccrs.PlateCarree())
-ax.plot(-111.5354, 40.6461, 'ro', markersize=5, transform=ccrs.PlateCarree())
+# ax.plot(-111.6400, 40.5881, 'ro', markersize=5, transform=ccrs.PlateCarree())
+# ax.plot(-111.5354, 40.6461, 'ro', markersize=5, transform=ccrs.PlateCarree())
 cbar = plt.colorbar(cf, orientation='horizontal', pad=0.03)
 plt.savefig(f'figures/total_coarse_tp.png')

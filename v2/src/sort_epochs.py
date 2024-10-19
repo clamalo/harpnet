@@ -78,3 +78,7 @@ def sort_epochs(tiles=None):
             print(f"Best checkpoint for tile {tile} (test_loss: {best_test_loss}) saved to {destination_path}.")
         except Exception as e:
             print(f"Failed to copy {best_ckpt_path} to {destination_path}: {e}.")
+
+
+if __name__ == "__main__":
+    sort_epochs()
