@@ -333,7 +333,7 @@ def ensemble(tile, start_month, end_month, train_test_ratio, max_ensemble_size=N
 if __name__ == '__main__':
     tile = 89
     start_month = (1979, 10)
-    end_month = (1980, 9)
+    end_month = (2022, 9)
     train_test_ratio = 0.2
     max_ensemble_size = 5
 
