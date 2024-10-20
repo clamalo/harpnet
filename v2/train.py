@@ -7,14 +7,14 @@ from src.train_test import train_test
 # Variables
 tile = 89
 start_month = (1979, 10)
-end_month = (2022, 9)
+end_month = (1980, 9)
 train_test_ratio = 0.2
 
 setup(tile)
 
-plot_tiles()
+# plot_tiles()
 
-xr_to_np(tile, start_month, end_month)
+# xr_to_np(tile, start_month, end_month)
 
 train_dataloader, test_dataloader = generate_dataloaders(tile, start_month, end_month, train_test_ratio)
 

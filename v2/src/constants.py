@@ -1,6 +1,6 @@
-raw_dir = f'/Volumes/T9/monthly'
-processed_dir = f'/Volumes/T9/tiles'
-checkpoints_dir = f'/Volumes/T9/v2_checkpoints'
+raw_dir = f'/Volumes/seagate/monthly'
+processed_dir = f'/Volumes/seagate/tiles'
+checkpoints_dir = f'v2_checkpoints'
 figures_dir = f'figures'
 
 # GRID CONTROLS

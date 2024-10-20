@@ -15,11 +15,11 @@ from src.realtime_eps import realtime_eps
 
 
 
-datestr, cycle = '20241018', '00'
-frames = list(range(3, 145, 3))
-ingest = True
+datestr, cycle = '20241018', '18'
+frames = list(range(3, 91, 3))
+ingest = False
 tile = 89
-model = 'eps'
+model = 'ecmwf'
 
 
 coarse_lats_pad, coarse_lons_pad, coarse_lats, coarse_lons, fine_lats, fine_lons = get_coordinates(tile)
@@ -78,8 +78,8 @@ if len(tp.shape) == 3:
 tensor_tp = torch.tensor(tp, dtype=torch.float32).to('mps')
 
 model = UNetWithAttention(1, 1, output_shape=(64,64)).to('mps')
-# checkpoint = torch.load('/Volumes/T9/v2_checkpoints/best/61_model.pt',)
-checkpoint = torch.load(f'{tile}_model.pt')
+checkpoint = torch.load(f'/Users/clamalo/documents/harpnet/v2/v2_checkpoints/best/{tile}_model.pt',)
+# checkpoint = torch.load(f'/Users/clamalo/documents/harpnet/v2/{tile}_model.pt',)
 model.load_state_dict(checkpoint['model_state_dict'])
 model.eval()
 

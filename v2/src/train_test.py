@@ -19,12 +19,21 @@ def train_test(tile, train_dataloader, test_dataloader, epochs=20):
         train_losses = []
         for i, (inputs, targets, times) in tqdm(enumerate(train_dataloader), total=len(train_dataloader)):
             inputs, targets = inputs.to('mps'), targets.to('mps')
+
             optimizer.zero_grad()
             outputs = model(inputs)
             loss = criterion(outputs, targets)
+
+            # # encourage physical constraint:
+            # coarsened_outputs = outputs.view(inputs.shape[0], 8, 8, 8, 8).mean(dim=(3, 4))
+            # coarsen_loss = criterion(coarsened_outputs, inputs[:, 1:-1, 1:-1])
+            # loss = loss + 0.1*coarsen_loss
+
             loss.backward()
             optimizer.step()
             train_losses.append(loss.item())
+
+
 
         # test
         model.eval()
@@ -54,4 +63,4 @@ def train_test(tile, train_dataloader, test_dataloader, epochs=20):
             'train_loss': train_loss,
             'test_loss': test_loss,
             'bilinear_test_loss': bilinear_test_loss
-        }, os.path.join(constants.checkpoint_dir, f'{tile}/{epoch}_model.pt'))
+        }, os.path.join(constants.checkpoints_dir, f'{tile}/{epoch}_model.pt'))
