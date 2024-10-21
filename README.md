@@ -49,7 +49,7 @@ HARPNET was trained on a 2023 M2 Max MacBook Pro. The following hyperparameters 
 After each epoch, the model and optimizer states were saved as checkpoints.
 
 ## HARPNET Ensemble
-HARPNET was trained to be able to have an ensemble component, as well (HARPNET-E). By treating each epoch checkpoint state dictionary as a different member, HARPNET-E accounts for uncertainty in the downscaling process and can create an ensemble of solutions from a single deterministic input. Some members are more skillful than others, but the ensemble mean has proven to be more skillful than any given individual member across a large enough sample size of events ***(need to test)***.
+HARPNET was trained to be able to have an ensemble component, as well (HARPNET-E). By treating each epoch checkpoint state dictionary as a different member, HARPNET-E accounts for uncertainty in the downscaling process and can create an ensemble of solutions from a single deterministic input. Using a greedy ensemble selection algorithm, the model automatically chooses how many "members" (epoch checkpoints) and which members to use. Then, it merges the checkpointed model weights from the selected members on a parametric level, leading to both more accurate and spatially coherent inference from the model. Since this approach eliminates epoch-to-epoch variability, it significantly improves the tile-to-tile continuity during inference.
 
 FUTURE WORK: train "true" ensemble by training multiple members in parallel:
 - Perturbing the CONUS404 data with noise, then re-coarsening, training unique members on noised data
