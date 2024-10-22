@@ -1,7 +1,9 @@
-raw_dir = f'/Volumes/T9/monthly'
-processed_dir = f'/Volumes/T9/tiles'
-checkpoints_dir = f'/Volumes/T9/v2_checkpoints'
+raw_dir = f'/Volumes/seagate/monthly'
+processed_dir = f'/Volumes/seagate/tiles'
+checkpoints_dir = f'/Volumes/seagate/v2_checkpoints'
 figures_dir = f'figures'
+
+torch_device = 'mps'
 
 # GRID CONTROLS
 scale_factor = 8  # 8 for 3km, 4 for 6km

@@ -9,7 +9,7 @@ def train_test(tile, train_dataloader, test_dataloader, epochs=20):
 
     torch.manual_seed(42)
 
-    model = UNetWithAttention(1, 1, output_shape=(64,64)).to('mps')
+    model = UNetWithAttention(1, 1, output_shape=(64,64)).to(constants.torch_device)
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
     criterion = nn.MSELoss()
 
@@ -18,7 +18,7 @@ def train_test(tile, train_dataloader, test_dataloader, epochs=20):
         # train
         train_losses = []
         for i, (inputs, targets, times) in tqdm(enumerate(train_dataloader), total=len(train_dataloader)):
-            inputs, targets = inputs.to('mps'), targets.to('mps')
+            inputs, targets = inputs.to(constants.torch_device), targets.to(constants.torch_device)
 
             optimizer.zero_grad()
             outputs = model(inputs)
@@ -40,7 +40,7 @@ def train_test(tile, train_dataloader, test_dataloader, epochs=20):
         test_losses = []
         bilinear_test_losses = []
         for i, (inputs, targets, times) in tqdm(enumerate(test_dataloader), total=len(test_dataloader)):
-            inputs, targets = inputs.to('mps'), targets.to('mps')
+            inputs, targets = inputs.to(constants.torch_device), targets.to(constants.torch_device)
             with torch.no_grad():
                 outputs = model(inputs)
             loss = criterion(outputs, targets)

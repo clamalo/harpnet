@@ -4,7 +4,7 @@ from tqdm import tqdm
 import gc
 from src.generate_dataloaders import generate_dataloaders
 from src.model import UNetWithAttention
-from src.constants import raw_dir, processed_dir, checkpoints_dir, figures_dir
+from src.constants import raw_dir, processed_dir, checkpoints_dir, figures_dir, torch_device
 
 def load_checkpoint_test_loss(checkpoint_path, device):
     """
@@ -111,7 +111,7 @@ def ensemble(tile, start_month, end_month, train_test_ratio, max_ensemble_size=N
         raise FileNotFoundError(f"Checkpoint directory for tile {tile} does not exist: {checkpoint_tile_dir}")
 
     # Device Configuration
-    device = 'mps' if torch.backends.mps.is_available() else 'cpu'
+    device = torch_device
     print(f"Using device: {device}")
 
     # Generate Data Loaders
