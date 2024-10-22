@@ -19,7 +19,7 @@ for tile in tiles:
 
     setup(tile)
 
-    xr_to_np(tile, start_month, end_month)
+    # xr_to_np(tile, start_month, end_month)
 
     train_dataloader, test_dataloader = generate_dataloaders(tile, start_month, end_month, train_test_ratio)
 
