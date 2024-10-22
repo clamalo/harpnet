@@ -13,7 +13,7 @@ max_ensemble_size = 6
 
 # plot_tiles()
 
-tiles = [52,53,62,63]
+tiles = [52]
 
 for tile in tiles:
 
