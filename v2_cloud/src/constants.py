@@ -1,9 +1,9 @@
 raw_dir = f'/Volumes/seagate/monthly'
-processed_dir = f'/Users/clamalo/documents/harpnet/v2/tiles'
-checkpoints_dir = f'/Volumes/seagate/v2_checkpoints'
+processed_dir = f'/tiles'
+checkpoints_dir = f'/v2_checkpoints'
 figures_dir = f'figures'
 
-torch_device = 'mps'
+torch_device = 'cuda'
 
 # GRID CONTROLS
 scale_factor = 8  # 8 for 3km, 4 for 6km
