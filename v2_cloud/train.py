@@ -6,14 +6,14 @@ from src.train_test import train_test
 from src.ensemble import ensemble
 
 # Variables
-start_month = (1984, 10)
+start_month = (1979, 10)
 end_month = (2022, 9)
 train_test_ratio = 0.2
 max_ensemble_size = 8
 
 # plot_tiles()
 
-tiles = [52]
+tiles = [52, 53, 62, 63]
 
 for tile in tiles:
 
