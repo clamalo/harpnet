@@ -13,7 +13,7 @@ max_ensemble_size = 8
 
 # plot_tiles()
 
-tiles = [0]
+tiles = [0, 1]
 
 for tile in tiles:
 
