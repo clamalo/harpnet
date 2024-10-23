@@ -7,7 +7,7 @@ from src.ensemble import ensemble
 
 # Variables
 start_month = (1979, 10)
-end_month = (1980, 9)
+end_month = (2022, 9)
 train_test_ratio = 0.2
 max_ensemble_size = 8
 
