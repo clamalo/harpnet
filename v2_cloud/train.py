@@ -9,7 +9,7 @@ from src.ensemble import ensemble
 start_month = (1984, 10)
 end_month = (2022, 9)
 train_test_ratio = 0.2
-max_ensemble_size = 6
+max_ensemble_size = 8
 
 # plot_tiles()
 
