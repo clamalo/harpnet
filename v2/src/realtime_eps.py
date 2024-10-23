@@ -38,6 +38,7 @@ def realtime_eps(datestr, cycle, frames, ingest):
 
     async def download_eps(date, cycle, steps, req_param, req_level, output_file):
         ROOT = 'https://data.ecmwf.int/forecasts'
+        # ROOT = "https://ai4edataeuwest.blob.core.windows.net/ecmwf"
         host = f"{ROOT}/{date}/{cycle}z/ifs/0p25/enfo"
 
         sem = asyncio.Semaphore(20)  # Adjust as needed

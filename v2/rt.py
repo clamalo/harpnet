@@ -19,9 +19,9 @@ from src.realtime_eps import realtime_eps
 
 
 
-datestr, cycle = '20241022', '06'
-frames = list(range(3, 169, 3))
-ingest = False
+datestr, cycle = '20241023', '00'
+frames = list(range(3, 241, 3))
+ingest = True
 rt_model = 'gefs'
 
 
@@ -47,7 +47,7 @@ for tile in valid_tiles:
 
     coarse_lats_pad, coarse_lons_pad, coarse_lats, coarse_lons, fine_lats, fine_lons = get_coordinates(tile)
 
-    if not os.path.exists(f'{tile}_model.pt_co'):
+    if not os.path.exists(f'{tile}_model.pt'):
         output = np.full((len(members), len(frames), len(fine_lats), len(fine_lons)), np.nan)
 
     else:
@@ -80,7 +80,7 @@ for tile in valid_tiles:
 
         tensor_tp = torch.tensor(tp, dtype=torch.float32).to(torch_device)
 
-        checkpoint = torch.load(f'{tile}_model.pt_co', map_location='cpu')
+        checkpoint = torch.load(f'{tile}_model.pt', map_location='cpu')
         model.load_state_dict(checkpoint['model_state_dict'])
         model.eval()
 
@@ -157,16 +157,17 @@ def weatherbell_precip_colormap():
 # cum sum
 total_ds = combined_ds.cumsum(dim='step')
 
-# for t in range(len(total_ds.step)):
-#     time_ds = total_ds.isel(step=t).mean(dim='number')
-#     fig = plt.figure(figsize=(10,10))
-#     ax = plt.axes(projection=ccrs.PlateCarree())
-#     cf = ax.pcolormesh(time_ds['lon'], time_ds['lat'], time_ds['tp']*0.0393701, transform=ccrs.PlateCarree(), cmap=weatherbell_precip_colormap()[0], norm=weatherbell_precip_colormap()[1])
-#     ax.add_feature(cartopy.feature.STATES)
-#     ax.add_feature(USCOUNTIES.with_scale('5m'), edgecolor='black', linewidth=0.5)
-#     cbar = plt.colorbar(cf, orientation='horizontal', pad=0.03)
-#     ax.set_extent([-125, -120, 45.5, 50])
-#     plt.savefig(f'figures/total_tp_{t}.png')
+for t in range(len(total_ds.step)):
+    time_ds = combined_ds.isel(step=t).mean(dim='number')
+    fig = plt.figure(figsize=(10,10))
+    ax = plt.axes(projection=ccrs.PlateCarree())
+    cf = ax.pcolormesh(time_ds['lon'], time_ds['lat'], time_ds['tp']*0.0393701, transform=ccrs.PlateCarree(), cmap=weatherbell_precip_colormap()[0], norm=weatherbell_precip_colormap()[1])
+    ax.add_feature(cartopy.feature.STATES)
+    ax.add_feature(USCOUNTIES.with_scale('5m'), edgecolor='black', linewidth=0.5)
+    cbar = plt.colorbar(cf, orientation='horizontal', pad=0.03)
+    # ax.set_extent([-125, -120, 45.5, 50])
+    ax.set_extent([-109, -105, 37, 41])
+    plt.savefig(f'figures/total_tp_{t}.png')
 
 
 mean_final_total_ds = total_ds.isel(step=-1).mean(dim='number')
@@ -176,7 +177,8 @@ cf = ax.pcolormesh(mean_final_total_ds['lon'], mean_final_total_ds['lat'], mean_
 ax.add_feature(cartopy.feature.STATES)
 ax.add_feature(USCOUNTIES.with_scale('5m'), edgecolor='black', linewidth=0.5)
 cbar = plt.colorbar(cf, orientation='horizontal', pad=0.03)
-ax.set_extent([-125, -120, 45.5, 50])
+# ax.set_extent([-125, -120, 45.5, 50])
+ax.set_extent([-109, -105, 37, 41])
 plt.savefig(f'figures/total_tp.png')
 
 
