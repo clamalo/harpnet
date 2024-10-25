@@ -13,7 +13,7 @@ max_ensemble_size = 8
 
 # plot_tiles()
 
-tiles = range(9, 36)
+tiles = range(0, 36)
 
 for tile in tiles:
 
@@ -29,5 +29,4 @@ for tile in tiles:
 
     # remove /v2_checkpoints/{tile} folder
     import os
-    os.system(f"rm -rf /v2_checkpoints/{tile}")
     os.system(f"rm -rf /tiles/{tile}")
