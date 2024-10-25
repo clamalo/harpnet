@@ -14,6 +14,7 @@ max_ensemble_size = 8
 # plot_tiles()
 
 tiles = range(0, 36)
+tiles = tiles[::-1]
 
 for tile in tiles:
 
