@@ -2,7 +2,7 @@ import os
 import shutil
 import torch
 from tqdm import tqdm
-import src.constants as constants
+from src.constants import CHECKPOINTS_DIR
 
 def sort_epochs(tiles=None):
     """
@@ -12,7 +12,7 @@ def sort_epochs(tiles=None):
         tiles (list, optional): A list of tile numbers to process. If None, all tiles in the
                                 /Volumes/T9/v2_checkpoints/ directory will be processed.
     """
-    base_dir = constants.checkpoints_dir
+    base_dir = CHECKPOINTS_DIR
     best_dir = os.path.join(base_dir, "best")
 
     # Create the 'best' directory if it doesn't exist

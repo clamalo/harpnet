@@ -3,22 +3,29 @@ import torch.nn as nn
 from tqdm import tqdm
 import os
 from src.model import UNetWithAttention
-import src.constants as constants
+from src.constants import TORCH_DEVICE, CHECKPOINTS_DIR
 
-def train_test(tile, train_dataloader, test_dataloader, epochs=20):
+def train_test(tile, train_dataloader, test_dataloader, start_epoch=0, end_epoch=20):
+
+    epochs = list(range(start_epoch, end_epoch))
 
     torch.manual_seed(42)
 
-    model = UNetWithAttention(1, 1, output_shape=(64,64)).to(constants.torch_device)
+    model = UNetWithAttention(1, 1, output_shape=(64,64)).to(TORCH_DEVICE)
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
     criterion = nn.MSELoss()
+    if start_epoch != 0:
+        checkpoint = torch.load(os.path.join(CHECKPOINTS_DIR, str(tile), f'{start_epoch-1}_model.pt'))
+        model.load_state_dict(checkpoint['model_state_dict'])
+        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
 
-    for epoch in range(epochs):
+
+    for epoch in epochs:
 
         # train
         train_losses = []
         for i, (inputs, targets, times) in tqdm(enumerate(train_dataloader), total=len(train_dataloader)):
-            inputs, targets = inputs.to(constants.torch_device), targets.to(constants.torch_device)
+            inputs, targets = inputs.to(TORCH_DEVICE), targets.to(TORCH_DEVICE)
 
             optimizer.zero_grad()
             outputs = model(inputs)
@@ -34,13 +41,12 @@ def train_test(tile, train_dataloader, test_dataloader, epochs=20):
             train_losses.append(loss.item())
 
 
-
         # test
         model.eval()
         test_losses = []
         bilinear_test_losses = []
         for i, (inputs, targets, times) in tqdm(enumerate(test_dataloader), total=len(test_dataloader)):
-            inputs, targets = inputs.to(constants.torch_device), targets.to(constants.torch_device)
+            inputs, targets = inputs.to(TORCH_DEVICE), targets.to(TORCH_DEVICE)
             with torch.no_grad():
                 outputs = model(inputs)
             loss = criterion(outputs, targets)
@@ -56,6 +62,7 @@ def train_test(tile, train_dataloader, test_dataloader, epochs=20):
         test_loss = sum(test_losses) / len(test_losses)
         bilinear_test_loss = sum(bilinear_test_losses) / len(bilinear_test_losses)
 
+
         # save model
         torch.save({
             'model_state_dict': model.state_dict(),
@@ -63,4 +70,4 @@ def train_test(tile, train_dataloader, test_dataloader, epochs=20):
             'train_loss': train_loss,
             'test_loss': test_loss,
             'bilinear_test_loss': bilinear_test_loss
-        }, os.path.join(constants.checkpoints_dir, f'{tile}/{epoch}_model.pt'))
+        }, os.path.join(CHECKPOINTS_DIR, f'{tile}/{epoch}_model.pt'))

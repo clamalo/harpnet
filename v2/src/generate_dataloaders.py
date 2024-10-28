@@ -4,7 +4,7 @@ import numpy as np
 import os
 import torch
 from torch.utils.data import DataLoader, Dataset
-import src.constants as constants
+from src.constants import PROCESSED_DIR
 
 def generate_dataloaders(tile, first_month, last_month, train_test_ratio):
 
@@ -29,13 +29,13 @@ def generate_dataloaders(tile, first_month, last_month, train_test_ratio):
 
     # Create file paths using list comprehensions
     input_file_paths = [
-        os.path.join(constants.processed_dir, str(tile), f'input_{m.year}_{m.month:02d}.npy') for m in months
+        os.path.join(PROCESSED_DIR, str(tile), f'input_{m.year}_{m.month:02d}.npy') for m in months
     ]
     target_file_paths = [
-        os.path.join(constants.processed_dir, str(tile), f'target_{m.year}_{m.month:02d}.npy') for m in months
+        os.path.join(PROCESSED_DIR, str(tile), f'target_{m.year}_{m.month:02d}.npy') for m in months
     ]
     times_file_paths = [
-        os.path.join(constants.processed_dir, str(tile), f'times_{m.year}_{m.month:02d}.npy') for m in months
+        os.path.join(PROCESSED_DIR, str(tile), f'times_{m.year}_{m.month:02d}.npy') for m in months
     ]
 
     # Load and concatenate arrays

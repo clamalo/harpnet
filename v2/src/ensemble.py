@@ -4,7 +4,7 @@ from tqdm import tqdm
 import gc
 from src.generate_dataloaders import generate_dataloaders
 from src.model import UNetWithAttention
-from src.constants import raw_dir, processed_dir, checkpoints_dir, figures_dir, torch_device
+from src.constants import CHECKPOINTS_DIR, TORCH_DEVICE
 
 def load_checkpoint_test_loss(checkpoint_path, device):
     """
@@ -106,12 +106,12 @@ def ensemble(tile, start_month, end_month, train_test_ratio, max_ensemble_size=N
                                            If None, all available checkpoints are considered.
     """
     # Construct Checkpoint Directory for the Tile
-    checkpoint_tile_dir = os.path.join(checkpoints_dir, str(tile))
+    checkpoint_tile_dir = os.path.join(CHECKPOINTS_DIR, str(tile))
     if not os.path.isdir(checkpoint_tile_dir):
         raise FileNotFoundError(f"Checkpoint directory for tile {tile} does not exist: {checkpoint_tile_dir}")
 
     # Device Configuration
-    device = torch_device
+    device = TORCH_DEVICE
     print(f"Using device: {device}")
 
     # Generate Data Loaders
@@ -313,7 +313,7 @@ def ensemble(tile, start_month, end_month, train_test_ratio, max_ensemble_size=N
         print(f"\nOptimal ensemble size: {best_num_models} model(s) with Mean Loss = {best_mean_loss:.6f}")
 
         # Save the best ensemble model
-        best_dir = os.path.join(checkpoints_dir, 'best')
+        best_dir = os.path.join(CHECKPOINTS_DIR, 'best')
         os.makedirs(best_dir, exist_ok=True)  # Create directory if it doesn't exist
 
         best_model_path = os.path.join(best_dir, f"{tile}_model.pt")

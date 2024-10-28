@@ -1,11 +1,13 @@
-raw_dir = f'/Volumes/T9/monthly'
-processed_dir = f'/Users/clamalo/documents/harpnet/v2/tiles'
-checkpoints_dir = f'/Volumes/T9/v2_checkpoints'
-figures_dir = f'figures'
+RAW_DIR = f'/Volumes/seagate/monthly'
+PROCESSED_DIR = f'/Users/clamalo/documents/harpnet/v2/tiles'
+CHECKPOINTS_DIR = f'/Volumes/seagate/checkpoints'
+FIGURES_DIR = f'figures'
 
-torch_device = 'mps'
+TORCH_DEVICE = 'mps'
+
+ZIP = True
 
 # GRID CONTROLS
-scale_factor = 8  # 8 for 3km, 4 for 6km
-min_lat, min_lon = 30, -125
-max_lat, max_lon = 51, -104
+SCALE_FACTOR = 4  # 8 for 3km, 4 for 6km
+MIN_LAT, MIN_LON = 30, -125
+MAX_LAT, MAX_LON = 51, -104

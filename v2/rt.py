@@ -19,10 +19,10 @@ from src.realtime_eps import realtime_eps
 
 
 
-datestr, cycle = '20241023', '00'
-frames = list(range(3, 241, 3))
-ingest = True
-rt_model = 'gefs'
+datestr, cycle = '20241027', '12'
+frames = list(range(3, 145, 3))
+ingest = False
+rt_model = 'ecmwf'
 
 
 
@@ -42,12 +42,12 @@ if rt_model == 'eps':
 
 
 tile_data = {}
-valid_tiles = list(range(120))
+valid_tiles = list(range(36))
 for tile in valid_tiles:
 
     coarse_lats_pad, coarse_lons_pad, coarse_lats, coarse_lons, fine_lats, fine_lons = get_coordinates(tile)
 
-    if not os.path.exists(f'{tile}_model.pt'):
+    if not os.path.exists(f'best/{tile}_model.pt') or tile not in [24, 25, 30, 31]:
         output = np.full((len(members), len(frames), len(fine_lats), len(fine_lons)), np.nan)
 
     else:
@@ -80,7 +80,7 @@ for tile in valid_tiles:
 
         tensor_tp = torch.tensor(tp, dtype=torch.float32).to(torch_device)
 
-        checkpoint = torch.load(f'{tile}_model.pt', map_location='cpu')
+        checkpoint = torch.load(f'best/{tile}_model.pt', map_location='cpu')
         model.load_state_dict(checkpoint['model_state_dict'])
         model.eval()
 
@@ -109,6 +109,12 @@ for tile in valid_tiles:
     tile_data[tile] = tile_ds
 
 combined_ds = xr.combine_by_coords(list(tile_data.values()))
+
+# crop combined_ds to where the tp values are not nan
+valid_mask = ~combined_ds.tp.isnull().all(dim=['number', 'step'])
+valid_lats = combined_ds.lat.where(valid_mask.any(dim='lon'), drop=True)
+valid_lons = combined_ds.lon.where(valid_mask.any(dim='lat'), drop=True)
+combined_ds = combined_ds.sel(lat=valid_lats, lon=valid_lons)
 
 
 import matplotlib.colors as colors
@@ -161,40 +167,67 @@ for t in range(len(total_ds.step)):
     time_ds = combined_ds.isel(step=t).mean(dim='number')
     fig = plt.figure(figsize=(10,10))
     ax = plt.axes(projection=ccrs.PlateCarree())
-    cf = ax.pcolormesh(time_ds['lon'], time_ds['lat'], time_ds['tp']*0.0393701, transform=ccrs.PlateCarree(), cmap=weatherbell_precip_colormap()[0], norm=weatherbell_precip_colormap()[1])
+    cf = ax.pcolormesh(time_ds['lon'], time_ds['lat'], time_ds['tp']*0.0393701, vmin=0, vmax=0.5)#, transform=ccrs.PlateCarree(), cmap=weatherbell_precip_colormap()[0], norm=weatherbell_precip_colormap()[1])
+    # cf = ax.pcolormesh(time_ds['lon'], time_ds['lat'], time_ds['tp']*0.0393701, transform=ccrs.PlateCarree(), cmap=weatherbell_precip_colormap()[0], norm=weatherbell_precip_colormap()[1])
     ax.add_feature(cartopy.feature.STATES)
-    ax.add_feature(USCOUNTIES.with_scale('5m'), edgecolor='black', linewidth=0.5)
+    # ax.add_feature(USCOUNTIES.with_scale('5m'), edgecolor='black', linewidth=0.5)
     cbar = plt.colorbar(cf, orientation='horizontal', pad=0.03)
-    # ax.set_extent([-125, -120, 45.5, 50])
-    ax.set_extent([-109, -105, 37, 41])
     plt.savefig(f'figures/total_tp_{t}.png')
+
+    # fig = plt.figure(figsize=(10,10))
+    # ax = plt.axes(projection=ccrs.PlateCarree())
+    # cf = ax.contourf(time_ds['lon'], time_ds['lat'], time_ds['tp']*0.0393701, transform=ccrs.PlateCarree(), levels=[0,0.01,0.03,0.05,0.075,0.1,0.15,0.2,0.25,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1,1.2,1.4,1.6,1.8,2,2.5,3,3.5,4,5,6,7,8,9,10], cmap=weatherbell_precip_colormap()[0], norm=weatherbell_precip_colormap()[1])
+    # ax.add_feature(cartopy.feature.STATES)
+    # ax.add_feature(USCOUNTIES.with_scale('5m'), edgecolor='black', linewidth=0.5)
+    # cbar = plt.colorbar(cf, orientation='horizontal', pad=0.03)
+    # # ax.set_extent([-109, -105, 37, 41])
+    # plt.savefig(f'figures/total_tp_{t}.png')
 
 
 mean_final_total_ds = total_ds.isel(step=-1).mean(dim='number')
 fig = plt.figure(figsize=(10,10))
 ax = plt.axes(projection=ccrs.PlateCarree())
-cf = ax.pcolormesh(mean_final_total_ds['lon'], mean_final_total_ds['lat'], mean_final_total_ds['tp']*0.0393701, transform=ccrs.PlateCarree(), cmap=weatherbell_precip_colormap()[0], norm=weatherbell_precip_colormap()[1])
+cf = ax.pcolormesh(mean_final_total_ds['lon'], mean_final_total_ds['lat'], mean_final_total_ds['tp']*0.0393701, vmin=0, vmax=3)#, transform=ccrs.PlateCarree(), cmap=weatherbell_precip_colormap()[0], norm=weatherbell_precip_colormap()[1])
+# cf = ax.pcolormesh(mean_final_total_ds['lon'], mean_final_total_ds['lat'], mean_final_total_ds['tp']*0.0393701, transform=ccrs.PlateCarree(), cmap=weatherbell_precip_colormap()[0], norm=weatherbell_precip_colormap()[1])
 ax.add_feature(cartopy.feature.STATES)
-ax.add_feature(USCOUNTIES.with_scale('5m'), edgecolor='black', linewidth=0.5)
+# ax.add_feature(USCOUNTIES.with_scale('5m'), edgecolor='black', linewidth=0.5)
 cbar = plt.colorbar(cf, orientation='horizontal', pad=0.03)
-# ax.set_extent([-125, -120, 45.5, 50])
-ax.set_extent([-109, -105, 37, 41])
 plt.savefig(f'figures/total_tp.png')
 
+# fig = plt.figure(figsize=(10,10))
+# ax = plt.axes(projection=ccrs.PlateCarree())
+# cf = ax.contourf(mean_final_total_ds['lon'], mean_final_total_ds['lat'], mean_final_total_ds['tp']*0.0393701, transform=ccrs.PlateCarree(), levels=[0,0.01,0.03,0.05,0.075,0.1,0.15,0.2,0.25,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1,1.2,1.4,1.6,1.8,2,2.5,3,3.5,4,5,6,7,8,9,10], cmap=weatherbell_precip_colormap()[0], norm=weatherbell_precip_colormap()[1])
+# ax.add_feature(cartopy.feature.STATES)
+# ax.add_feature(USCOUNTIES.with_scale('5m'), edgecolor='black', linewidth=0.5)
+# cbar = plt.colorbar(cf, orientation='horizontal', pad=0.03)
+# # ax.set_extent([-109, -105, 37, 41])
+# plt.savefig(f'figures/total_tp.png')
 
-point_data = total_ds.sel(lat=39.21340, lon=-106.92607, method='nearest').tp.values*0.0393701
+
+base_point_data = total_ds.sel(lat=39.21340, lon=-106.92607, method='nearest').tp.values*0.0393701
 plt.figure(figsize=(14, 6))
-plt.boxplot(point_data, showfliers=False, whis=[5, 95])
-plt.title('Boxplot for Each Timestep (80 Timesteps)')
+plt.boxplot(base_point_data, showfliers=False, whis=[5, 95])
+plt.title('Accumulated Precipitation')
 plt.xlabel('Timesteps')
 plt.ylabel('Values')
 plt.savefig('figures/base_boxplot.png')
 
 # 39.16827, -106.95216
-point_data = total_ds.sel(lat=39.16827, lon=-106.95216, method='nearest').tp.values*0.0393701
+top_point_data = total_ds.sel(lat=39.16827, lon=-106.95216, method='nearest').tp.values*0.0393701
 plt.figure(figsize=(14, 6))
-plt.boxplot(point_data, showfliers=False, whis=[5, 95])
-plt.title('Boxplot for Each Timestep (80 Timesteps)')
+plt.boxplot(top_point_data, showfliers=False, whis=[5, 95])
+plt.title('Accumulated Precipitation')
 plt.xlabel('Timesteps')
 plt.ylabel('Values')
 plt.savefig('figures/top_boxplot.png')
+
+if rt_model == 'gfs' or rt_model == 'ecmwf':
+    base_point_data = base_point_data[0]
+    top_point_data = top_point_data[0]
+    plt.figure(figsize=(14, 6))
+    plt.plot(base_point_data, label='Base Point')
+    plt.plot(top_point_data, label='Top Point')
+    plt.title('Accumulated Precipitation')
+    plt.xlabel('Timesteps')
+    plt.ylabel('Values')
+    plt.savefig('figures/both_boxplot.png')

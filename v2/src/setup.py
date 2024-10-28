@@ -1,12 +1,16 @@
 import os
-import src.constants as constants
+import zipfile
+
+from src.constants import PROCESSED_DIR, CHECKPOINTS_DIR, FIGURES_DIR, ZIP
+
 
 def setup(tile):
-    if not os.path.exists(os.path.join(constants.processed_dir, str(tile))):
-        os.makedirs(os.path.join(constants.processed_dir, str(tile)))
-    if not os.path.exists(os.path.join(constants.checkpoints_dir, str(tile))):
-        os.makedirs(os.path.join(constants.checkpoints_dir, str(tile)))
+    os.makedirs(os.path.join(PROCESSED_DIR, str(tile)), exist_ok=True)
+    os.makedirs(os.path.join(CHECKPOINTS_DIR, str(tile)), exist_ok=True)
 
     # figures
-    if not os.path.exists(constants.figures_dir):
-        os.makedirs(constants.figures_dir)
+    os.makedirs(FIGURES_DIR, exist_ok=True)
+
+    if ZIP and os.path.exists(os.path.join(PROCESSED_DIR, f"{tile}.zip")):
+        with zipfile.ZipFile(os.path.join(PROCESSED_DIR, f"{tile}.zip"), 'r') as zip_ref:
+            zip_ref.extractall(PROCESSED_DIR)

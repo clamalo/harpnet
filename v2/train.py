@@ -6,26 +6,24 @@ from src.train_test import train_test
 from src.ensemble import ensemble
 
 # Variables
-start_month = (1984, 10)
-end_month = (1984, 10)
+start_month = (1979, 10)
+end_month = (2022, 9)
 train_test_ratio = 0.2
-max_ensemble_size = 6
+start_epoch, end_epoch = 20, 25
+max_ensemble_size = 8
 
 # plot_tiles()
 
-# tiles = list(range(15, 16))
-tiles = [52]#,53,62,63]
+tiles = [7]
 
 for tile in tiles:
 
     setup(tile)
 
-    xr_to_np(tile, start_month, end_month)
-    
-    quit()
+    # xr_to_np(tile, start_month, end_month)
 
     train_dataloader, test_dataloader = generate_dataloaders(tile, start_month, end_month, train_test_ratio)
 
-    train_test(tile, train_dataloader, test_dataloader, epochs=20)
+    train_test(tile, train_dataloader, test_dataloader, start_epoch, end_epoch)
 
     ensemble(tile, start_month, end_month, train_test_ratio, max_ensemble_size)
