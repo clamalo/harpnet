@@ -8,7 +8,7 @@ from dateutil.relativedelta import relativedelta
 import zipfile
 
 from src.get_coordinates import get_coordinates
-from src.constants import RAW_DIR, PROCESSED_DIR, ZIP_DIR, ZIP
+from src.constants import RAW_DIR, PROCESSED_DIR, ZIP_DIR
 
 
 def xr_to_np(tile, start_month, end_month, zip):

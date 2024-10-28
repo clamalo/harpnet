@@ -1,6 +1,6 @@
 import os
 
-from src.constants import PROCESSED_DIR, ZIP_DIR, CHECKPOINTS_DIR, FIGURES_DIR, ZIP
+from src.constants import PROCESSED_DIR, ZIP_DIR, CHECKPOINTS_DIR, FIGURES_DIR
 
 
 def setup(tile):
