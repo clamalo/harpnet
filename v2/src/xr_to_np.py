@@ -5,10 +5,18 @@ import os
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
+import zipfile
+
 from src.get_coordinates import get_coordinates
-from src.constants import RAW_DIR, PROCESSED_DIR, ZIP
+from src.constants import RAW_DIR, PROCESSED_DIR, ZIP_DIR, ZIP
 
 def xr_to_np(tile, start_month, end_month):
+
+    if ZIP and os.path.exists(os.path.join(ZIP_DIR, f"{tile}.zip")):
+        with zipfile.ZipFile(os.path.join(ZIP_DIR, f"{tile}.zip"), 'r') as zip_ref:
+            zip_ref.extractall(os.path.join(PROCESSED_DIR, str(tile)))
+        return
+
     def save_array(file_path, array):
         np.save(file_path, array)
 
@@ -50,5 +58,10 @@ def xr_to_np(tile, start_month, end_month):
         current_month += relativedelta(months=1)
 
     if ZIP:
-        os.system(f'zip -r {os.path.join(PROCESSED_DIR, f"{tile}.zip")} {os.path.join(PROCESSED_DIR, str(tile))}')
-        os.system(f'rm -r {os.path.join(PROCESSED_DIR, str(tile))}')
+        tile_path = os.path.join(PROCESSED_DIR, str(tile))
+        zip_path = os.path.join(ZIP_DIR, f"{tile}.zip")
+        with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+            for root, dirs, files in os.walk(tile_path):
+                for file in files:
+                    file_path = os.path.join(root, file)
+                    zipf.write(file_path, os.path.relpath(file_path, tile_path))

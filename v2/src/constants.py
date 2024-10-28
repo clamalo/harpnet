@@ -1,5 +1,6 @@
 RAW_DIR = f'/Volumes/seagate/monthly'
 PROCESSED_DIR = f'/Users/clamalo/documents/harpnet/v2/tiles'
+ZIP_DIR = f'/Users/clamalo/documents/harpnet/v2/zips'
 CHECKPOINTS_DIR = f'/Volumes/seagate/checkpoints'
 FIGURES_DIR = f'figures'
 
