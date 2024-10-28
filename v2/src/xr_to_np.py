@@ -2,6 +2,7 @@ import xarray as xr
 import numpy as np
 import pandas as pd
 import os
+import shutil
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
@@ -66,3 +67,11 @@ def xr_to_np(tile, start_month, end_month, zip):
                 for file in files:
                     file_path = os.path.join(root, file)
                     zipf.write(file_path, os.path.relpath(file_path, tile_path))
+
+        # Delete all files in the tile folder
+        for root, dirs, files in os.walk(tile_path):
+            for file in files:
+                os.remove(os.path.join(root, file))
+        
+        # Delete the now-empty tile folder
+        shutil.rmtree(tile_path)
