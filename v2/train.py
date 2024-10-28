@@ -10,7 +10,7 @@ start_month = (1979, 10)
 end_month = (2022, 9)
 train_test_ratio = 0.2
 start_epoch, end_epoch = 0, 20
-zip = 'save'    # False, 'load', or 'save'
+zip = 'load'    # False, 'load', or 'save'
 max_ensemble_size = 8
 
 # plot_tiles()
