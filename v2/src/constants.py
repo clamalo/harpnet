@@ -6,8 +6,6 @@ FIGURES_DIR = f'figures'
 
 TORCH_DEVICE = 'mps'
 
-ZIP = True
-
 # GRID CONTROLS
 SCALE_FACTOR = 4  # 8 for 3km, 4 for 6km
 MIN_LAT, MIN_LON = 30, -125

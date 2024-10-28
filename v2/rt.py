@@ -9,8 +9,8 @@ import xarray as xr
 import os
 
 from src.model import UNetWithAttention
-from src.constants import torch_device
-model = UNetWithAttention(1, 1, output_shape=(64,64)).to(torch_device)
+from src.constants import TORCH_DEVICE
+model = UNetWithAttention(1, 1, output_shape=(64,64)).to(TORCH_DEVICE)
 from src.get_coordinates import get_coordinates
 from src.realtime_ecmwf import realtime_ecmwf
 from src.realtime_gfs import realtime_gfs
@@ -22,7 +22,7 @@ from src.realtime_eps import realtime_eps
 datestr, cycle = '20241027', '12'
 frames = list(range(3, 145, 3))
 ingest = False
-rt_model = 'ecmwf'
+rt_model = 'eps'
 
 
 
@@ -63,7 +63,12 @@ for tile in valid_tiles:
                     coarse_ds['tp'][t] = coarse_ds['tp'][t] - coarse_ds['tp'][t-1]
             coarse_ds = coarse_ds.transpose('number', 'step', 'lat', 'lon')
         if rt_model == 'eps':
-            coarse_ds = ds.interp(lat=coarse_lats_pad, lon=coarse_lons_pad)
+            coarse_member_datasets = []
+            for member in tqdm(range(len(ds.number))):
+                member_ds = ds.isel(number=member)
+                coarse_member_dataset = member_ds.interp(lat=coarse_lats_pad, lon=coarse_lons_pad)
+                coarse_member_datasets.append(coarse_member_dataset)
+            coarse_ds = xr.concat(coarse_member_datasets, dim='number')
             coarse_ds = coarse_ds.transpose('step', 'number', 'lat', 'lon')
             coarse_ds['cum_tp'] = coarse_ds['tp']*1000
             coarse_ds['tp'][0] = coarse_ds['cum_tp'][0]
@@ -78,7 +83,7 @@ for tile in valid_tiles:
         if len(tp.shape) == 3:
             tp = np.expand_dims(tp, axis=0)
 
-        tensor_tp = torch.tensor(tp, dtype=torch.float32).to(torch_device)
+        tensor_tp = torch.tensor(tp, dtype=torch.float32).to(TORCH_DEVICE)
 
         checkpoint = torch.load(f'best/{tile}_model.pt', map_location='cpu')
         model.load_state_dict(checkpoint['model_state_dict'])

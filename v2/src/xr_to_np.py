@@ -10,9 +10,10 @@ import zipfile
 from src.get_coordinates import get_coordinates
 from src.constants import RAW_DIR, PROCESSED_DIR, ZIP_DIR, ZIP
 
-def xr_to_np(tile, start_month, end_month):
 
-    if ZIP and os.path.exists(os.path.join(ZIP_DIR, f"{tile}.zip")):
+def xr_to_np(tile, start_month, end_month, zip):
+
+    if zip == 'load' and os.path.exists(os.path.join(ZIP_DIR, f"{tile}.zip")):
         with zipfile.ZipFile(os.path.join(ZIP_DIR, f"{tile}.zip"), 'r') as zip_ref:
             zip_ref.extractall(os.path.join(PROCESSED_DIR, str(tile)))
         return
@@ -57,7 +58,7 @@ def xr_to_np(tile, start_month, end_month):
 
         current_month += relativedelta(months=1)
 
-    if ZIP:
+    if zip == 'save':
         tile_path = os.path.join(PROCESSED_DIR, str(tile))
         zip_path = os.path.join(ZIP_DIR, f"{tile}.zip")
         with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
