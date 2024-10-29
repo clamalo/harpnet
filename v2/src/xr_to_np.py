@@ -15,8 +15,10 @@ from src.constants import RAW_DIR, PROCESSED_DIR, ZIP_DIR, HOUR_INCREMENT
 def xr_to_np(tile, start_month, end_month, zip):
 
     if zip == 'load' and os.path.exists(os.path.join(ZIP_DIR, f"{tile}.zip")):
+        # with zipfile.ZipFile(os.path.join(ZIP_DIR, f"{tile}.zip"), 'r') as zip_ref:
+        #     zip_ref.extractall(os.path.join(PROCESSED_DIR, str(tile)))
         with zipfile.ZipFile(os.path.join(ZIP_DIR, f"{tile}.zip"), 'r') as zip_ref:
-            zip_ref.extractall(os.path.join(PROCESSED_DIR, str(tile)))
+            zip_ref.extractall(PROCESSED_DIR)
         return
 
     def save_array(file_path, array):
@@ -61,18 +63,13 @@ def xr_to_np(tile, start_month, end_month, zip):
         current_month += relativedelta(months=1)
 
     if zip == 'save':
-        tile_path = os.path.join(PROCESSED_DIR, str(tile))
-        zip_path = os.path.join(ZIP_DIR, f"{tile}.zip")
-        with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
-            for root, dirs, files in os.walk(tile_path):
+        with zipfile.ZipFile(os.path.join(ZIP_DIR, f"{tile}.zip"), 'w') as zipf:
+            for root, dirs, files in os.walk(os.path.join(PROCESSED_DIR, str(tile))):
                 for file in files:
                     file_path = os.path.join(root, file)
-                    zipf.write(file_path, os.path.relpath(file_path, tile_path))
+                    # Compute the relative path from PROCESSED_DIR to include the tile folder in the zip
+                    arcname = os.path.relpath(file_path, PROCESSED_DIR)
+                    zipf.write(file_path, arcname)
 
         # Delete all files in the tile folder
-        for root, dirs, files in os.walk(tile_path):
-            for file in files:
-                os.remove(os.path.join(root, file))
-        
-        # Delete the now-empty tile folder
-        shutil.rmtree(tile_path)
+        shutil.rmtree(os.path.join(PROCESSED_DIR, str(tile)))
