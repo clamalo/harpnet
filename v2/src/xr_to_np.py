@@ -9,14 +9,14 @@ from dateutil.relativedelta import relativedelta
 import zipfile
 
 from src.get_coordinates import get_coordinates
-from src.constants import RAW_DIR, PROCESSED_DIR, ZIP_DIR
+from src.constants import RAW_DIR, PROCESSED_DIR, ZIP_DIR, HOUR_INCREMENT
 
 
 def xr_to_np(tile, start_month, end_month, zip):
 
     if zip == 'load' and os.path.exists(os.path.join(ZIP_DIR, f"{tile}.zip")):
         with zipfile.ZipFile(os.path.join(ZIP_DIR, f"{tile}.zip"), 'r') as zip_ref:
-            zip_ref.extractall(os.path.join(PROCESSED_DIR, str(tile)))
+            zip_ref.extractall(PROCESSED_DIR)
         return
 
     def save_array(file_path, array):
@@ -32,9 +32,10 @@ def xr_to_np(tile, start_month, end_month, zip):
 
         month_ds = xr.open_dataset(os.path.join(RAW_DIR, f'{year}-{month:02d}.nc'))
 
-        time_index = pd.DatetimeIndex(month_ds.time.values)
-        filtered_times = time_index[time_index.hour.isin([3, 6, 9, 12, 15, 18, 21, 0])]
-        month_ds = month_ds.sel(time=filtered_times)
+        if HOUR_INCREMENT == 3:
+            time_index = pd.DatetimeIndex(month_ds.time.values)
+            filtered_times = time_index[time_index.hour.isin([3, 6, 9, 12, 15, 18, 21, 0])]
+            month_ds = month_ds.sel(time=filtered_times)
 
         times = month_ds.time.values
 
