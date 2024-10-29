@@ -12,7 +12,7 @@ from src.get_coordinates import get_coordinates
 from src.constants import RAW_DIR, PROCESSED_DIR, ZIP_DIR, HOUR_INCREMENT
 
 
-def xr_to_np(tile, start_month, end_month, zip):
+def xr_to_np(tile, start_month, end_month, zip=False):
 
     if zip == 'load' and os.path.exists(os.path.join(ZIP_DIR, f"{tile}.zip")):
         with zipfile.ZipFile(os.path.join(ZIP_DIR, f"{tile}.zip"), 'r') as zip_ref:

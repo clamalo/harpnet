@@ -5,6 +5,7 @@ import os
 from src.model import UNetWithAttention
 from src.constants import TORCH_DEVICE, CHECKPOINTS_DIR
 
+
 def train_test(tile, train_dataloader, test_dataloader, start_epoch=0, end_epoch=20):
 
     epochs = list(range(start_epoch, end_epoch))
@@ -62,6 +63,7 @@ def train_test(tile, train_dataloader, test_dataloader, start_epoch=0, end_epoch
         test_loss = sum(test_losses) / len(test_losses)
         bilinear_test_loss = sum(bilinear_test_losses) / len(bilinear_test_losses)
 
+        print(f'Epoch {epoch}: Train loss = {train_loss}, Test loss = {test_loss}, Bilinear test loss = {bilinear_test_loss}')
 
         # save model
         torch.save({
