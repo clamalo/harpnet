@@ -16,7 +16,7 @@ def xr_to_np(tile, start_month, end_month, zip):
 
     if zip == 'load' and os.path.exists(os.path.join(ZIP_DIR, f"{tile}.zip")):
         with zipfile.ZipFile(os.path.join(ZIP_DIR, f"{tile}.zip"), 'r') as zip_ref:
-            zip_ref.extractall(PROCESSED_DIR)
+            zip_ref.extractall(os.path.join(PROCESSED_DIR, str(tile)))
         return
 
     def save_array(file_path, array):
