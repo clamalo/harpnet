@@ -1,15 +1,13 @@
 import torch
 import math
 
-tiles = range(0, 16)
+tiles = range(0, 36)
 
 rmse_reductions = []
 mse_reductions = []
 
 for tile in tiles:
-    checkpoint = torch.load(f'/Users/clamalo/downloads/{tile}_model.pt', map_location=torch.device('mps'))
-    # checkpoint = torch.load(f'/Users/clamalo/documents/harpnet/best/{tile}_model.pt', map_location=torch.device('mps'))
-    # checkpoint = torch.load(f'/Volumes/seagate/checkpoints/{tile}/19_model.pt', map_location=torch.device('mps'))
+    checkpoint = torch.load(f'/Users/clamalo/documents/harpnet/best/{tile}_model.pt', map_location=torch.device('mps'))
     test_loss = checkpoint['test_loss']
     bilinear_test_loss = checkpoint['bilinear_test_loss']
     rmse_reduction = 1 - (math.sqrt(test_loss) / math.sqrt(bilinear_test_loss))

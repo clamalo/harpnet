@@ -1,7 +1,7 @@
-RAW_DIR = f'/Volumes/seagate/monthly'
+RAW_DIR = f'/Users/clamalo/documents/harpnet/v2/monthly'
 PROCESSED_DIR = f'/Users/clamalo/documents/harpnet/v2/tiles'
 ZIP_DIR = f'/Users/clamalo/documents/harpnet/v2/zips'
-CHECKPOINTS_DIR = f'/Volumes/seagate/checkpoints'
+CHECKPOINTS_DIR = f'/Users/clamalo/documents/harpnet/v2/v2_checkpoints'
 FIGURES_DIR = f'figures'
 
 TORCH_DEVICE = 'mps'
