@@ -61,7 +61,7 @@ def xr_to_np(tile, start_month, end_month, zip):
         current_month += relativedelta(months=1)
 
     if zip == 'save':
-        with zipfile.ZipFile(os.path.join(ZIP_DIR, f"{tile}.zip"), 'w') as zipf:
+        with zipfile.ZipFile(os.path.join(ZIP_DIR, f"{tile}.zip"), 'w', compression=zipfile.ZIP_DEFLATED) as zipf:
             for root, dirs, files in os.walk(os.path.join(PROCESSED_DIR, str(tile))):
                 for file in files:
                     file_path = os.path.join(root, file)
