@@ -25,7 +25,8 @@ def train_test(tile, train_dataloader, test_dataloader, start_epoch=0, end_epoch
 
         # train
         train_losses = []
-        for i, (inputs, targets, times) in tqdm(enumerate(train_dataloader), total=len(train_dataloader)):
+        # for i, (inputs, targets, times) in tqdm(enumerate(train_dataloader), total=len(train_dataloader)):
+        for i, (inputs, targets, times) in enumerate(train_dataloader):
             inputs, targets = inputs.to(TORCH_DEVICE), targets.to(TORCH_DEVICE)
 
             optimizer.zero_grad()
@@ -46,7 +47,8 @@ def train_test(tile, train_dataloader, test_dataloader, start_epoch=0, end_epoch
         model.eval()
         test_losses = []
         bilinear_test_losses = []
-        for i, (inputs, targets, times) in tqdm(enumerate(test_dataloader), total=len(test_dataloader)):
+        # for i, (inputs, targets, times) in tqdm(enumerate(test_dataloader), total=len(test_dataloader)):
+        for i, (inputs, targets, times) in enumerate(test_dataloader):
             inputs, targets = inputs.to(TORCH_DEVICE), targets.to(TORCH_DEVICE)
             with torch.no_grad():
                 outputs = model(inputs)
