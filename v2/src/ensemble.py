@@ -20,6 +20,7 @@ def load_checkpoint_test_loss(checkpoint_path, device):
             dict: Extracted state dictionary.
     """
     checkpoint = torch.load(checkpoint_path, map_location=device)
+    bilinear_test_loss = checkpoint['bilinear_test_loss']
 
     # Handle Checkpoint Structure
     if isinstance(checkpoint, dict):
@@ -58,7 +59,7 @@ def load_checkpoint_test_loss(checkpoint_path, device):
     if test_loss is None:
         raise ValueError(f"Test loss could not be determined for checkpoint {checkpoint_path}.")
 
-    return test_loss, state_dict
+    return test_loss, state_dict, bilinear_test_loss
 
 def initialize_cumulative_state_dict(state_dict, device):
     """
@@ -140,7 +141,7 @@ def ensemble(tile, start_month, end_month, train_test_ratio, max_ensemble_size=N
     for file_name in checkpoint_files:
         checkpoint_path = os.path.join(checkpoint_tile_dir, file_name)
         try:
-            test_loss, _ = load_checkpoint_test_loss(checkpoint_path, device)
+            test_loss, _, bilinear_test_loss = load_checkpoint_test_loss(checkpoint_path, device)
             checkpoints.append({
                 'file_name': file_name,
                 'test_loss': test_loss,
@@ -180,7 +181,7 @@ def ensemble(tile, start_month, end_month, train_test_ratio, max_ensemble_size=N
     # Start with the best single model
     first_checkpoint = sorted_checkpoints[0]
     try:
-        test_loss, state_dict = load_checkpoint_test_loss(first_checkpoint['checkpoint_path'], device)
+        test_loss, state_dict, bilinear_test_loss = load_checkpoint_test_loss(first_checkpoint['checkpoint_path'], device)
     except Exception as e:
         raise RuntimeError(f"Failed to load state_dict from '{first_checkpoint['file_name']}': {e}")
 
@@ -234,7 +235,7 @@ def ensemble(tile, start_month, end_month, train_test_ratio, max_ensemble_size=N
         best_mean_loss = mean_loss
         best_num_models = 1
         best_ensemble_state_dict = model.state_dict()
-        bilinear_test_loss = mean_loss  # Assuming bilinear_test_loss is the test_loss of the first model
+        bilinear_test_loss = bilinear_test_loss  # Assuming bilinear_test_loss is the test_loss of the first model
 
     # Iterate over ensemble sizes from 2 to max_ensemble_size using Greedy Selection
     for N in range(2, max_ensemble_size + 1):
@@ -243,7 +244,7 @@ def ensemble(tile, start_month, end_month, train_test_ratio, max_ensemble_size=N
         # Select the next best model (greedy approach)
         next_checkpoint = sorted_checkpoints[N-1]
         try:
-            test_loss, state_dict = load_checkpoint_test_loss(next_checkpoint['checkpoint_path'], device)
+            test_loss, state_dict, bilinear_test_loss = load_checkpoint_test_loss(next_checkpoint['checkpoint_path'], device)
             add_state_dict_to_cumulative(cumulative_state_dict, state_dict)
         except Exception as e:
             print(f"Failed to load state_dict from '{next_checkpoint['file_name']}': {e}")
@@ -299,7 +300,7 @@ def ensemble(tile, start_month, end_month, train_test_ratio, max_ensemble_size=N
             best_mean_loss = mean_loss
             best_num_models = N
             best_ensemble_state_dict = {key: val.clone() for key, val in averaged_state_dict.items()}
-            bilinear_test_loss = mean_loss  # Update bilinear_test_loss to current best
+            bilinear_test_loss = bilinear_test_loss  # Update bilinear_test_loss to current best
 
         # Clean up
         del averaged_state_dict
@@ -331,10 +332,10 @@ def ensemble(tile, start_month, end_month, train_test_ratio, max_ensemble_size=N
 
 
 if __name__ == '__main__':
-    tile = 89
     start_month = (1979, 10)
     end_month = (2022, 9)
     train_test_ratio = 0.2
-    max_ensemble_size = 5
+    max_ensemble_size = 8
 
-    ensemble(tile, start_month, end_month, train_test_ratio, max_ensemble_size)
+    for tile in range(0,36):
+        ensemble(tile, start_month, end_month, train_test_ratio, max_ensemble_size)
