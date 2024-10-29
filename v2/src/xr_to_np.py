@@ -15,8 +15,6 @@ from src.constants import RAW_DIR, PROCESSED_DIR, ZIP_DIR, HOUR_INCREMENT
 def xr_to_np(tile, start_month, end_month, zip):
 
     if zip == 'load' and os.path.exists(os.path.join(ZIP_DIR, f"{tile}.zip")):
-        # with zipfile.ZipFile(os.path.join(ZIP_DIR, f"{tile}.zip"), 'r') as zip_ref:
-        #     zip_ref.extractall(os.path.join(PROCESSED_DIR, str(tile)))
         with zipfile.ZipFile(os.path.join(ZIP_DIR, f"{tile}.zip"), 'r') as zip_ref:
             zip_ref.extractall(PROCESSED_DIR)
         return
@@ -67,9 +65,6 @@ def xr_to_np(tile, start_month, end_month, zip):
             for root, dirs, files in os.walk(os.path.join(PROCESSED_DIR, str(tile))):
                 for file in files:
                     file_path = os.path.join(root, file)
-                    # Compute the relative path from PROCESSED_DIR to include the tile folder in the zip
                     arcname = os.path.relpath(file_path, PROCESSED_DIR)
                     zipf.write(file_path, arcname)
-
-        # Delete all files in the tile folder
         shutil.rmtree(os.path.join(PROCESSED_DIR, str(tile)))
