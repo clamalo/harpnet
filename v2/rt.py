@@ -19,10 +19,10 @@ from src.realtime_eps import realtime_eps
 
 
 
-datestr, cycle = '20241027', '12'
+datestr, cycle = '20241029', '00'
 frames = list(range(3, 145, 3))
 ingest = False
-rt_model = 'eps'
+rt_model = 'gfs'
 
 
 
@@ -47,7 +47,8 @@ for tile in valid_tiles:
 
     coarse_lats_pad, coarse_lons_pad, coarse_lats, coarse_lons, fine_lats, fine_lons = get_coordinates(tile)
 
-    if not os.path.exists(f'best/{tile}_model.pt') or tile not in [24, 25, 30, 31]:
+    # if not os.path.exists(f'best/{tile}_model.pt') or tile not in [12, 13, 14, 15, 16, 18, 19, 20, 21, 22, 24, 25, 26, 27, 28]:
+    if not os.path.exists(f'best/{tile}_model.pt') or tile not in [15, 16, 21, 22]:
         output = np.full((len(members), len(frames), len(fine_lats), len(fine_lons)), np.nan)
 
     else:
@@ -161,7 +162,7 @@ def weatherbell_precip_colormap():
 #         valid_time_str = str(valid_time)
 #     fig.suptitle(f'Precipitation Forecast at {valid_time_str}', fontsize=16)
 #     plt.tight_layout(rect=[0, 0.1, 1, 0.95])
-#     plt.savefig(f'figures/precipitation_t{int(t*3):03d}.png', dpi=300)
+#     plt.savefig(f'figures/rt/precipitation_t{int(t*3):03d}.png', dpi=300)
 #     plt.close(fig)
 
 
@@ -177,7 +178,7 @@ for t in range(len(total_ds.step)):
     ax.add_feature(cartopy.feature.STATES)
     # ax.add_feature(USCOUNTIES.with_scale('5m'), edgecolor='black', linewidth=0.5)
     cbar = plt.colorbar(cf, orientation='horizontal', pad=0.03)
-    plt.savefig(f'figures/total_tp_{t}.png')
+    plt.savefig(f'figures/rt/total_tp_{t}.png')
 
     # fig = plt.figure(figsize=(10,10))
     # ax = plt.axes(projection=ccrs.PlateCarree())
@@ -186,18 +187,18 @@ for t in range(len(total_ds.step)):
     # ax.add_feature(USCOUNTIES.with_scale('5m'), edgecolor='black', linewidth=0.5)
     # cbar = plt.colorbar(cf, orientation='horizontal', pad=0.03)
     # # ax.set_extent([-109, -105, 37, 41])
-    # plt.savefig(f'figures/total_tp_{t}.png')
+    # plt.savefig(f'figures/rt/total_tp_{t}.png')
 
 
 mean_final_total_ds = total_ds.isel(step=-1).mean(dim='number')
 fig = plt.figure(figsize=(10,10))
 ax = plt.axes(projection=ccrs.PlateCarree())
-cf = ax.pcolormesh(mean_final_total_ds['lon'], mean_final_total_ds['lat'], mean_final_total_ds['tp']*0.0393701, vmin=0, vmax=3)#, transform=ccrs.PlateCarree(), cmap=weatherbell_precip_colormap()[0], norm=weatherbell_precip_colormap()[1])
-# cf = ax.pcolormesh(mean_final_total_ds['lon'], mean_final_total_ds['lat'], mean_final_total_ds['tp']*0.0393701, transform=ccrs.PlateCarree(), cmap=weatherbell_precip_colormap()[0], norm=weatherbell_precip_colormap()[1])
+# cf = ax.pcolormesh(mean_final_total_ds['lon'], mean_final_total_ds['lat'], mean_final_total_ds['tp']*0.0393701, vmin=0, vmax=3)#, transform=ccrs.PlateCarree(), cmap=weatherbell_precip_colormap()[0], norm=weatherbell_precip_colormap()[1])
+cf = ax.pcolormesh(mean_final_total_ds['lon'], mean_final_total_ds['lat'], mean_final_total_ds['tp']*0.0393701, transform=ccrs.PlateCarree(), cmap=weatherbell_precip_colormap()[0], norm=weatherbell_precip_colormap()[1])
 ax.add_feature(cartopy.feature.STATES)
 # ax.add_feature(USCOUNTIES.with_scale('5m'), edgecolor='black', linewidth=0.5)
 cbar = plt.colorbar(cf, orientation='horizontal', pad=0.03)
-plt.savefig(f'figures/total_tp.png')
+plt.savefig(f'figures/rt/total_tp.png')
 
 # fig = plt.figure(figsize=(10,10))
 # ax = plt.axes(projection=ccrs.PlateCarree())
@@ -206,7 +207,7 @@ plt.savefig(f'figures/total_tp.png')
 # ax.add_feature(USCOUNTIES.with_scale('5m'), edgecolor='black', linewidth=0.5)
 # cbar = plt.colorbar(cf, orientation='horizontal', pad=0.03)
 # # ax.set_extent([-109, -105, 37, 41])
-# plt.savefig(f'figures/total_tp.png')
+# plt.savefig(f'figures/rt/total_tp.png')
 
 
 base_point_data = total_ds.sel(lat=39.21340, lon=-106.92607, method='nearest').tp.values*0.0393701
@@ -215,7 +216,7 @@ plt.boxplot(base_point_data, showfliers=False, whis=[5, 95])
 plt.title('Accumulated Precipitation')
 plt.xlabel('Timesteps')
 plt.ylabel('Values')
-plt.savefig('figures/base_boxplot.png')
+plt.savefig('figures/rt/base_boxplot.png')
 
 # 39.16827, -106.95216
 top_point_data = total_ds.sel(lat=39.16827, lon=-106.95216, method='nearest').tp.values*0.0393701
@@ -224,7 +225,7 @@ plt.boxplot(top_point_data, showfliers=False, whis=[5, 95])
 plt.title('Accumulated Precipitation')
 plt.xlabel('Timesteps')
 plt.ylabel('Values')
-plt.savefig('figures/top_boxplot.png')
+plt.savefig('figures/rt/top_boxplot.png')
 
 if rt_model == 'gfs' or rt_model == 'ecmwf':
     base_point_data = base_point_data[0]
@@ -235,4 +236,4 @@ if rt_model == 'gfs' or rt_model == 'ecmwf':
     plt.title('Accumulated Precipitation')
     plt.xlabel('Timesteps')
     plt.ylabel('Values')
-    plt.savefig('figures/both_boxplot.png')
+    plt.savefig('figures/rt/both_boxplot.png')
