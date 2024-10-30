@@ -11,7 +11,7 @@ start_month = (1979, 10)
 end_month = (2022, 9)
 train_test_ratio = 0.2
 start_epoch, end_epoch = 20, 25
-zip = 'load'    # False, 'load', or 'save'
+zip_setting = 'load'    # False, 'load', or 'save'
 max_ensemble_size = 8
 
 # plot_tiles()
@@ -22,9 +22,9 @@ for tile in tiles:
 
     setup(tile)
 
-    xr_to_np(tile, start_month, end_month, zip)
+    xr_to_np(tile, start_month, end_month, zip_setting)
 
-    if zip == 'save':
+    if zip_setting == 'save':
         continue
 
     train_dataloader, test_dataloader = generate_dataloaders(tile, start_month, end_month, train_test_ratio)

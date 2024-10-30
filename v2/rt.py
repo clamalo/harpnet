@@ -9,7 +9,7 @@ import xarray as xr
 import os
 
 from src.model import UNetWithAttention
-from src.constants import TORCH_DEVICE
+from src.constants import TORCH_DEVICE, FIGURES_DIR
 model = UNetWithAttention(1, 1, output_shape=(64,64)).to(TORCH_DEVICE)
 from src.get_coordinates import get_coordinates
 from src.realtime_ecmwf import realtime_ecmwf
@@ -17,12 +17,14 @@ from src.realtime_gfs import realtime_gfs
 from src.realtime_gefs import realtime_gefs
 from src.realtime_eps import realtime_eps
 
+os.makedirs(os.path.join(FIGURES_DIR, 'rt'), exist_ok=True)
 
 
-datestr, cycle = '20241029', '00'
+
+datestr, cycle = '20241030', '00'
 frames = list(range(3, 145, 3))
-ingest = False
-rt_model = 'gfs'
+ingest = True
+rt_model = 'eps'
 
 
 
@@ -48,7 +50,7 @@ for tile in valid_tiles:
     coarse_lats_pad, coarse_lons_pad, coarse_lats, coarse_lons, fine_lats, fine_lons = get_coordinates(tile)
 
     # if not os.path.exists(f'best/{tile}_model.pt') or tile not in [12, 13, 14, 15, 16, 18, 19, 20, 21, 22, 24, 25, 26, 27, 28]:
-    if not os.path.exists(f'best/{tile}_model.pt') or tile not in [15, 16, 21, 22]:
+    if not os.path.exists(f'best/{tile}_model.pt') or tile not in [18, 19, 24, 25]:
         output = np.full((len(members), len(frames), len(fine_lats), len(fine_lons)), np.nan)
 
     else:
@@ -132,40 +134,6 @@ def weatherbell_precip_colormap():
     return cmap, norm, bounds
 
 
-
-# for t in tqdm(range(len(combined_ds.step))):
-#     time_ds = combined_ds.isel(step=t)
-#     fig, axes = plt.subplots(5, 6, figsize=(30, 25), subplot_kw={'projection': ccrs.PlateCarree()})
-#     axes = axes.flatten()
-#     # for member in range(output.shape[0]):
-#     for member in range(30):
-#         ax = axes[member]
-#         cf = ax.pcolormesh(
-#             time_ds.lon, time_ds.lat,
-#             time_ds.tp[member].values*0.0393701,
-#             transform=ccrs.PlateCarree(), 
-#             cmap=weatherbell_precip_colormap()[0], 
-#             norm=weatherbell_precip_colormap()[1])
-#         ax.add_feature(cartopy.feature.STATES, linewidth=0.5)
-#         ax.add_feature(USCOUNTIES.with_scale('5m'), edgecolor='black', linewidth=0.5)
-#         ax.set_title(f'Member {member + 1}', fontsize=12)
-#         # ax extent to central western colorado
-#         ax.set_extent([-109.5, -105, 37.5, 41.5])
-#     for idx in range(output.shape[0], len(axes)):
-#         fig.delaxes(axes[idx])
-#     cbar_ax = fig.add_axes([0.25, 0.05, 0.5, 0.02])  # [left, bottom, width, height]
-#     fig.colorbar(cf, cax=cbar_ax, orientation='horizontal', label='Precipitation (inches)')
-#     valid_time = coarse_ds.valid_time[t].values
-#     if isinstance(valid_time, np.datetime64):
-#         valid_time_str = np.datetime_as_string(valid_time, unit='h')
-#     else:
-#         valid_time_str = str(valid_time)
-#     fig.suptitle(f'Precipitation Forecast at {valid_time_str}', fontsize=16)
-#     plt.tight_layout(rect=[0, 0.1, 1, 0.95])
-#     plt.savefig(f'figures/rt/precipitation_t{int(t*3):03d}.png', dpi=300)
-#     plt.close(fig)
-
-
 # cum sum
 total_ds = combined_ds.cumsum(dim='step')
 
@@ -178,36 +146,20 @@ for t in range(len(total_ds.step)):
     ax.add_feature(cartopy.feature.STATES)
     # ax.add_feature(USCOUNTIES.with_scale('5m'), edgecolor='black', linewidth=0.5)
     cbar = plt.colorbar(cf, orientation='horizontal', pad=0.03)
-    plt.savefig(f'figures/rt/total_tp_{t}.png')
-
-    # fig = plt.figure(figsize=(10,10))
-    # ax = plt.axes(projection=ccrs.PlateCarree())
-    # cf = ax.contourf(time_ds['lon'], time_ds['lat'], time_ds['tp']*0.0393701, transform=ccrs.PlateCarree(), levels=[0,0.01,0.03,0.05,0.075,0.1,0.15,0.2,0.25,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1,1.2,1.4,1.6,1.8,2,2.5,3,3.5,4,5,6,7,8,9,10], cmap=weatherbell_precip_colormap()[0], norm=weatherbell_precip_colormap()[1])
-    # ax.add_feature(cartopy.feature.STATES)
-    # ax.add_feature(USCOUNTIES.with_scale('5m'), edgecolor='black', linewidth=0.5)
-    # cbar = plt.colorbar(cf, orientation='horizontal', pad=0.03)
-    # # ax.set_extent([-109, -105, 37, 41])
-    # plt.savefig(f'figures/rt/total_tp_{t}.png')
+    plt.savefig(os.path.join(FIGURES_DIR, 'rt', f'total_tp_{t}.png'))
 
 
 mean_final_total_ds = total_ds.isel(step=-1).mean(dim='number')
 fig = plt.figure(figsize=(10,10))
 ax = plt.axes(projection=ccrs.PlateCarree())
-# cf = ax.pcolormesh(mean_final_total_ds['lon'], mean_final_total_ds['lat'], mean_final_total_ds['tp']*0.0393701, vmin=0, vmax=3)#, transform=ccrs.PlateCarree(), cmap=weatherbell_precip_colormap()[0], norm=weatherbell_precip_colormap()[1])
-cf = ax.pcolormesh(mean_final_total_ds['lon'], mean_final_total_ds['lat'], mean_final_total_ds['tp']*0.0393701, transform=ccrs.PlateCarree(), cmap=weatherbell_precip_colormap()[0], norm=weatherbell_precip_colormap()[1])
+# cf = ax.pcolormesh(mean_final_total_ds['lon'], mean_final_total_ds['lat'], mean_final_total_ds['tp']*0.0393701, vmin=0, vmax=3)
+# cf = ax.pcolormesh(mean_final_total_ds['lon'], mean_final_total_ds['lat'], mean_final_total_ds['tp']*0.0393701, transform=ccrs.PlateCarree(), cmap=weatherbell_precip_colormap()[0], norm=weatherbell_precip_colormap()[1])
+cmap, norm, bounds = weatherbell_precip_colormap()
+cf = ax.contourf(mean_final_total_ds['lon'], mean_final_total_ds['lat'], mean_final_total_ds['tp']*0.0393701, levels=bounds, cmap=cmap, norm=norm, extend='max')
 ax.add_feature(cartopy.feature.STATES)
-# ax.add_feature(USCOUNTIES.with_scale('5m'), edgecolor='black', linewidth=0.5)
 cbar = plt.colorbar(cf, orientation='horizontal', pad=0.03)
-plt.savefig(f'figures/rt/total_tp.png')
-
-# fig = plt.figure(figsize=(10,10))
-# ax = plt.axes(projection=ccrs.PlateCarree())
-# cf = ax.contourf(mean_final_total_ds['lon'], mean_final_total_ds['lat'], mean_final_total_ds['tp']*0.0393701, transform=ccrs.PlateCarree(), levels=[0,0.01,0.03,0.05,0.075,0.1,0.15,0.2,0.25,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1,1.2,1.4,1.6,1.8,2,2.5,3,3.5,4,5,6,7,8,9,10], cmap=weatherbell_precip_colormap()[0], norm=weatherbell_precip_colormap()[1])
-# ax.add_feature(cartopy.feature.STATES)
-# ax.add_feature(USCOUNTIES.with_scale('5m'), edgecolor='black', linewidth=0.5)
-# cbar = plt.colorbar(cf, orientation='horizontal', pad=0.03)
-# # ax.set_extent([-109, -105, 37, 41])
-# plt.savefig(f'figures/rt/total_tp.png')
+cbar.set_label('Precipitation (inches)')
+plt.savefig(os.path.join(FIGURES_DIR, 'rt', 'total_tp.png'))
 
 
 base_point_data = total_ds.sel(lat=39.21340, lon=-106.92607, method='nearest').tp.values*0.0393701
@@ -216,7 +168,7 @@ plt.boxplot(base_point_data, showfliers=False, whis=[5, 95])
 plt.title('Accumulated Precipitation')
 plt.xlabel('Timesteps')
 plt.ylabel('Values')
-plt.savefig('figures/rt/base_boxplot.png')
+plt.savefig(os.path.join(FIGURES_DIR, 'rt', 'base_boxplot.png'))
 
 # 39.16827, -106.95216
 top_point_data = total_ds.sel(lat=39.16827, lon=-106.95216, method='nearest').tp.values*0.0393701
@@ -225,7 +177,8 @@ plt.boxplot(top_point_data, showfliers=False, whis=[5, 95])
 plt.title('Accumulated Precipitation')
 plt.xlabel('Timesteps')
 plt.ylabel('Values')
-plt.savefig('figures/rt/top_boxplot.png')
+plt.savefig(os.path.join(FIGURES_DIR, 'rt', 'top_boxplot.png'))
+
 
 if rt_model == 'gfs' or rt_model == 'ecmwf':
     base_point_data = base_point_data[0]
@@ -236,4 +189,4 @@ if rt_model == 'gfs' or rt_model == 'ecmwf':
     plt.title('Accumulated Precipitation')
     plt.xlabel('Timesteps')
     plt.ylabel('Values')
-    plt.savefig('figures/rt/both_boxplot.png')
+    plt.savefig(os.path.join(FIGURES_DIR, 'rt', 'both_boxplot.png'))

@@ -12,9 +12,9 @@ from src.get_coordinates import get_coordinates
 from src.constants import RAW_DIR, PROCESSED_DIR, ZIP_DIR, HOUR_INCREMENT
 
 
-def xr_to_np(tile, start_month, end_month, zip=False):
+def xr_to_np(tile, start_month, end_month, zip_setting=False):
 
-    if zip == 'load' and os.path.exists(os.path.join(ZIP_DIR, f"{tile}.zip")):
+    if zip_setting == 'load' and os.path.exists(os.path.join(ZIP_DIR, f"{tile}.zip")):
         with zipfile.ZipFile(os.path.join(ZIP_DIR, f"{tile}.zip"), 'r') as zip_ref:
             zip_ref.extractall(PROCESSED_DIR)
         return
@@ -60,7 +60,7 @@ def xr_to_np(tile, start_month, end_month, zip=False):
 
         current_month += relativedelta(months=1)
 
-    if zip == 'save':
+    if zip_setting == 'save':
         with zipfile.ZipFile(os.path.join(ZIP_DIR, f"{tile}.zip"), 'w', compression=zipfile.ZIP_DEFLATED) as zipf:
             for root, dirs, files in os.walk(os.path.join(PROCESSED_DIR, str(tile))):
                 for file in files:
