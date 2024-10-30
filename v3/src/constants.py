@@ -1,9 +1,9 @@
 import torch
 
-RAW_DIR = f'/Users/clamalo/documents/harpnet/v2/monthly'
-PROCESSED_DIR = f'/Users/clamalo/documents/harpnet/v2/tiles'
-ZIP_DIR = f'/Users/clamalo/documents/harpnet/v2/zips'
-CHECKPOINTS_DIR = f'/Users/clamalo/documents/harpnet/v2/v2_checkpoints'
+RAW_DIR = f'/Users/clamalo/documents/harpnet/v3/monthly'
+PROCESSED_DIR = f'/Users/clamalo/documents/harpnet/v3/tiles'
+ZIP_DIR = f'/Users/clamalo/documents/harpnet/v3/zips'
+CHECKPOINTS_DIR = f'/Users/clamalo/documents/harpnet/v3/v3_checkpoints'
 FIGURES_DIR = f'figures'
 
 TORCH_DEVICE = 'cuda' if torch.cuda.is_available() else 'mps' if torch.backends.mps.is_available() else 'cpu'
