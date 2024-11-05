@@ -8,29 +8,29 @@ from src.cleanup import cleanup
 
 # Variables
 start_month = (1979, 10)
-end_month = (1979, 10)
+end_month = (1984, 9)
 train_test_ratio = 0.2
-start_epoch, end_epoch = 0, 20
-zip_setting = False    # False, 'load', or 'save'
+start_epoch, end_epoch = 0, 5
+zip_setting = 'load'    # False, 'load', or 'save'
 max_ensemble_size = 8
 
 # plot_tiles()
 
-setup()
+tiles = list(range(0, 5))
 
-xr_to_np(start_month, end_month)
+for tile in tiles:
 
-if zip_setting == 'save':
-    quit()
+    setup(tile)
 
-train_dataloader, test_dataloader = generate_dataloaders(start_month, end_month, train_test_ratio)
+    xr_to_np(tile, start_month, end_month, zip_setting)
 
-print(len(train_dataloader), len(test_dataloader))
+    if zip_setting == 'save':
+        continue
 
-train_test(train_dataloader, test_dataloader, start_epoch, end_epoch)
+    train_dataloader, test_dataloader = generate_dataloaders(tile, start_month, end_month, train_test_ratio)
 
-quit()
+    train_test(tile, train_dataloader, test_dataloader, start_epoch, end_epoch)
 
-ensemble(tile, start_month, end_month, train_test_ratio, max_ensemble_size)
+    ensemble(tile, start_month, end_month, train_test_ratio, max_ensemble_size)
 
-cleanup(tile)
+    cleanup(tile)

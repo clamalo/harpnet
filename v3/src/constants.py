@@ -11,5 +11,5 @@ TORCH_DEVICE = 'cuda' if torch.cuda.is_available() else 'mps' if torch.backends.
 # GRID CONTROLS
 HOUR_INCREMENT = 1 # 1 for full, 3 for base
 SCALE_FACTOR = 4  # 8 for 3km, 4 for 6km
-MIN_LAT, MIN_LON = 30, -125
-MAX_LAT, MAX_LON = 51, -104
+OUTER_GRID = {'MIN_LAT': 42, 'MIN_LON': -125, 'MAX_LAT': 46, 'MAX_LON': -121}
+INNER_GRID = {'MIN_LAT': 44, 'MIN_LON': -123, 'MAX_LAT': 44, 'MAX_LON': -123}

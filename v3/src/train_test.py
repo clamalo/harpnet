@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 from tqdm import tqdm
 import os
+
 from src.model import UNetWithAttention
 from src.constants import TORCH_DEVICE, CHECKPOINTS_DIR
 
