@@ -2,12 +2,11 @@ import torch
 import torch.nn as nn
 from tqdm import tqdm
 import os
-
 from src.model import UNetWithAttention
 from src.constants import TORCH_DEVICE, CHECKPOINTS_DIR
 
 
-def train_test(train_dataloader, test_dataloader, start_epoch=0, end_epoch=20):
+def train_test(tile, train_dataloader, test_dataloader, start_epoch=0, end_epoch=20):
 
     epochs = list(range(start_epoch, end_epoch))
 
@@ -17,7 +16,7 @@ def train_test(train_dataloader, test_dataloader, start_epoch=0, end_epoch=20):
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
     criterion = nn.MSELoss()
     if start_epoch != 0:
-        checkpoint = torch.load(os.path.join(CHECKPOINTS_DIR, f'{start_epoch-1}_model.pt'))
+        checkpoint = torch.load(os.path.join(CHECKPOINTS_DIR, str(tile), f'{start_epoch-1}_model.pt'))
         model.load_state_dict(checkpoint['model_state_dict'])
         optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
 
@@ -26,8 +25,8 @@ def train_test(train_dataloader, test_dataloader, start_epoch=0, end_epoch=20):
 
         # train
         train_losses = []
-        for i, (inputs, targets, times) in tqdm(enumerate(train_dataloader), total=len(train_dataloader)):
-        # for i, (inputs, targets, times) in enumerate(train_dataloader):
+        # for i, (inputs, targets, times) in tqdm(enumerate(train_dataloader), total=len(train_dataloader)):
+        for i, (inputs, targets, times) in enumerate(train_dataloader):
             inputs, targets = inputs.to(TORCH_DEVICE), targets.to(TORCH_DEVICE)
 
             optimizer.zero_grad()
@@ -48,8 +47,8 @@ def train_test(train_dataloader, test_dataloader, start_epoch=0, end_epoch=20):
         model.eval()
         test_losses = []
         bilinear_test_losses = []
-        for i, (inputs, targets, times) in tqdm(enumerate(test_dataloader), total=len(test_dataloader)):
-        # for i, (inputs, targets, times) in enumerate(test_dataloader):
+        # for i, (inputs, targets, times) in tqdm(enumerate(test_dataloader), total=len(test_dataloader)):
+        for i, (inputs, targets, times) in enumerate(test_dataloader):
             inputs, targets = inputs.to(TORCH_DEVICE), targets.to(TORCH_DEVICE)
             with torch.no_grad():
                 outputs = model(inputs)
@@ -75,4 +74,4 @@ def train_test(train_dataloader, test_dataloader, start_epoch=0, end_epoch=20):
             'train_loss': train_loss,
             'test_loss': test_loss,
             'bilinear_test_loss': bilinear_test_loss
-        }, os.path.join(CHECKPOINTS_DIR, f'{epoch}_model.pt'))
+        }, os.path.join(CHECKPOINTS_DIR, f'{tile}/{epoch}_model.pt'))

@@ -6,17 +6,16 @@ import torch
 from torch.utils.data import DataLoader, Dataset
 from src.constants import PROCESSED_DIR
 
-def generate_dataloaders(first_month, last_month, train_test_ratio):
+def generate_dataloaders(tile, first_month, last_month, train_test_ratio):
 
     class MemMapDataset(Dataset):
         def __init__(self, inputs, targets, times):
             self.inputs = inputs
             self.targets = targets
-            self.times = times.astype('float64')
+            self.times = times
         def __len__(self):
             return self.inputs.shape[0]
         def __getitem__(self, idx):
-            # Assuming times is your datetime array
             return self.inputs[idx], self.targets[idx], self.times[idx]
 
     # Generate list of months between first_month and last_month inclusive
@@ -30,19 +29,19 @@ def generate_dataloaders(first_month, last_month, train_test_ratio):
 
     # Create file paths using list comprehensions
     input_file_paths = [
-        os.path.join(PROCESSED_DIR, f'input_{m.year}_{m.month:02d}.npy') for m in months
+        os.path.join(PROCESSED_DIR, str(tile), f'input_{m.year}_{m.month:02d}.npy') for m in months
     ]
     target_file_paths = [
-        os.path.join(PROCESSED_DIR, f'target_{m.year}_{m.month:02d}.npy') for m in months
+        os.path.join(PROCESSED_DIR, str(tile), f'target_{m.year}_{m.month:02d}.npy') for m in months
     ]
     times_file_paths = [
-        os.path.join(PROCESSED_DIR, f'times_{m.year}_{m.month:02d}.npy') for m in months
+        os.path.join(PROCESSED_DIR, str(tile), f'times_{m.year}_{m.month:02d}.npy') for m in months
     ]
 
     # Load and concatenate arrays
     input_arr = np.concatenate([np.load(fp) for fp in input_file_paths])
     target_arr = np.concatenate([np.load(fp) for fp in target_file_paths])
-    times_arr = np.concatenate([np.load(fp) for fp in times_file_paths])
+    times_arr = np.concatenate([np.load(fp) for fp in times_file_paths]).astype('datetime64[s]').astype(np.float64)
 
     # Shuffle the data
     np.random.seed(42)

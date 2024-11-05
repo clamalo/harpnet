@@ -8,7 +8,7 @@ from src.cleanup import cleanup
 
 # Variables
 start_month = (1979, 10)
-end_month = (1984, 9)
+end_month = (1980, 9)
 train_test_ratio = 0.2
 start_epoch, end_epoch = 0, 5
 zip_setting = 'load'    # False, 'load', or 'save'
