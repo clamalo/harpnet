@@ -3,6 +3,7 @@ import torch.nn as nn
 from tqdm import tqdm
 import os
 from src.model import UNetWithAttention
+# from src.model import UNetWithSelfAttention
 from src.constants import TORCH_DEVICE, CHECKPOINTS_DIR
 
 
@@ -13,6 +14,7 @@ def train_test(tile, train_dataloader, test_dataloader, start_epoch=0, end_epoch
     torch.manual_seed(42)
 
     model = UNetWithAttention(1, 1, output_shape=(64,64)).to(TORCH_DEVICE)
+    # model = UNetWithSelfAttention(1, 1, output_shape=(64,64)).to(TORCH_DEVICE)
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
     criterion = nn.MSELoss()
     if start_epoch != 0:
@@ -25,8 +27,8 @@ def train_test(tile, train_dataloader, test_dataloader, start_epoch=0, end_epoch
 
         # train
         train_losses = []
-        # for i, (inputs, targets, times) in tqdm(enumerate(train_dataloader), total=len(train_dataloader)):
-        for i, (inputs, targets, times) in enumerate(train_dataloader):
+        for i, (inputs, targets, times) in tqdm(enumerate(train_dataloader), total=len(train_dataloader)):
+        # for i, (inputs, targets, times) in enumerate(train_dataloader):
             inputs, targets = inputs.to(TORCH_DEVICE), targets.to(TORCH_DEVICE)
 
             optimizer.zero_grad()
@@ -47,8 +49,8 @@ def train_test(tile, train_dataloader, test_dataloader, start_epoch=0, end_epoch
         model.eval()
         test_losses = []
         bilinear_test_losses = []
-        # for i, (inputs, targets, times) in tqdm(enumerate(test_dataloader), total=len(test_dataloader)):
-        for i, (inputs, targets, times) in enumerate(test_dataloader):
+        for i, (inputs, targets, times) in tqdm(enumerate(test_dataloader), total=len(test_dataloader)):
+        # for i, (inputs, targets, times) in enumerate(test_dataloader):
             inputs, targets = inputs.to(TORCH_DEVICE), targets.to(TORCH_DEVICE)
             with torch.no_grad():
                 outputs = model(inputs)

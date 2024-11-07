@@ -1,63 +1,50 @@
 import numpy as np
+import matplotlib.pyplot as plt
 
+def tile_weight_mask(N=64):
 
-def tile_weight_mask(size=64):
+    step_increment = 1/(N-2)
+
     """
-    Generates a 2D NumPy array of specified size with:
-    - The four central grids set to 1.
-    - The corner grids set to 0.
-    - The two central grids on each edge set to 0.5.
-    - Intermediate grids varying based on their distance from the center.
-
+    Creates an NxN NumPy array where the four central cells have a value of 0,
+    and each concentric layer outward increments the value by 1 based on Manhattan distance.
+    
     Parameters:
-    - size (int): The size of the grid (size x size). Default is 64.
-
+    - N (int): Size of the grid (must be even).
+    
     Returns:
-    - array (np.ndarray): The generated 2D array.
+    - grid (np.ndarray): The resulting NxN grid with distance values.
+    - steps (int): Number of steps to reach the central cells from the farthest cell.
+    
+    The function also plots the grid.
     """
-    # Initialize a size x size array with zeros
-    array = np.zeros((size, size))
+    if N % 2 != 0:
+        raise ValueError("N must be an even number.")
     
-    # Define the center of the array
-    center = (size / 2 - 0.5, size / 2 - 0.5)  # e.g., (31.5, 31.5) for size=64
+    # Define central indices
+    c1 = N // 2 - 1
+    c2 = N // 2
     
-    # Create coordinate grids
-    x = np.arange(size)
-    y = np.arange(size)
-    X, Y = np.meshgrid(x, y)
+    # Generate grid indices
+    rows, cols = np.indices((N, N))
     
-    # Calculate the Euclidean distance from each grid to the center
-    distance = np.sqrt((X - center[0])**2 + (Y - center[1])**2)
+    # Calculate Manhattan distance to each of the four central cells
+    dist1 = np.abs(rows - c1) + np.abs(cols - c1)
+    dist2 = np.abs(rows - c1) + np.abs(cols - c2)
+    dist3 = np.abs(rows - c2) + np.abs(cols - c1)
+    dist4 = np.abs(rows - c2) + np.abs(cols - c2)
     
-    # Maximum distance is from center to a corner
-    max_distance = np.sqrt((center[0])**2 + (center[1])**2)
+    # Take the minimum distance to any of the four central cells
+    grid = np.minimum(np.minimum(dist1, dist2), np.minimum(dist3, dist4))
     
-    # Apply the gradient formula: 1 - (distance / max_distance)^2
-    array = 1 - (distance / max_distance)**2
+    # Number of steps is the maximum distance
+    grid = 1-(grid*step_increment)
     
-    # Ensure that the values are within [0, 1]
-    array = np.clip(array, 0, 1)
-    
-    # Assign exact values to the central grids
-    central_indices = [int(center[0]), int(center[1])]
-    array[central_indices[0], central_indices[1]] = 1
-    array[central_indices[0], central_indices[1]+1] = 1
-    array[central_indices[0]+1, central_indices[1]] = 1
-    array[central_indices[0]+1, central_indices[1]+1] = 1
-    
-    # Assign exact values to the corner grids
-    corners = [(0,0), (0,size-1), (size-1,0), (size-1,size-1)]
-    for corner in corners:
-        array[corner] = 0
-    
-    # Assign exact values to the center of each edge
-    edge_centers = [
-        (0, int(center[1])), (0, int(center[1]+1)),
-        (size-1, int(center[1])), (size-1, int(center[1]+1)),
-        (int(center[0]), 0), (int(center[0]+1), 0),
-        (int(center[0]), size-1), (int(center[0]+1), size-1)
-    ]
-    for edge in edge_centers:
-        array[edge] = 0.5
-    
-    return array
+    return grid
+
+
+# Example usage:
+if __name__ == "__main__":
+    N = 64  # Example even number
+    grid = tile_weight_mask(N)
+    print("Distance Grid:\n", grid)
