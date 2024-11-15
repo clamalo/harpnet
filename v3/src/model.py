@@ -1,100 +1,64 @@
 import torch
 import torch.nn as nn
 
+class SelfAttention2D(nn.Module):
+    def __init__(self, in_dim):
+        super(SelfAttention2D, self).__init__()
+        self.chanel_in = in_dim
+        
+        self.query_conv = nn.Conv2d(in_channels=in_dim, out_channels=in_dim//8, kernel_size=1)
+        self.key_conv = nn.Conv2d(in_channels=in_dim, out_channels=in_dim//8, kernel_size=1)
+        self.value_conv = nn.Conv2d(in_channels=in_dim, out_channels=in_dim, kernel_size=1)
+        self.gamma = nn.Parameter(torch.zeros(1))
 
-class AttentionBlock(nn.Module):
-    def __init__(self, in_channels, gating_channels):
-        super(AttentionBlock, self).__init__()
-        self.theta_x = nn.Conv2d(in_channels=in_channels, out_channels=in_channels, kernel_size=(1, 1), stride=(2, 2))
-        self.phi_g = nn.Conv2d(in_channels=gating_channels, out_channels=in_channels, kernel_size=(1, 1), stride=(1, 1))
-        self.psi = nn.Conv2d(in_channels=in_channels, out_channels=1, kernel_size=(1, 1), stride=(1, 1))
-        self.relu = nn.ReLU()
-        self.sigmoid = nn.Sigmoid()
-        self.upsample = nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True)
+        self.softmax = nn.Softmax(dim=-1)
+        
+    def forward(self, x):
+        batch_size, C, width, height = x.size()
+        proj_query = self.query_conv(x).view(batch_size, -1, width * height).permute(0, 2, 1)  # B x N x C'
+        proj_key = self.key_conv(x).view(batch_size, -1, width * height)  # B x C' x N
+        energy = torch.bmm(proj_query, proj_key)  # B x N x N
+        attention = self.softmax(energy)  # B x N x N
+        proj_value = self.value_conv(x).view(batch_size, -1, width * height)  # B x C x N
 
-    def forward(self, x, gating):
-        theta_x = self.theta_x(x)
-        gating = self.phi_g(gating)
-        add = self.relu(theta_x + gating)
-        psi = self.psi(add)
-        sigmoid_psi = self.sigmoid(psi)
-        upsample_psi = self.upsample(sigmoid_psi)
-        y = upsample_psi * x
-        return y
-    
+        out = torch.bmm(proj_value, attention.permute(0, 2, 1))  # B x C x N
+        out = out.view(batch_size, C, width, height)
+        
+        out = self.gamma * out + x
+        return out
 
-class SlidingAttentionBlock(nn.Module):
-    def __init__(self, in_channels, gating_channels, window_size=5, stride=1):
-        super(SlidingAttentionBlock, self).__init__()
-        self.window_size = window_size
-        self.stride = stride
-        self.in_channels = in_channels
-        self.gating_channels = gating_channels
+class AttentionBlockWithSelfAttention(nn.Module):
+    def __init__(self, F_g, F_l, F_int=None):
+        super(AttentionBlockWithSelfAttention, self).__init__()
+        if F_int is None:
+            F_int = F_l // 2
 
-        # Define layers
-        self.theta_x = nn.Conv2d(in_channels=in_channels, out_channels=in_channels, kernel_size=1, stride=1)
-        self.phi_g = nn.Conv2d(in_channels=gating_channels, out_channels=in_channels, kernel_size=1, stride=1)
-        self.psi = nn.Conv2d(in_channels=in_channels, out_channels=1, kernel_size=1, stride=1)
-        self.relu = nn.ReLU()
-        self.sigmoid = nn.Sigmoid()
+        self.W_g = nn.Sequential(
+            nn.Conv2d(F_g, F_int, kernel_size=1, padding=0),
+            nn.BatchNorm2d(F_int)
+        )
 
-    def forward(self, x, gating):
-        # x: [batch_size, in_channels, H, W]
-        # gating: [batch_size, gating_channels, H, W]
+        self.W_x = nn.Sequential(
+            nn.Conv2d(F_l, F_int, kernel_size=1, padding=0),
+            nn.BatchNorm2d(F_int)
+        )
+
+        self.psi = nn.Sequential(
+            nn.Conv2d(F_int, 1, kernel_size=1, padding=0),
+            nn.BatchNorm2d(1),
+            nn.Sigmoid()
+        )
+
+        self.relu = nn.ReLU(inplace=True)
+        self.self_attention = SelfAttention2D(F_int)
         
-        batch_size, _, H, W = x.size()
-        _, _, H_g, W_g = gating.size()
-        
-        # Ensure spatial dimensions match
-        assert H == H_g and W == W_g, "Spatial dimensions of x and gating must match"
-        
-        # Extract sliding windows
-        x_windows = F.unfold(x, kernel_size=self.window_size, stride=self.stride)  # [batch_size, in_channels * window_size^2, L]
-        gating_windows = F.unfold(gating, kernel_size=self.window_size, stride=self.stride)  # [batch_size, gating_channels * window_size^2, L]
-        
-        # Number of windows
-        L = x_windows.size(-1)
-        
-        # Reshape windows to process individually
-        x_windows = x_windows.view(batch_size, self.in_channels, self.window_size, self.window_size, L)
-        x_windows = x_windows.permute(0, 4, 1, 2, 3).contiguous().view(batch_size * L, self.in_channels, self.window_size, self.window_size)
-        
-        gating_windows = gating_windows.view(batch_size, self.gating_channels, self.window_size, self.window_size, L)
-        gating_windows = gating_windows.permute(0, 4, 1, 2, 3).contiguous().view(batch_size * L, self.gating_channels, self.window_size, self.window_size)
-        
-        # Apply attention mechanisms
-        theta_x = self.theta_x(x_windows)       # [batch_size * L, in_channels, window_size, window_size]
-        phi_g = self.phi_g(gating_windows)      # [batch_size * L, in_channels, window_size, window_size]
-        
-        add = self.relu(theta_x + phi_g)        # [batch_size * L, in_channels, window_size, window_size]
-        psi = self.psi(add)                     # [batch_size * L, 1, window_size, window_size]
-        sigmoid_psi = self.sigmoid(psi)         # [batch_size * L, 1, window_size, window_size]
-        
-        # Apply attention to x_windows
-        attended_windows = sigmoid_psi * x_windows  # [batch_size * L, in_channels, window_size, window_size]
-        
-        # Reshape attended_windows for folding
-        attended_windows = attended_windows.view(batch_size, L, self.in_channels * self.window_size * self.window_size)
-        attended_windows = attended_windows.permute(0, 2, 1).contiguous()  # [batch_size, in_channels * window_size^2, L]
-        
-        # Fold back to spatial dimensions
-        y = F.fold(attended_windows, 
-                   output_size=(H, W), 
-                   kernel_size=self.window_size, 
-                   stride=self.stride)  # [batch_size, in_channels, H, W]
-        
-        # Handle overlapping regions by averaging
-        ones = torch.ones_like(x)
-        ones_windows = F.unfold(ones, kernel_size=self.window_size, stride=self.stride)  # [batch_size, window_size^2, L]
-        overlap = F.fold(ones_windows, 
-                        output_size=(H, W), 
-                        kernel_size=self.window_size, 
-                        stride=self.stride)  # [batch_size, 1, H, W]
-        
-        y = y / (overlap + 1e-8)  # Avoid division by zero
-        
-        return y
-    
+    def forward(self, g, x):
+        g1 = self.W_g(g)
+        x1 = self.W_x(x)
+        combined = self.relu(g1 + x1)
+        attended = self.self_attention(combined)
+        psi = self.psi(attended)
+        return x * psi
 
 class ResConvBlock(nn.Module):
     def __init__(self, in_channels, out_channels, shape=(64,64), dropout_rate=0.0):
@@ -110,15 +74,14 @@ class ResConvBlock(nn.Module):
             nn.Conv2d(in_channels, out_channels, 1),
             nn.LayerNorm([out_channels, shape[0], shape[1]]))
         self.dropout = nn.Dropout(dropout_rate)
-    
+        
     def forward(self, x):
         x_shortcut = self.shortcut(x)
         x = self.resconvblock(x)
         x = x + x_shortcut
         x = self.dropout(x)
         return x
-    
-    
+
 class UNetWithAttention(nn.Module):
     def __init__(self, in_channels, out_channels, output_shape=(64, 64)):
         super(UNetWithAttention, self).__init__()
@@ -131,14 +94,14 @@ class UNetWithAttention(nn.Module):
 
         self.pool = nn.MaxPool2d(kernel_size=2, stride=2)
 
-        # self.bridge = ResConvBlock(1024, 2048, (2,2))
-        self.bridge = ResConvBlock(256, 512, (8,8))
+        self.bridge = ResConvBlock(1024, 2048, (2,2))
 
-        self.attn_block5 = AttentionBlock(1024, 2048)
-        self.attn_block4 = AttentionBlock(512, 1024)
-        self.attn_block3 = AttentionBlock(256, 512)
-        self.attn_block2 = AttentionBlock(128, 256)
-        self.attn_block1 = AttentionBlock(64, 128)
+        # Updated F_g and F_l to match actual channels
+        self.attn_block5 = AttentionBlockWithSelfAttention(F_g=1024, F_l=1024)
+        self.attn_block4 = AttentionBlockWithSelfAttention(F_g=512, F_l=512)
+        self.attn_block3 = AttentionBlockWithSelfAttention(F_g=256, F_l=256)
+        self.attn_block2 = AttentionBlockWithSelfAttention(F_g=128, F_l=128)
+        self.attn_block1 = AttentionBlockWithSelfAttention(F_g=64, F_l=64)
 
         self.upconv5 = nn.ConvTranspose2d(2048, 1024, kernel_size=2, stride=2)
         self.upconv4 = nn.ConvTranspose2d(1024, 512, kernel_size=2, stride=2)
@@ -156,50 +119,60 @@ class UNetWithAttention(nn.Module):
 
         self.output_shape = output_shape
 
-    def forward(self, x):#, elevation):
+    def forward(self, x):
 
         if len(x.shape) == 3:
             x = x.unsqueeze(1)
 
         output_shape = self.output_shape
-        interpolated_x = nn.functional.interpolate(x, size=output_shape, mode='nearest')#, align_corners=True)
+        interpolated_x = nn.functional.interpolate(x, size=output_shape, mode='nearest')
 
+        # Encoder
         enc1 = self.enc1(interpolated_x)
         enc2 = self.enc2(self.pool(enc1))
         enc3 = self.enc3(self.pool(enc2))
-        # enc4 = self.enc4(self.pool(enc3))
-        # enc5 = self.enc5(self.pool(enc4))
+        enc4 = self.enc4(self.pool(enc3))
+        enc5 = self.enc5(self.pool(enc4))
 
-        # bridge = self.bridge(self.pool(enc5))
-        bridge = self.bridge(self.pool(enc3))
+        # Bridge
+        bridge = self.bridge(self.pool(enc5))
         
-        # gating5 = self.attn_block5(enc5, bridge)
-        # up5 = self.upconv5(bridge)
-        # up5 = torch.cat([up5, gating5], dim=1)
-        # dec5 = self.dec5(up5)
+        # Decoder with Attention Blocks
+        up5 = self.upconv5(bridge)
+        gating5 = self.attn_block5(up5, enc5)
+        up5 = torch.cat([up5, gating5], dim=1)
+        dec5 = self.dec5(up5)
 
-        # gating4 = self.attn_block4(enc4, dec5)
-        # up4 = self.upconv4(dec5)
-        # up4 = torch.cat([up4, gating4], dim=1)
-        # dec4 = self.dec4(up4)
+        up4 = self.upconv4(dec5)
+        gating4 = self.attn_block4(up4, enc4)
+        up4 = torch.cat([up4, gating4], dim=1)
+        dec4 = self.dec4(up4)
 
-        gating3 = self.attn_block3(enc3, bridge)
-        up3 = self.upconv3(bridge)
+        up3 = self.upconv3(dec4)
+        gating3 = self.attn_block3(up3, enc3)
         up3 = torch.cat([up3, gating3], dim=1)
         dec3 = self.dec3(up3)
 
-        gating2 = self.attn_block2(enc2, dec3)
         up2 = self.upconv2(dec3)
+        gating2 = self.attn_block2(up2, enc2)
         up2 = torch.cat([up2, gating2], dim=1)
         dec2 = self.dec2(up2)
 
-        gating1 = self.attn_block1(enc1, dec2)
         up1 = self.upconv1(dec2)
+        gating1 = self.attn_block1(up1, enc1)
         up1 = torch.cat([up1, gating1], dim=1)
         dec1 = self.dec1(up1)
 
         final = self.final_conv(dec1)
-        
         final = torch.clamp(final, min=0)
 
         return final.squeeze(1)
+
+
+if __name__ == '__main__':
+    model = UNetWithAttention(1, 1)
+    print(model)
+
+    x = torch.randn(16, 1, 64, 64)
+    y = model(x)
+    print(y.shape)
