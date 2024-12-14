@@ -10,6 +10,9 @@ TORCH_DEVICE = 'cuda' if torch.cuda.is_available() else 'mps' if torch.backends.
 
 # MODEL CONTROLS
 UNET_DEPTH = 5
+MODEL_INPUT_CHANNELS = 1
+MODEL_OUTPUT_CHANNELS = 1
+MODEL_OUTPUT_SHAPE = (64, 64)
 
 # GRID CONTROLS
 HOUR_INCREMENT = 1 # 1 for full, 3 for base
