@@ -8,6 +8,9 @@ FIGURES_DIR = f'figures'
 
 TORCH_DEVICE = 'cuda' if torch.cuda.is_available() else 'mps' if torch.backends.mps.is_available() else 'cpu'
 
+# MODEL CONTROLS
+UNET_DEPTH = 5
+
 # GRID CONTROLS
 HOUR_INCREMENT = 1 # 1 for full, 3 for base
 SCALE_FACTOR = 4  # 8 for 3km, 4 for 6km

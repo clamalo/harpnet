@@ -3,7 +3,7 @@ import torch.nn as nn
 from tqdm import tqdm
 import os
 from src.model import UNetWithAttention
-from src.constants import TORCH_DEVICE, CHECKPOINTS_DIR
+from src.constants import TORCH_DEVICE, CHECKPOINTS_DIR, UNET_DEPTH
 
 
 def train_test(tile, train_dataloader, test_dataloader, start_epoch=0, end_epoch=20):
@@ -12,7 +12,7 @@ def train_test(tile, train_dataloader, test_dataloader, start_epoch=0, end_epoch
 
     torch.manual_seed(42)
 
-    model = UNetWithAttention(1, 1, output_shape=(64,64)).to(TORCH_DEVICE)
+    model = UNetWithAttention(1, 1, output_shape=(64,64), depth=UNET_DEPTH).to(TORCH_DEVICE)
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
     criterion = nn.MSELoss()
     if start_epoch != 0:

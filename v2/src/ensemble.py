@@ -4,7 +4,7 @@ from tqdm import tqdm
 import gc
 from src.generate_dataloaders import generate_dataloaders
 from src.model import UNetWithAttention
-from src.constants import CHECKPOINTS_DIR, TORCH_DEVICE
+from src.constants import CHECKPOINTS_DIR, TORCH_DEVICE, UNET_DEPTH
 
 def load_checkpoint_test_loss(checkpoint_path, device):
     """
@@ -122,7 +122,7 @@ def ensemble(tile, start_month, end_month, train_test_ratio, max_ensemble_size=N
 
     # Initialize the Model
     print("Initializing the model...")
-    model = UNetWithAttention(1, 1, output_shape=(64, 64)).to(device)
+    model = UNetWithAttention(1, 1, output_shape=(64, 64), depth=UNET_DEPTH).to(device)
     model.eval()  # Set model to evaluation mode
 
     # Collect All Checkpoints and Their Test Losses

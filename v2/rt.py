@@ -9,8 +9,8 @@ import xarray as xr
 import os
 
 from src.model import UNetWithAttention
-from src.constants import TORCH_DEVICE, FIGURES_DIR
-model = UNetWithAttention(1, 1, output_shape=(64,64)).to(TORCH_DEVICE)
+from src.constants import TORCH_DEVICE, FIGURES_DIR, UNET_DEPTH
+model = UNetWithAttention(1, 1, output_shape=(64,64), depth=UNET_DEPTH).to(TORCH_DEVICE)
 from src.get_coordinates import get_coordinates
 from src.realtime_ecmwf import realtime_ecmwf
 from src.realtime_gfs import realtime_gfs

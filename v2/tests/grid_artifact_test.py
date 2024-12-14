@@ -25,7 +25,7 @@ setup(tile)
 
 
 
-model = UNetWithAttention(1, 1, output_shape=(64,64)).to(constants.torch_device)
+model = UNetWithAttention(1, 1, output_shape=(64,64), depth=constants.UNET_DEPTH).to(constants.torch_device)
 checkpoint = torch.load(f"{tile}_model.pt", map_location=constants.torch_device)
 model.load_state_dict(checkpoint['model_state_dict'])
 
