@@ -1,26 +1,17 @@
-"""
-Functions for creating and evaluating ensembles of models by averaging their parameters.
-"""
-
 import os
 import gc
 import torch
-import random
 import numpy as np
 from tqdm import tqdm
 from typing import List, Optional, Tuple, Dict, Any
 from src.generate_dataloaders import generate_dataloaders
 from src.model import UNetWithAttention
-from src.constants import CHECKPOINTS_DIR, TORCH_DEVICE, RANDOM_SEED
+from src.constants import CHECKPOINTS_DIR, TORCH_DEVICE
 
 def load_checkpoint_test_loss(checkpoint_path: str, device: str) -> Tuple[float, Dict[str, torch.Tensor], float]:
-    """
-    Load a checkpoint and retrieve the test loss and model state_dict.
-    """
     checkpoint = torch.load(checkpoint_path, map_location=device)
     bilinear_test_loss = checkpoint['bilinear_test_loss']
 
-    # Extract test_loss from checkpoint
     if 'test_loss' in checkpoint:
         test_loss = checkpoint['test_loss']
     elif 'test_losses' in checkpoint:
@@ -41,7 +32,6 @@ def load_checkpoint_test_loss(checkpoint_path: str, device: str) -> Tuple[float,
     elif 'model_state_dict' in checkpoint:
         state_dict = checkpoint['model_state_dict']
     else:
-        # In case old format directly saved model
         state_dict = checkpoint
 
     if test_loss is None:
@@ -70,6 +60,7 @@ def evaluate_ensemble(model: UNetWithAttention, test_dataloader, device: str) ->
     with torch.no_grad():
         for batch in test_dataloader:
             inputs, elev_data, targets, times, tile_ids = batch
+            # Keep original interpolation modes
             inputs = torch.nn.functional.interpolate(inputs, size=(64, 64), mode='nearest')
             elev_data = torch.nn.functional.interpolate(elev_data, size=(64,64), mode='nearest')
             inputs = torch.cat([inputs, elev_data], dim=1)
@@ -92,17 +83,9 @@ def ensemble(tiles: List[int],
              max_ensemble_size: Optional[int] = None) -> None:
     """
     Compute an ensemble of models by averaging their parameters.
-    Evaluate ensemble performance incrementally from 1 model up to max_ensemble_size.
-    Save the best ensemble checkpoint to CHECKPOINTS_DIR/best/best_model.pt.
     """
-    # Set seeds for reproducibility
-    random.seed(RANDOM_SEED)
-    np.random.seed(RANDOM_SEED)
-    torch.manual_seed(RANDOM_SEED)
-    if torch.cuda.is_available():
-        torch.cuda.manual_seed_all(RANDOM_SEED)
-    torch.backends.cudnn.deterministic = True
-    torch.backends.cudnn.benchmark = False
+
+    # No seed setting here.
 
     device = TORCH_DEVICE
     print(f"Using device: {device}")
@@ -114,7 +97,6 @@ def ensemble(tiles: List[int],
     print("Initializing the model...")
     model = UNetWithAttention().to(device)
 
-    # Find all checkpoint files
     checkpoint_files = [
         f for f in os.listdir(CHECKPOINTS_DIR)
         if os.path.isfile(os.path.join(CHECKPOINTS_DIR, f)) and f.endswith('_model.pt')
@@ -126,7 +108,6 @@ def ensemble(tiles: List[int],
     checkpoints = []
     print(f"Found {len(checkpoint_files)} checkpoint file(s).")
 
-    # Load checkpoints and test losses
     for file_name in checkpoint_files:
         checkpoint_path = os.path.join(CHECKPOINTS_DIR, file_name)
         try:
@@ -144,7 +125,6 @@ def ensemble(tiles: List[int],
     if not checkpoints:
         raise ValueError("No valid checkpoints with test_loss found.")
 
-    # Sort checkpoints by test_loss (best first)
     sorted_checkpoints = sorted(checkpoints, key=lambda x: x['test_loss'])
     print("\nCheckpoints sorted by test_loss (ascending):")
     for ckpt in sorted_checkpoints:
@@ -160,20 +140,15 @@ def ensemble(tiles: List[int],
         max_ensemble_size = total_models
         print(f"No maximum ensemble size specified. Using all {max_ensemble_size} available checkpoints.")
 
-    # Start building ensemble
     first_checkpoint = sorted_checkpoints[0]
     test_loss, state_dict, bilinear_test_loss = load_checkpoint_test_loss(first_checkpoint['checkpoint_path'], device)
     cumulative_state_dict = initialize_cumulative_state_dict(state_dict, device)
     add_state_dict_to_cumulative(cumulative_state_dict, state_dict)
 
-    # Evaluate ensemble with 1 model
     print(f"\nEvaluating ensemble with 1 model:")
     model.load_state_dict(state_dict)
     del state_dict
     gc.collect()
-    if device == 'cuda':
-        torch.cuda.empty_cache()
-
     mean_loss = evaluate_ensemble(model, test_dataloader, device)
     print(f"Ensemble with 1 model: Mean Loss = {mean_loss:.6f}")
 
@@ -182,7 +157,6 @@ def ensemble(tiles: List[int],
     best_ensemble_state_dict = {k: v.clone() for k, v in model.state_dict().items()}
     best_bilinear_test_loss = bilinear_test_loss
 
-    # Evaluate ensemble sizes from 2 up to max_ensemble_size
     for N in range(2, max_ensemble_size + 1):
         print(f"\nEvaluating ensemble with {N} model(s):")
         next_checkpoint = sorted_checkpoints[N-1]
@@ -202,8 +176,6 @@ def ensemble(tiles: List[int],
             del averaged_state_dict
             del state_dict_n
             gc.collect()
-            if device == 'cuda':
-                torch.cuda.empty_cache()
             continue
 
         mean_loss = evaluate_ensemble(model, test_dataloader, device)
@@ -218,10 +190,7 @@ def ensemble(tiles: List[int],
         del averaged_state_dict
         del state_dict_n
         gc.collect()
-        if device == 'cuda':
-            torch.cuda.empty_cache()
 
-    # Save best ensemble
     if best_ensemble_state_dict is not None:
         model.load_state_dict(best_ensemble_state_dict, strict=False)
         print(f"\nOptimal ensemble size: {best_num_models} model(s) with Mean Loss = {best_mean_loss:.6f}")

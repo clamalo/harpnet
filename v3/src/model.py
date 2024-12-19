@@ -11,6 +11,7 @@ class AttentionBlock(nn.Module):
         self.psi = nn.Conv2d(in_channels=in_channels, out_channels=1, kernel_size=(1, 1), stride=(1, 1))
         self.relu = nn.ReLU()
         self.sigmoid = nn.Sigmoid()
+        # Restore bilinear interpolation
         self.upsample = nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True)
 
     def forward(self, x, gating):
@@ -73,7 +74,6 @@ class UNetWithAttention(nn.Module):
 
         # Encoder channels
         enc_out_channels = [base_channels * (2 ** i) for i in range(depth)]
-
         bridge_out_channels = enc_out_channels[-1] * 2
 
         self.encoders = nn.ModuleList()
@@ -146,14 +146,8 @@ class UNetWithAttention(nn.Module):
 
             up = upconv(dec_out)
             cat_feat = torch.cat([up, gating_feat], dim=1)
-
             dec_out = decoder(cat_feat)
 
         final = self.final_conv(dec_out)
         final = torch.clamp(final, min=0)
         return final
-    
-if __name__ == '__main__':
-    model = UNetWithAttention()
-    dummy_input = torch.randn(1, 1, 64, 64)
-    print(model(dummy_input).shape)
