@@ -12,7 +12,7 @@ start_epoch, end_epoch = 0, 5
 zip_setting = False
 max_ensemble_size = 8
 
-tiles = list(range(0,36))
+tiles = list(range(0,30))
 
 setup()
 
@@ -20,6 +20,6 @@ xr_to_np(tiles, start_month, end_month, train_test_ratio, zip_setting)
 
 train_dataloader, test_dataloader = generate_dataloaders(tiles, start_month, end_month, train_test_ratio)
 
-train_test(train_dataloader, test_dataloader, start_epoch, end_epoch, focus_tile=18)
+train_test(train_dataloader, test_dataloader, start_epoch, end_epoch, focus_tile=24)
 
 ensemble(tiles, start_month, end_month, train_test_ratio, max_ensemble_size)

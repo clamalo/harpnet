@@ -71,7 +71,7 @@ def train_test(train_dataloader, test_dataloader, start_epoch=0, end_epoch=20, f
                 outputs = model(inputs)
                 loss = criterion(outputs, targets)
 
-                cropped_inputs = inputs[:,:,1:-1,1:-1]
+                cropped_inputs = inputs[:,0:1,1:-1,1:-1]
                 interpolated_inputs = torch.nn.functional.interpolate(cropped_inputs, size=(64, 64), mode='bilinear')
                 bilinear_loss = criterion(interpolated_inputs, targets)
 
