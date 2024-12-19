@@ -5,18 +5,17 @@ Functions for creating and evaluating ensembles of models by averaging their par
 import os
 import gc
 import torch
+import random
+import numpy as np
 from tqdm import tqdm
 from typing import List, Optional, Tuple, Dict, Any
 from src.generate_dataloaders import generate_dataloaders
 from src.model import UNetWithAttention
-from src.constants import CHECKPOINTS_DIR, TORCH_DEVICE
+from src.constants import CHECKPOINTS_DIR, TORCH_DEVICE, RANDOM_SEED
 
 def load_checkpoint_test_loss(checkpoint_path: str, device: str) -> Tuple[float, Dict[str, torch.Tensor], float]:
     """
     Load a checkpoint and retrieve the test loss and model state_dict.
-
-    Returns:
-        test_loss, state_dict, bilinear_test_loss
     """
     checkpoint = torch.load(checkpoint_path, map_location=device)
     bilinear_test_loss = checkpoint['bilinear_test_loss']
@@ -51,9 +50,6 @@ def load_checkpoint_test_loss(checkpoint_path: str, device: str) -> Tuple[float,
     return test_loss, state_dict, bilinear_test_loss
 
 def initialize_cumulative_state_dict(state_dict: Dict[str, torch.Tensor], device: str) -> Dict[str, torch.Tensor]:
-    """
-    Initialize a cumulative state_dict to hold averaged parameters.
-    """
     cumulative = {}
     for key, value in state_dict.items():
         if isinstance(value, torch.Tensor):
@@ -61,17 +57,11 @@ def initialize_cumulative_state_dict(state_dict: Dict[str, torch.Tensor], device
     return cumulative
 
 def add_state_dict_to_cumulative(cumulative: Dict[str, torch.Tensor], new_state: Dict[str, torch.Tensor]) -> None:
-    """
-    Add a state_dict to the cumulative parameters.
-    """
     for key in cumulative.keys():
         if key in new_state and isinstance(new_state[key], torch.Tensor):
             cumulative[key] += new_state[key].float()
 
 def evaluate_ensemble(model: UNetWithAttention, test_dataloader, device: str) -> float:
-    """
-    Evaluate the ensemble model on the test dataloader and return the mean MSE loss.
-    """
     loss_fn = torch.nn.MSELoss()
     total_loss = 0.0
     num_batches = 0
@@ -105,6 +95,15 @@ def ensemble(tiles: List[int],
     Evaluate ensemble performance incrementally from 1 model up to max_ensemble_size.
     Save the best ensemble checkpoint to CHECKPOINTS_DIR/best/best_model.pt.
     """
+    # Set seeds for reproducibility
+    random.seed(RANDOM_SEED)
+    np.random.seed(RANDOM_SEED)
+    torch.manual_seed(RANDOM_SEED)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(RANDOM_SEED)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+
     device = TORCH_DEVICE
     print(f"Using device: {device}")
 
@@ -162,7 +161,6 @@ def ensemble(tiles: List[int],
         print(f"No maximum ensemble size specified. Using all {max_ensemble_size} available checkpoints.")
 
     # Start building ensemble
-    # Initialize with best single model
     first_checkpoint = sorted_checkpoints[0]
     test_loss, state_dict, bilinear_test_loss = load_checkpoint_test_loss(first_checkpoint['checkpoint_path'], device)
     cumulative_state_dict = initialize_cumulative_state_dict(state_dict, device)

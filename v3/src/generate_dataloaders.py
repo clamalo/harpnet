@@ -4,9 +4,10 @@ Module to generate PyTorch DataLoaders from pre-processed NumPy arrays.
 
 import numpy as np
 import torch
+import random
 from torch.utils.data import DataLoader, Dataset
 from pathlib import Path
-from src.constants import PROCESSED_DIR
+from src.constants import PROCESSED_DIR, RANDOM_SEED
 from typing import List, Tuple
 
 def generate_dataloaders(tiles: List[int], 
@@ -27,6 +28,15 @@ def generate_dataloaders(tiles: List[int],
     Returns:
         train_dataloader, test_dataloader
     """
+
+    # Set seeds for reproducibility
+    random.seed(RANDOM_SEED)
+    np.random.seed(RANDOM_SEED)
+    torch.manual_seed(RANDOM_SEED)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(RANDOM_SEED)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
 
     class CombinedDataset(Dataset):
         def __init__(self, inputs: np.ndarray, 
@@ -87,9 +97,9 @@ def generate_dataloaders(tiles: List[int],
     train_dataset = CombinedDataset(train_input, train_target, train_times, train_tile_ids, tile_elev, tile_id_to_index)
     test_dataset = CombinedDataset(test_input, test_target, test_times, test_tile_ids, tile_elev, tile_id_to_index)
 
-    loader_generator = torch.Generator().manual_seed(42)
+    loader_generator = torch.Generator().manual_seed(RANDOM_SEED)
 
-    train_dataloader = DataLoader(train_dataset, batch_size=32, shuffle=True, generator=loader_generator)
-    test_dataloader = DataLoader(test_dataset, batch_size=32, shuffle=False)
+    train_dataloader = DataLoader(train_dataset, batch_size=32, shuffle=True, generator=loader_generator, num_workers=0)
+    test_dataloader = DataLoader(test_dataset, batch_size=32, shuffle=False, num_workers=0)
 
     return train_dataloader, test_dataloader

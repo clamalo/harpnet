@@ -15,12 +15,15 @@ import numpy as np
 import pandas as pd
 import os
 import zipfile
+import gc
+import random
+import torch
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
 from typing import List, Tuple, Union
 
 from src.get_coordinates import get_coordinates
-from src.constants import RAW_DIR, PROCESSED_DIR, ZIP_DIR, HOUR_INCREMENT
+from src.constants import RAW_DIR, PROCESSED_DIR, ZIP_DIR, HOUR_INCREMENT, RANDOM_SEED
 
 def xr_to_np(tiles: List[int], 
              start_month: Tuple[int,int], 
@@ -42,6 +45,15 @@ def xr_to_np(tiles: List[int],
         train_test_ratio: Ratio for test set size.
         zip_setting: 'save', 'load', or False
     """
+
+    # Set seeds for reproducibility
+    random.seed(RANDOM_SEED)
+    np.random.seed(RANDOM_SEED)
+    torch.manual_seed(RANDOM_SEED)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(RANDOM_SEED)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
 
     combined_zip_path = ZIP_DIR / "combined_dataset.zip"
 
@@ -129,7 +141,7 @@ def xr_to_np(tiles: List[int],
     for i, tile in enumerate(tiles):
         _, _, _, _, fine_lats, fine_lons = get_coordinates(tile)
         elev_fine = elevation_ds.interp(lat=fine_lats, lon=fine_lons).topo.fillna(0.0).values.astype('float32')
-        elev_fine = elev_fine / 8848.9  # Normalize elevation (max elevation ~ Mt. Everest)
+        elev_fine = elev_fine / 8848.9  # Normalize elevation
         tile_elev_all[i, 0, :, :] = elev_fine
 
     # Process train/test splits
@@ -157,7 +169,6 @@ def xr_to_np(tiles: List[int],
             targets_arr = np.expand_dims(targets_arr, axis=1)
 
         # Shuffle
-        np.random.seed(42)
         indices = np.random.permutation(len(times_s))
         inputs_arr = inputs_arr[indices]
         targets_arr = targets_arr[indices]
@@ -210,10 +221,15 @@ def xr_to_np(tiles: List[int],
 
     np.save(tile_elev_path, tile_elev_all)
 
+    # Free memory before zipping
+    del (train_inputs_all, train_targets_all, train_times_all, train_tile_ids_all,
+         test_inputs_all, test_targets_all, test_times_all, test_tile_ids_all, tile_elev_all)
+    gc.collect()
+
     # If zip_setting='save', zip the files and remove raw npy files
     if zip_setting == 'save':
         print("Zipping processed data...")
-        with zipfile.ZipFile(combined_zip_path, 'w', compression=zipfile.ZIP_DEFLATED) as zipf:
+        with zipfile.ZipFile(combined_zip_path, 'w', compression=zipfile.ZIP_STORED) as zipf:
             zipf.write(train_input_path, "combined_train_input.npy")
             zipf.write(train_target_path, "combined_train_target.npy")
             zipf.write(train_times_path, "combined_train_times.npy")

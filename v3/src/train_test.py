@@ -6,9 +6,11 @@ import torch
 import torch.nn as nn
 from tqdm import tqdm
 import os
+import random
+import numpy as np
 from typing import Optional
 from src.model import UNetWithAttention
-from src.constants import TORCH_DEVICE, CHECKPOINTS_DIR
+from src.constants import TORCH_DEVICE, CHECKPOINTS_DIR, RANDOM_SEED
 
 def train_model(model: nn.Module, 
                 train_dataloader, 
@@ -70,7 +72,7 @@ def test_model(model: nn.Module,
             loss = criterion(outputs, targets)
 
             # Compute bilinear baseline loss
-            cropped_inputs = inputs[:,0:1,1:-1,1:-1]  # extract original coarse input channel
+            cropped_inputs = inputs[:,0:1,1:-1,1:-1]
             interpolated_inputs = torch.nn.functional.interpolate(cropped_inputs, size=(64, 64), mode='bilinear')
             bilinear_loss = criterion(interpolated_inputs, targets)
 
@@ -108,7 +110,15 @@ def train_test(train_dataloader,
     Saves a checkpoint after each epoch.
     Optionally compute loss specific to a focus_tile.
     """
-    torch.manual_seed(42)
+    # Set seeds for reproducibility
+    random.seed(RANDOM_SEED)
+    np.random.seed(RANDOM_SEED)
+    torch.manual_seed(RANDOM_SEED)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(RANDOM_SEED)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+
     model = UNetWithAttention().to(TORCH_DEVICE)
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
     criterion = nn.MSELoss()

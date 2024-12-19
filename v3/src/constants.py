@@ -29,3 +29,6 @@ HOUR_INCREMENT = 1  # 1 for full hourly data, 3 for every 3-hour data
 SCALE_FACTOR = 4    # E.g., 8 for 3km, 4 for 6km resolution
 MIN_LAT, MIN_LON = 34, -125
 MAX_LAT, MAX_LON = 51, -104
+
+# Seed for reproducibility
+RANDOM_SEED = 42
