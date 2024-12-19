@@ -1,69 +1,63 @@
-from datetime import datetime
-from dateutil.relativedelta import relativedelta
 import numpy as np
 import os
 import torch
 from torch.utils.data import DataLoader, Dataset
 from src.constants import PROCESSED_DIR
 
-def generate_dataloaders(tile, first_month, last_month, train_test_ratio):
+def generate_dataloaders(tiles, first_month, last_month, train_test_ratio):
+    """
+    Loads the combined train/test sets produced by xr_to_np, including elevation data.
+    Returns train and test dataloaders with (input, elevation, target, time, tile_id).
+    """
 
-    class MemMapDataset(Dataset):
-        def __init__(self, inputs, targets, times):
+    class CombinedDataset(Dataset):
+        def __init__(self, inputs, targets, times, tile_ids, elev):
             self.inputs = inputs
             self.targets = targets
-            self.times = times
+            self.times = times  # int64 (seconds since epoch)
+            self.tile_ids = tile_ids
+            self.elev = elev
         def __len__(self):
             return self.inputs.shape[0]
         def __getitem__(self, idx):
-            return self.inputs[idx], self.targets[idx], self.times[idx]
+            input_data = torch.from_numpy(self.inputs[idx])   # (C,H,W)
+            target_data = torch.from_numpy(self.targets[idx]) # (1,H,W)
+            elev_data = torch.from_numpy(self.elev[idx])      # (1,Hf,Wf), same resolution as targets
+            time_data = self.times[idx]                       # int64
+            tile_data = self.tile_ids[idx]
+            return input_data, elev_data, target_data, time_data, tile_data
 
-    # Generate list of months between first_month and last_month inclusive
-    first = datetime(*first_month, day=1)
-    last = datetime(*last_month, day=1)
-    months = []
-    current = first
-    while current <= last:
-        months.append(current)
-        current += relativedelta(months=1)
+    train_input_path = os.path.join(PROCESSED_DIR, "combined_train_input.npy")
+    train_target_path = os.path.join(PROCESSED_DIR, "combined_train_target.npy")
+    train_times_path = os.path.join(PROCESSED_DIR, "combined_train_times.npy")
+    train_tile_ids_path = os.path.join(PROCESSED_DIR, "combined_train_tile_ids.npy")
+    train_elev_path = os.path.join(PROCESSED_DIR, "combined_train_elev.npy")
 
-    # Create file paths using list comprehensions
-    input_file_paths = [
-        os.path.join(PROCESSED_DIR, str(tile), f'input_{m.year}_{m.month:02d}.npy') for m in months
-    ]
-    target_file_paths = [
-        os.path.join(PROCESSED_DIR, str(tile), f'target_{m.year}_{m.month:02d}.npy') for m in months
-    ]
-    times_file_paths = [
-        os.path.join(PROCESSED_DIR, str(tile), f'times_{m.year}_{m.month:02d}.npy') for m in months
-    ]
+    test_input_path = os.path.join(PROCESSED_DIR, "combined_test_input.npy")
+    test_target_path = os.path.join(PROCESSED_DIR, "combined_test_target.npy")
+    test_times_path = os.path.join(PROCESSED_DIR, "combined_test_times.npy")
+    test_tile_ids_path = os.path.join(PROCESSED_DIR, "combined_test_tile_ids.npy")
+    test_elev_path = os.path.join(PROCESSED_DIR, "combined_test_elev.npy")
 
-    # Load and concatenate arrays
-    input_arr = np.concatenate([np.load(fp) for fp in input_file_paths])
-    target_arr = np.concatenate([np.load(fp) for fp in target_file_paths])
-    times_arr = np.concatenate([np.load(fp) for fp in times_file_paths]).astype('datetime64[s]').astype(np.float64)
+    train_input = np.load(train_input_path)
+    train_target = np.load(train_target_path)
+    train_times = np.load(train_times_path)
+    train_tile_ids = np.load(train_tile_ids_path)
+    train_elev = np.load(train_elev_path)
 
-    # Shuffle the data
-    np.random.seed(42)
-    indices = np.random.permutation(len(times_arr))
-    input_arr, target_arr, times_arr = input_arr[indices], target_arr[indices], times_arr[indices]
+    test_input = np.load(test_input_path)
+    test_target = np.load(test_target_path)
+    test_times = np.load(test_times_path)
+    test_tile_ids = np.load(test_tile_ids_path)
+    test_elev = np.load(test_elev_path)
 
-    print(times_arr[:3].astype('datetime64[s]'))
+    train_dataset = CombinedDataset(train_input, train_target, train_times, train_tile_ids, train_elev)
+    test_dataset = CombinedDataset(test_input, test_target, test_times, test_tile_ids, test_elev)
 
-    # Split the data
-    split_idx = int(train_test_ratio * len(input_arr))
-    train_input, test_input = input_arr[split_idx:], input_arr[:split_idx]
-    train_target, test_target = target_arr[split_idx:], target_arr[:split_idx]
-    train_times, test_times = times_arr[split_idx:], times_arr[:split_idx]
+    # Use a fixed seed for deterministic shuffling
+    loader_generator = torch.Generator().manual_seed(42)
 
-    # Create datasets
-    train_dataset = MemMapDataset(train_input, train_target, train_times)
-    test_dataset = MemMapDataset(test_input, test_target, test_times)
-
-    # Create DataLoaders with deterministic shuffling for training
-    generator = torch.Generator()
-    generator.manual_seed(42)
-    train_dataloader = DataLoader(train_dataset, batch_size=32, shuffle=True, generator=generator)
+    train_dataloader = DataLoader(train_dataset, batch_size=32, shuffle=True, generator=loader_generator)
     test_dataloader = DataLoader(test_dataset, batch_size=32, shuffle=False)
 
     return train_dataloader, test_dataloader

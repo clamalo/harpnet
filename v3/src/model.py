@@ -122,10 +122,10 @@ class UNetWithAttention(nn.Module):
         if len(x.shape) == 3:
             x = x.unsqueeze(1)
 
-        interpolated_x = nn.functional.interpolate(x, size=self.output_shape, mode='nearest')
+        # interpolated_x = nn.functional.interpolate(x, size=self.output_shape, mode='nearest')
 
         enc_features = []
-        out = interpolated_x
+        out = x
         for i in range(self.depth):
             out = self.encoders[i](out)
             enc_features.append(out)
@@ -153,7 +153,7 @@ class UNetWithAttention(nn.Module):
 
         final = self.final_conv(dec_out)
         final = torch.clamp(final, min=0)
-        return final.squeeze(1)
+        return final
     
 if __name__ == '__main__':
     model = UNetWithAttention()

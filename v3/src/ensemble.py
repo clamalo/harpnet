@@ -4,40 +4,33 @@ from tqdm import tqdm
 import gc
 from src.generate_dataloaders import generate_dataloaders
 from src.model import UNetWithAttention
-from src.constants import CHECKPOINTS_DIR, TORCH_DEVICE, UNET_DEPTH
+from src.constants import CHECKPOINTS_DIR, TORCH_DEVICE
 
 def load_checkpoint_test_loss(checkpoint_path, device):
     checkpoint = torch.load(checkpoint_path, map_location=device)
     bilinear_test_loss = checkpoint['bilinear_test_loss']
-
-    if isinstance(checkpoint, dict):
-        if 'test_loss' in checkpoint:
-            test_loss = checkpoint['test_loss']
-        elif 'test_losses' in checkpoint:
-            test_loss = checkpoint['test_losses']
-            if isinstance(test_loss, list):
-                test_loss = sum(test_loss) / len(test_loss)
-            elif isinstance(test_loss, dict):
-                test_loss = test_loss.get('mse_loss', None)
-                if test_loss is None:
-                    raise KeyError(f"'mse_loss' not found in 'test_losses' for checkpoint {checkpoint_path}.")
-            else:
-                raise TypeError(f"Unexpected type for 'test_losses' in checkpoint {checkpoint_path}: {type(test_loss)}")
+    if 'test_loss' in checkpoint:
+        test_loss = checkpoint['test_loss']
+    elif 'test_losses' in checkpoint:
+        test_loss = checkpoint['test_losses']
+        if isinstance(test_loss, list):
+            test_loss = sum(test_loss) / len(test_loss)
+        elif isinstance(test_loss, dict):
+            test_loss = test_loss.get('mse_loss', None)
+            if test_loss is None:
+                raise KeyError(f"'mse_loss' not found in 'test_losses' for checkpoint {checkpoint_path}.")
         else:
-            raise KeyError(f"'test_loss' or 'test_losses' key not found in checkpoint {checkpoint_path}.")
-        if 'state_dict' in checkpoint:
-            state_dict = checkpoint['state_dict']
-        elif 'model_state_dict' in checkpoint:
-            state_dict = checkpoint['model_state_dict']
-        else:
-            state_dict = checkpoint
+            raise TypeError(f"Unexpected type for 'test_losses' in checkpoint {checkpoint_path}: {type(test_loss)}")
     else:
-        test_loss = None
+        raise KeyError(f"'test_loss' key not found in checkpoint {checkpoint_path}.")
+    if 'state_dict' in checkpoint:
+        state_dict = checkpoint['state_dict']
+    elif 'model_state_dict' in checkpoint:
+        state_dict = checkpoint['model_state_dict']
+    else:
         state_dict = checkpoint
-
     if test_loss is None:
         raise ValueError(f"Test loss could not be determined for checkpoint {checkpoint_path}.")
-
     return test_loss, state_dict, bilinear_test_loss
 
 def initialize_cumulative_state_dict(state_dict, device):
@@ -52,35 +45,38 @@ def add_state_dict_to_cumulative(cumulative_state_dict, new_state_dict):
         if key in new_state_dict and isinstance(new_state_dict[key], torch.Tensor):
             cumulative_state_dict[key] += new_state_dict[key].float()
 
-def ensemble(tile, start_month, end_month, train_test_ratio, max_ensemble_size=None):
-    checkpoint_tile_dir = os.path.join(CHECKPOINTS_DIR, str(tile))
-    if not os.path.isdir(checkpoint_tile_dir):
-        raise FileNotFoundError(f"Checkpoint directory for tile {tile} does not exist: {checkpoint_tile_dir}")
-
+def ensemble(tiles, start_month, end_month, train_test_ratio, max_ensemble_size=None):
+    """
+    Ensemble calculation now does not use a tile-specific directory.
+    Instead, it looks at all model checkpoints in CHECKPOINTS_DIR.
+    We'll generate dataloaders for all tiles combined and test ensemble performance.
+    """
     device = TORCH_DEVICE
     print(f"Using device: {device}")
 
     print("Generating data loaders...")
-    train_dataloader, test_dataloader = generate_dataloaders(tile, start_month, end_month, train_test_ratio)
+    # Generate dataloaders for all tiles combined
+    train_dataloader, test_dataloader = generate_dataloaders(tiles, start_month, end_month, train_test_ratio)
     print(f"Number of test batches: {len(test_dataloader)}")
 
     print("Initializing the model...")
     model = UNetWithAttention().to(device)
     model.eval()
 
+    # Find all checkpoint files
     checkpoint_files = [
-        f for f in os.listdir(checkpoint_tile_dir)
-        if os.path.isfile(os.path.join(checkpoint_tile_dir, f)) and f.endswith('_model.pt')
+        f for f in os.listdir(CHECKPOINTS_DIR)
+        if os.path.isfile(os.path.join(CHECKPOINTS_DIR, f)) and f.endswith('_model.pt')
     ]
 
     if not checkpoint_files:
-        raise FileNotFoundError(f"No checkpoint files found in directory: {checkpoint_tile_dir}")
+        raise FileNotFoundError(f"No checkpoint files found in directory: {CHECKPOINTS_DIR}")
 
     checkpoints = []
     print(f"Found {len(checkpoint_files)} checkpoint file(s).")
 
     for file_name in checkpoint_files:
-        checkpoint_path = os.path.join(checkpoint_tile_dir, file_name)
+        checkpoint_path = os.path.join(CHECKPOINTS_DIR, file_name)
         try:
             test_loss, _, bilinear_test_loss = load_checkpoint_test_loss(checkpoint_path, device)
             checkpoints.append({
@@ -116,10 +112,7 @@ def ensemble(tile, start_month, end_month, train_test_ratio, max_ensemble_size=N
     bilinear_test_loss = None
 
     first_checkpoint = sorted_checkpoints[0]
-    try:
-        test_loss, state_dict, bilinear_test_loss = load_checkpoint_test_loss(first_checkpoint['checkpoint_path'], device)
-    except Exception as e:
-        raise RuntimeError(f"Failed to load state_dict from '{first_checkpoint['file_name']}': {e}")
+    test_loss, state_dict, bilinear_test_loss = load_checkpoint_test_loss(first_checkpoint['checkpoint_path'], device)
 
     cumulative_state_dict = initialize_cumulative_state_dict(state_dict, device)
     add_state_dict_to_cumulative(cumulative_state_dict, state_dict)
@@ -128,7 +121,8 @@ def ensemble(tile, start_month, end_month, train_test_ratio, max_ensemble_size=N
     model.load_state_dict(state_dict)
     del state_dict
     gc.collect()
-    torch.cuda.empty_cache()
+    if device == 'cuda':
+        torch.cuda.empty_cache()
 
     loss_fn = torch.nn.MSELoss()
 
@@ -136,13 +130,7 @@ def ensemble(tile, start_month, end_month, train_test_ratio, max_ensemble_size=N
     num_batches = 0
     with torch.no_grad():
         for batch_idx, batch in enumerate(tqdm(test_dataloader, desc='Evaluating Ensemble Size 1')):
-            if len(batch) == 2:
-                inputs, targets = batch
-            elif len(batch) == 3:
-                inputs, targets, _ = batch
-            else:
-                raise ValueError(f"Unexpected number of items in batch: {len(batch)}. Expected 2 or 3.")
-
+            inputs, targets, times, tile_ids = batch
             inputs = inputs.to(device)
             targets = targets.to(device)
 
@@ -180,7 +168,8 @@ def ensemble(tile, start_month, end_month, train_test_ratio, max_ensemble_size=N
             print(f"Failed to load averaged state_dict into the model for ensemble size {N}: {e}")
             del averaged_state_dict
             gc.collect()
-            torch.cuda.empty_cache()
+            if device == 'cuda':
+                torch.cuda.empty_cache()
             continue
 
         total_loss = 0.0
@@ -188,13 +177,7 @@ def ensemble(tile, start_month, end_month, train_test_ratio, max_ensemble_size=N
 
         with torch.no_grad():
             for batch_idx, batch in enumerate(tqdm(test_dataloader, desc=f'Evaluating Ensemble Size {N}')):
-                if len(batch) == 2:
-                    inputs, targets = batch
-                elif len(batch) == 3:
-                    inputs, targets, _ = batch
-                else:
-                    raise ValueError(f"Unexpected number of items in batch: {len(batch)}. Expected 2 or 3.")
-
+                inputs, targets, times, tile_ids = batch
                 inputs = inputs.to(device)
                 targets = targets.to(device)
 
@@ -215,7 +198,8 @@ def ensemble(tile, start_month, end_month, train_test_ratio, max_ensemble_size=N
         del averaged_state_dict
         del state_dict
         gc.collect()
-        torch.cuda.empty_cache()
+        if device == 'cuda':
+            torch.cuda.empty_cache()
 
     if best_ensemble_state_dict is not None:
         model.load_state_dict(best_ensemble_state_dict, strict=False)
@@ -224,7 +208,7 @@ def ensemble(tile, start_month, end_month, train_test_ratio, max_ensemble_size=N
         best_dir = os.path.join(CHECKPOINTS_DIR, 'best')
         os.makedirs(best_dir, exist_ok=True)
 
-        best_model_path = os.path.join(best_dir, f"{tile}_model.pt")
+        best_model_path = os.path.join(best_dir, f"best_model.pt")
         try:
             torch.save({
                 'model_state_dict': best_ensemble_state_dict,

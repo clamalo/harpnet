@@ -9,8 +9,8 @@ FIGURES_DIR = f'figures'
 TORCH_DEVICE = 'cuda' if torch.cuda.is_available() else 'mps' if torch.backends.mps.is_available() else 'cpu'
 
 # MODEL CONTROLS
-UNET_DEPTH = 5
-MODEL_INPUT_CHANNELS = 1
+UNET_DEPTH = 3
+MODEL_INPUT_CHANNELS = 2
 MODEL_OUTPUT_CHANNELS = 1
 MODEL_OUTPUT_SHAPE = (64, 64)
 
