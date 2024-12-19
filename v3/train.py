@@ -10,27 +10,31 @@ from src.cleanup import cleanup
 start_month = (1979, 10)
 end_month = (1980, 9)
 train_test_ratio = 0.2
-start_epoch, end_epoch = 0, 5
-zip_setting = 'load'    # False, 'load', or 'save'
+start_epoch, end_epoch = 20, 25
+zip_setting = 'save'    # False, 'load', or 'save'
 max_ensemble_size = 8
 
-# plot_tiles()
+# We now define multiple tiles to be processed at once
+tiles = [0, 1, 2]
 
-tiles = list(range(0, 1))
-
+# Setup directories for all tiles
 for tile in tiles:
-
     setup(tile)
 
-    xr_to_np(tile, start_month, end_month, zip_setting)
+# Preprocess multiple tiles at once
+xr_to_np(tiles, start_month, end_month, zip_setting)
 
-    if zip_setting == 'save':
-        continue
+if zip_setting == 'save':
+    # If we are saving zips, we stop here
+    exit()
 
-    train_dataloader, test_dataloader = generate_dataloaders(tile, start_month, end_month, train_test_ratio)
+# Generate dataloaders from multiple tiles combined
+train_dataloader, test_dataloader = generate_dataloaders(tiles, start_month, end_month, train_test_ratio)
 
-    train_test(tile, train_dataloader, test_dataloader, start_epoch, end_epoch)
+# Note: The training and testing functions currently assume one tile at a time. 
+# If you want to train a single model over multiple tiles combined, you can proceed as is.
+# If you need separate models per tile, loop over tiles again. 
+# For demonstration, we'll just pick one tile to run train/test on.
+tile = tiles[0]
 
-    ensemble(tile, start_month, end_month, train_test_ratio, max_ensemble_size)
-
-    cleanup(tile)
+train_test(tile, train_dataloader, test_dataloader, start_epoch, end_epoch)

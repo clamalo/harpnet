@@ -1,64 +1,27 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
+from src.constants import UNET_DEPTH, MODEL_INPUT_CHANNELS, MODEL_OUTPUT_CHANNELS, MODEL_OUTPUT_SHAPE
 
-class SelfAttention2D(nn.Module):
-    def __init__(self, in_dim):
-        super(SelfAttention2D, self).__init__()
-        self.chanel_in = in_dim
-        
-        self.query_conv = nn.Conv2d(in_channels=in_dim, out_channels=in_dim//8, kernel_size=1)
-        self.key_conv = nn.Conv2d(in_channels=in_dim, out_channels=in_dim//8, kernel_size=1)
-        self.value_conv = nn.Conv2d(in_channels=in_dim, out_channels=in_dim, kernel_size=1)
-        self.gamma = nn.Parameter(torch.zeros(1))
+class AttentionBlock(nn.Module):
+    def __init__(self, in_channels, gating_channels):
+        super(AttentionBlock, self).__init__()
+        self.theta_x = nn.Conv2d(in_channels=in_channels, out_channels=in_channels, kernel_size=(1, 1), stride=(2, 2))
+        self.phi_g = nn.Conv2d(in_channels=gating_channels, out_channels=in_channels, kernel_size=(1, 1), stride=(1, 1))
+        self.psi = nn.Conv2d(in_channels=in_channels, out_channels=1, kernel_size=(1, 1), stride=(1, 1))
+        self.relu = nn.ReLU()
+        self.sigmoid = nn.Sigmoid()
+        self.upsample = nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True)
 
-        self.softmax = nn.Softmax(dim=-1)
-        
-    def forward(self, x):
-        batch_size, C, width, height = x.size()
-        proj_query = self.query_conv(x).view(batch_size, -1, width * height).permute(0, 2, 1)  # B x N x C'
-        proj_key = self.key_conv(x).view(batch_size, -1, width * height)  # B x C' x N
-        energy = torch.bmm(proj_query, proj_key)  # B x N x N
-        attention = self.softmax(energy)  # B x N x N
-        proj_value = self.value_conv(x).view(batch_size, -1, width * height)  # B x C x N
-
-        out = torch.bmm(proj_value, attention.permute(0, 2, 1))  # B x C x N
-        out = out.view(batch_size, C, width, height)
-        
-        out = self.gamma * out + x
-        return out
-
-class AttentionBlockWithSelfAttention(nn.Module):
-    def __init__(self, F_g, F_l, F_int=None):
-        super(AttentionBlockWithSelfAttention, self).__init__()
-        if F_int is None:
-            F_int = F_l // 2
-
-        self.W_g = nn.Sequential(
-            nn.Conv2d(F_g, F_int, kernel_size=1, padding=0),
-            nn.BatchNorm2d(F_int)
-        )
-
-        self.W_x = nn.Sequential(
-            nn.Conv2d(F_l, F_int, kernel_size=1, padding=0),
-            nn.BatchNorm2d(F_int)
-        )
-
-        self.psi = nn.Sequential(
-            nn.Conv2d(F_int, 1, kernel_size=1, padding=0),
-            nn.BatchNorm2d(1),
-            nn.Sigmoid()
-        )
-
-        self.relu = nn.ReLU(inplace=True)
-        self.self_attention = SelfAttention2D(F_int)
-        
-    def forward(self, g, x):
-        g1 = self.W_g(g)
-        x1 = self.W_x(x)
-        combined = self.relu(g1 + x1)
-        attended = self.self_attention(combined)
-        psi = self.psi(attended)
-        return x * psi
+    def forward(self, x, gating):
+        theta_x = self.theta_x(x)
+        gating = self.phi_g(gating)
+        add = self.relu(theta_x + gating)
+        psi = self.psi(add)
+        sigmoid_psi = self.sigmoid(psi)
+        upsample_psi = self.upsample(sigmoid_psi)
+        y = upsample_psi * x
+        return y
 
 class ResConvBlock(nn.Module):
     def __init__(self, in_channels, out_channels, shape=(64,64), dropout_rate=0.0):
@@ -69,12 +32,14 @@ class ResConvBlock(nn.Module):
             nn.ReLU(),
             nn.Conv2d(out_channels, out_channels, 3, padding=1),
             nn.LayerNorm([out_channels, shape[0], shape[1]]),
-            nn.ReLU())
+            nn.ReLU()
+        )
         self.shortcut = nn.Sequential(
             nn.Conv2d(in_channels, out_channels, 1),
-            nn.LayerNorm([out_channels, shape[0], shape[1]]))
+            nn.LayerNorm([out_channels, shape[0], shape[1]])
+        )
         self.dropout = nn.Dropout(dropout_rate)
-        
+
     def forward(self, x):
         x_shortcut = self.shortcut(x)
         x = self.resconvblock(x)
@@ -83,96 +48,114 @@ class ResConvBlock(nn.Module):
         return x
 
 class UNetWithAttention(nn.Module):
-    def __init__(self, in_channels, out_channels, output_shape=(64, 64)):
+    def __init__(self):
         super(UNetWithAttention, self).__init__()
 
-        self.enc1 = ResConvBlock(in_channels, 64, (64,64))
-        self.enc2 = ResConvBlock(64, 128, (32,32))
-        self.enc3 = ResConvBlock(128, 256, (16,16))
-        self.enc4 = ResConvBlock(256, 512, (8,8))
-        self.enc5 = ResConvBlock(512, 1024, (4,4))
+        depth = UNET_DEPTH
+        output_shape = MODEL_OUTPUT_SHAPE
+        in_channels = MODEL_INPUT_CHANNELS
+        out_channels = MODEL_OUTPUT_CHANNELS
+
+        if depth < 1:
+            raise ValueError("Depth must be at least 1.")
+
+        self.depth = depth
+        self.output_shape = output_shape
+
+        # Base number of channels
+        base_channels = 64
+
+        # Compute shapes at each encoder level
+        shapes = [output_shape]
+        for _ in range(1, depth):
+            shapes.append((shapes[-1][0] // 2, shapes[-1][1] // 2))
+        bridge_shape = (shapes[-1][0] // 2, shapes[-1][1] // 2)
+
+        # Encoder channels
+        enc_out_channels = [base_channels * (2 ** i) for i in range(depth)]
+
+        bridge_out_channels = enc_out_channels[-1] * 2
+
+        self.encoders = nn.ModuleList()
+        prev_channels = in_channels
+        for i in range(depth):
+            self.encoders.append(ResConvBlock(prev_channels, enc_out_channels[i], shape=shapes[i]))
+            prev_channels = enc_out_channels[i]
 
         self.pool = nn.MaxPool2d(kernel_size=2, stride=2)
 
-        self.bridge = ResConvBlock(1024, 2048, (2,2))
+        # Bridge
+        self.bridge = ResConvBlock(enc_out_channels[-1], bridge_out_channels, shape=bridge_shape)
 
-        # Updated F_g and F_l to match actual channels
-        self.attn_block5 = AttentionBlockWithSelfAttention(F_g=1024, F_l=1024)
-        self.attn_block4 = AttentionBlockWithSelfAttention(F_g=512, F_l=512)
-        self.attn_block3 = AttentionBlockWithSelfAttention(F_g=256, F_l=256)
-        self.attn_block2 = AttentionBlockWithSelfAttention(F_g=128, F_l=128)
-        self.attn_block1 = AttentionBlockWithSelfAttention(F_g=64, F_l=64)
+        self.upconvs = nn.ModuleList()
+        self.attn_blocks = nn.ModuleList()
+        self.decoders = nn.ModuleList()
 
-        self.upconv5 = nn.ConvTranspose2d(2048, 1024, kernel_size=2, stride=2)
-        self.upconv4 = nn.ConvTranspose2d(1024, 512, kernel_size=2, stride=2)
-        self.upconv3 = nn.ConvTranspose2d(512, 256, kernel_size=2, stride=2)
-        self.upconv2 = nn.ConvTranspose2d(256, 128, kernel_size=2, stride=2)
-        self.upconv1 = nn.ConvTranspose2d(128, 64, kernel_size=2, stride=2)
-        
-        self.dec5 = ResConvBlock(2048, 1024, (4,4), dropout_rate=0.5)
-        self.dec4 = ResConvBlock(1024, 512, (8,8), dropout_rate=0.5)
-        self.dec3 = ResConvBlock(512, 256, (16,16), dropout_rate=0.3)
-        self.dec2 = ResConvBlock(256, 128, (32,32), dropout_rate=0.3)
-        self.dec1 = ResConvBlock(128, 64, (64,64), dropout_rate=0.1)
+        dec_in_channels = bridge_out_channels
+        gating_channels = bridge_out_channels
+        for i in reversed(range(depth)):
+            self.upconvs.append(nn.ConvTranspose2d(dec_in_channels, enc_out_channels[i], kernel_size=2, stride=2))
+            self.attn_blocks.append(AttentionBlock(enc_out_channels[i], gating_channels))
 
-        self.final_conv = nn.Conv2d(64, out_channels, kernel_size=1)
+            dec_shape = shapes[i]
+            dropout_rate = 0.0
+            if self.depth == 5:
+                if i == 4: # dec5
+                    dropout_rate = 0.5
+                elif i == 3: # dec4
+                    dropout_rate = 0.5
+                elif i == 2: # dec3
+                    dropout_rate = 0.3
+                elif i == 1: # dec2
+                    dropout_rate = 0.3
+                elif i == 0: # dec1
+                    dropout_rate = 0.1
 
-        self.output_shape = output_shape
+            self.decoders.append(ResConvBlock(enc_out_channels[i]*2, enc_out_channels[i], shape=dec_shape, dropout_rate=dropout_rate))
+
+            dec_in_channels = enc_out_channels[i]
+            gating_channels = dec_in_channels
+
+        self.final_conv = nn.Conv2d(enc_out_channels[0], out_channels, kernel_size=1)
 
     def forward(self, x):
-
         if len(x.shape) == 3:
             x = x.unsqueeze(1)
 
-        output_shape = self.output_shape
-        interpolated_x = nn.functional.interpolate(x, size=output_shape, mode='nearest')
+        interpolated_x = nn.functional.interpolate(x, size=self.output_shape, mode='nearest')
 
-        # Encoder
-        enc1 = self.enc1(interpolated_x)
-        enc2 = self.enc2(self.pool(enc1))
-        enc3 = self.enc3(self.pool(enc2))
-        enc4 = self.enc4(self.pool(enc3))
-        enc5 = self.enc5(self.pool(enc4))
+        enc_features = []
+        out = interpolated_x
+        for i in range(self.depth):
+            out = self.encoders[i](out)
+            enc_features.append(out)
+            if i < self.depth - 1:
+                out = self.pool(out)
 
-        # Bridge
-        bridge = self.bridge(self.pool(enc5))
-        
-        # Decoder with Attention Blocks
-        up5 = self.upconv5(bridge)
-        gating5 = self.attn_block5(up5, enc5)
-        up5 = torch.cat([up5, gating5], dim=1)
-        dec5 = self.dec5(up5)
+        out = self.pool(out)
+        bridge = self.bridge(out)
 
-        up4 = self.upconv4(dec5)
-        gating4 = self.attn_block4(up4, enc4)
-        up4 = torch.cat([up4, gating4], dim=1)
-        dec4 = self.dec4(up4)
+        dec_out = bridge
+        for i in range(self.depth):
+            upconv = self.upconvs[i]
+            attn_block = self.attn_blocks[i]
+            decoder = self.decoders[i]
 
-        up3 = self.upconv3(dec4)
-        gating3 = self.attn_block3(up3, enc3)
-        up3 = torch.cat([up3, gating3], dim=1)
-        dec3 = self.dec3(up3)
+            enc_feat = enc_features[self.depth - 1 - i]
 
-        up2 = self.upconv2(dec3)
-        gating2 = self.attn_block2(up2, enc2)
-        up2 = torch.cat([up2, gating2], dim=1)
-        dec2 = self.dec2(up2)
+            gating = dec_out if i > 0 else bridge
+            gating_feat = attn_block(enc_feat, gating)
 
-        up1 = self.upconv1(dec2)
-        gating1 = self.attn_block1(up1, enc1)
-        up1 = torch.cat([up1, gating1], dim=1)
-        dec1 = self.dec1(up1)
+            up = upconv(dec_out)
+            cat_feat = torch.cat([up, gating_feat], dim=1)
 
-        final = self.final_conv(dec1)
+            dec_out = decoder(cat_feat)
+
+        final = self.final_conv(dec_out)
         final = torch.clamp(final, min=0)
-
         return final.squeeze(1)
-
-
+    
 if __name__ == '__main__':
-    model = UNetWithAttention(1, 1)
-    print(model)
-
-    x = torch.randn(16, 1, 64, 64)
-    y = model(x)
-    print(y.shape)
+    model = UNetWithAttention()
+    dummy_input = torch.randn(1, 1, 64, 64)
+    print(model(dummy_input).shape)

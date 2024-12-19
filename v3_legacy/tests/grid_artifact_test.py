@@ -11,25 +11,33 @@ from src.get_coordinates import get_coordinates
 from src.setup import setup
 from src.xr_to_np import xr_to_np
 
+
+
+
 start_month = (1979, 10)
 end_month = (1980, 9)
 train_test_ratio = 0.2
 tile = 31
 
 setup(tile)
+# xr_to_np(tile, start_month, end_month)
 
-model = UNetWithAttention().to(constants.TORCH_DEVICE)
-checkpoint = torch.load(f"{tile}_model.pt", map_location=constants.TORCH_DEVICE)
+
+
+
+model = UNetWithAttention(1, 1, output_shape=(64,64)).to(constants.torch_device)
+checkpoint = torch.load(f"{tile}_model.pt", map_location=constants.torch_device)
 model.load_state_dict(checkpoint['model_state_dict'])
 
 coarse_lats_pad, coarse_lons_pad, coarse_lats, coarse_lons, fine_lats, fine_lons = get_coordinates(tile)
 
 train_dataloader, test_dataloader = generate_dataloaders(tile, start_month, end_month, train_test_ratio)
 
+
 losses = []
 bilinear_losses = []
 for (inputs, targets, times) in tqdm(test_dataloader, total=len(test_dataloader)):
-    inputs, targets = inputs.to(constants.TORCH_DEVICE), targets.to(constants.TORCH_DEVICE)
+    inputs, targets = inputs.to(constants.torch_device), targets.to(constants.torch_device)
 
     with torch.no_grad():
         outputs = model(inputs)
@@ -43,6 +51,7 @@ for (inputs, targets, times) in tqdm(test_dataloader, total=len(test_dataloader)
     losses.append(loss.mean(axis=0))
     bilinear_losses.append(bilinear_loss.mean(axis=0))
 
+
 mean_losses = np.array(losses).mean(axis=0)
 mean_bilinear_losses = np.array(bilinear_losses).mean(axis=0)
 
@@ -51,6 +60,10 @@ max_value = max(mean_losses.max(), mean_bilinear_losses.max())
 intermediate_lats = coarse_lats[:-1] + ((coarse_lats[1:] - coarse_lats[:-1]) / 2)
 intermediate_lons = coarse_lons[:-1] + ((coarse_lons[1:] - coarse_lons[:-1]) / 2)
 
+
+
+
+#plot the mean_losses with cartopy states 
 fig, ax = plt.subplots(1, 1, figsize=(10, 10))
 ax = plt.axes(projection=ccrs.PlateCarree())
 ax.coastlines()
@@ -64,6 +77,7 @@ for lon in intermediate_lons:
     ax.axvline(x=lon, color='red', linestyle='--', linewidth=0.5)
 plt.savefig('model_losses.png')
 
+#plot the mean_bilinear_losses with cartopy states 
 fig, ax = plt.subplots(1, 1, figsize=(10, 10))
 ax = plt.axes(projection=ccrs.PlateCarree())
 ax.coastlines()

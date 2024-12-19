@@ -12,12 +12,19 @@ def plot_tiles():
     ax = fig.add_subplot(1, 1, 1, projection=ccrs.PlateCarree())
     ax.coastlines()
     ax.add_feature(cartopy.feature.STATES)
+
     for tile in grid_tiles:
+        color = 'red' if tile < 4 else 'blue'
         tile_min_lat, tile_max_lat, tile_min_lon, tile_max_lon = grid_tiles[tile]
         ax.plot([tile_min_lon, tile_max_lon, tile_max_lon, tile_min_lon, tile_min_lon],
                 [tile_min_lat, tile_min_lat, tile_max_lat, tile_max_lat, tile_min_lat],
-                color='red', linewidth=2, transform=ccrs.PlateCarree())
+                color=color, linewidth=2, transform=ccrs.PlateCarree())
         ax.text((tile_min_lon + tile_max_lon) / 2, (tile_min_lat + tile_max_lat) / 2, str(tile),
                 horizontalalignment='center', verticalalignment='center', color='black', fontsize=10, transform=ccrs.PlateCarree())
+
     plt.title('HARPNET Tiles')
     plt.savefig(os.path.join(FIGURES_DIR, 'grid_tiles.png'))
+
+
+if __name__ == '__main__':
+    plot_tiles()
