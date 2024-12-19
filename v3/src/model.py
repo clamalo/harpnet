@@ -122,8 +122,6 @@ class UNetWithAttention(nn.Module):
         if len(x.shape) == 3:
             x = x.unsqueeze(1)
 
-        # interpolated_x = nn.functional.interpolate(x, size=self.output_shape, mode='nearest')
-
         enc_features = []
         out = x
         for i in range(self.depth):

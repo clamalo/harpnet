@@ -1,71 +1,95 @@
+"""
+Convert xarray datasets to NumPy arrays for multiple tiles and concatenate them.
+Also handles splitting into training and testing sets and storing elevation arrays.
+
+The zip functionality allows:
+- zip_setting='save': After processing, zip up the arrays and remove the raw npy files.
+- zip_setting='load': Extract from the zip and load arrays directly.
+- zip_setting=False: No zipping; just process and save locally as npy files.
+
+This approach lets you do the preprocessing locally, then zip and transfer for remote training.
+"""
+
 import xarray as xr
 import numpy as np
 import pandas as pd
 import os
-import shutil
+import zipfile
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
-import zipfile
+from typing import List, Tuple, Union
 
 from src.get_coordinates import get_coordinates
 from src.constants import RAW_DIR, PROCESSED_DIR, ZIP_DIR, HOUR_INCREMENT
 
-def xr_to_np(tiles, start_month, end_month, train_test_ratio=0.2, zip_setting=False):
+def xr_to_np(tiles: List[int], 
+             start_month: Tuple[int,int], 
+             end_month: Tuple[int,int], 
+             train_test_ratio: float=0.2, 
+             zip_setting: Union[str,bool]=False):
     """
-    Process multiple tiles at once and also include elevation data.
-    Instead of replicating elevation for each sample, we now compute elevation once per tile and save it separately.
-    We'll save:
-        - combined_train_input.npy
-        - combined_train_target.npy
-        - combined_train_times.npy
-        - combined_train_tile_ids.npy
+    Process multiple tiles and generate combined training/testing datasets.
+    
+    Steps:
+    1. If zip_setting='load': Extract already processed npy files from zip and return.
+    2. If zip_setting=False: Process data and save as npy.
+    3. If zip_setting='save': Process data, save as npy, then zip them and remove raw npy.
 
-        - combined_test_input.npy
-        - combined_test_target.npy
-        - combined_test_times.npy
-        - combined_test_tile_ids.npy
-
-        - combined_tile_elev.npy (shape: (num_tiles, 1, Hf, Wf))
-
-    We no longer store elevation arrays per sample. The elevation will be loaded once and indexed by tile_id in the dataloaders.
+    Args:
+        tiles: List of tile indices to process.
+        start_month: (year, month) tuple for start month of data.
+        end_month: (year, month) tuple for end month of data.
+        train_test_ratio: Ratio for test set size.
+        zip_setting: 'save', 'load', or False
     """
 
-    combined_zip_path = os.path.join(ZIP_DIR, "combined_dataset.zip")
+    combined_zip_path = ZIP_DIR / "combined_dataset.zip"
 
-    train_input_path = os.path.join(PROCESSED_DIR, "combined_train_input.npy")
-    train_target_path = os.path.join(PROCESSED_DIR, "combined_train_target.npy")
-    train_times_path = os.path.join(PROCESSED_DIR, "combined_train_times.npy")
-    train_tile_ids_path = os.path.join(PROCESSED_DIR, "combined_train_tile_ids.npy")
+    train_input_path = PROCESSED_DIR / "combined_train_input.npy"
+    train_target_path = PROCESSED_DIR / "combined_train_target.npy"
+    train_times_path = PROCESSED_DIR / "combined_train_times.npy"
+    train_tile_ids_path = PROCESSED_DIR / "combined_train_tile_ids.npy"
 
-    test_input_path = os.path.join(PROCESSED_DIR, "combined_test_input.npy")
-    test_target_path = os.path.join(PROCESSED_DIR, "combined_test_target.npy")
-    test_times_path = os.path.join(PROCESSED_DIR, "combined_test_times.npy")
-    test_tile_ids_path = os.path.join(PROCESSED_DIR, "combined_test_tile_ids.npy")
+    test_input_path = PROCESSED_DIR / "combined_test_input.npy"
+    test_target_path = PROCESSED_DIR / "combined_test_target.npy"
+    test_times_path = PROCESSED_DIR / "combined_test_times.npy"
+    test_tile_ids_path = PROCESSED_DIR / "combined_test_tile_ids.npy"
 
-    tile_elev_path = os.path.join(PROCESSED_DIR, "combined_tile_elev.npy")
+    tile_elev_path = PROCESSED_DIR / "combined_tile_elev.npy"
 
     # If loading from zip
-    if zip_setting == 'load' and os.path.exists(combined_zip_path):
-        with zipfile.ZipFile(combined_zip_path, 'r') as zip_ref:
-            zip_ref.extractall(PROCESSED_DIR)
-        return
+    if zip_setting == 'load':
+        if combined_zip_path.exists():
+            with zipfile.ZipFile(combined_zip_path, 'r') as zip_ref:
+                zip_ref.extractall(PROCESSED_DIR)
+            return
+        else:
+            raise FileNotFoundError(f"No zip file found at {combined_zip_path} to load from.")
 
+    # Otherwise, process the data
     tile_data = {tile: {"inputs": [], "targets": [], "times": []} for tile in tiles}
 
     current_month = datetime(start_month[0], start_month[1], 1)
     end_month_dt = datetime(end_month[0], end_month[1], 1)
 
-    # Load the elevation dataset once
     elevation_ds = xr.open_dataset("/Users/clamalo/downloads/elevation.nc")
+    # Ensure dimension names match expected lat/lon naming
     if 'X' in elevation_ds.dims and 'Y' in elevation_ds.dims:
         elevation_ds = elevation_ds.rename({'X': 'lon', 'Y': 'lat'})
 
+    # Process each month
     while current_month <= end_month_dt:
         year = current_month.year
         month = current_month.month
         print(f'Processing {year}-{month:02d}')
 
-        month_ds = xr.open_dataset(os.path.join(RAW_DIR, f'{year}-{month:02d}.nc'))
+        file_path = RAW_DIR / f'{year}-{month:02d}.nc'
+        if not file_path.exists():
+            print(f"Warning: File {file_path} does not exist. Skipping.")
+            current_month += relativedelta(months=1)
+            continue
+
+        month_ds = xr.open_dataset(file_path)
 
         # Filter times if needed
         if HOUR_INCREMENT == 3:
@@ -78,6 +102,7 @@ def xr_to_np(tiles, start_month, end_month, train_test_ratio=0.2, zip_setting=Fa
         for tile in tiles:
             coarse_lats_pad, coarse_lons_pad, coarse_lats, coarse_lons, fine_lats, fine_lons = get_coordinates(tile)
 
+            # Select tile region from dataset
             tile_ds = month_ds.sel(lat=slice(coarse_lats_pad[0]-0.25, coarse_lats_pad[-1]+0.25),
                                    lon=slice(coarse_lons_pad[0]-0.25, coarse_lons_pad[-1]+0.25))
 
@@ -93,10 +118,8 @@ def xr_to_np(tiles, start_month, end_month, train_test_ratio=0.2, zip_setting=Fa
 
         current_month += relativedelta(months=1)
 
-    # After loading all data, we now handle elevation separately per tile.
     print("Computing elevation per tile...")
     num_tiles = len(tiles)
-    # Determine shape of fine grid from first tile:
     sample_tile = tiles[0]
     _, _, _, _, fine_lats_sample, fine_lons_sample = get_coordinates(sample_tile)
     Hf = len(fine_lats_sample)
@@ -104,12 +127,12 @@ def xr_to_np(tiles, start_month, end_month, train_test_ratio=0.2, zip_setting=Fa
 
     tile_elev_all = np.zeros((num_tiles, 1, Hf, Wf), dtype='float32')
     for i, tile in enumerate(tiles):
-        coarse_lats_pad, coarse_lons_pad, coarse_lats, coarse_lons, fine_lats, fine_lons = get_coordinates(tile)
+        _, _, _, _, fine_lats, fine_lons = get_coordinates(tile)
         elev_fine = elevation_ds.interp(lat=fine_lats, lon=fine_lons).topo.fillna(0.0).values.astype('float32')
-        elev_fine = elev_fine / 8848.9  # Normalize elevation
+        elev_fine = elev_fine / 8848.9  # Normalize elevation (max elevation ~ Mt. Everest)
         tile_elev_all[i, 0, :, :] = elev_fine
 
-    # Now process train/test split for each tile
+    # Process train/test splits
     print("Processing train/test splits...")
     all_train_inputs = []
     all_train_targets = []
@@ -122,17 +145,16 @@ def xr_to_np(tiles, start_month, end_month, train_test_ratio=0.2, zip_setting=Fa
     all_test_tile_ids = []
 
     for tile_idx, tile in enumerate(tiles):
-        inputs_arr = np.concatenate(tile_data[tile]["inputs"], axis=0)   # (N,  Hc, Wc)
-        targets_arr = np.concatenate(tile_data[tile]["targets"], axis=0) # (N,  Hf, Wf)
-        times_arr = np.concatenate(tile_data[tile]["times"], axis=0)     # (N,)
+        inputs_arr = np.concatenate(tile_data[tile]["inputs"], axis=0)
+        targets_arr = np.concatenate(tile_data[tile]["targets"], axis=0)
+        times_arr = np.concatenate(tile_data[tile]["times"], axis=0)
 
         times_s = times_arr.astype('datetime64[s]').astype(np.int64)
 
-        # Add channel dimension if needed
         if len(inputs_arr.shape) == 3:
-            inputs_arr = np.expand_dims(inputs_arr, axis=1)  # (N,1,Hc,Wc)
+            inputs_arr = np.expand_dims(inputs_arr, axis=1)
         if len(targets_arr.shape) == 3:
-            targets_arr = np.expand_dims(targets_arr, axis=1) # (N,1,Hf,Wf)
+            targets_arr = np.expand_dims(targets_arr, axis=1)
 
         # Shuffle
         np.random.seed(42)
@@ -174,7 +196,7 @@ def xr_to_np(tiles, start_month, end_month, train_test_ratio=0.2, zip_setting=Fa
     test_times_all = np.concatenate(all_test_times, axis=0)
     test_tile_ids_all = np.concatenate(all_test_tile_ids, axis=0)
 
-    # Save the arrays
+    # Save arrays locally
     print("Saving arrays...")
     np.save(train_input_path, train_inputs_all)
     np.save(train_target_path, train_targets_all)
@@ -188,7 +210,9 @@ def xr_to_np(tiles, start_month, end_month, train_test_ratio=0.2, zip_setting=Fa
 
     np.save(tile_elev_path, tile_elev_all)
 
+    # If zip_setting='save', zip the files and remove raw npy files
     if zip_setting == 'save':
+        print("Zipping processed data...")
         with zipfile.ZipFile(combined_zip_path, 'w', compression=zipfile.ZIP_DEFLATED) as zipf:
             zipf.write(train_input_path, "combined_train_input.npy")
             zipf.write(train_target_path, "combined_train_target.npy")
@@ -202,7 +226,7 @@ def xr_to_np(tiles, start_month, end_month, train_test_ratio=0.2, zip_setting=Fa
 
             zipf.write(tile_elev_path, "combined_tile_elev.npy")
 
-        # Remove raw files after zipping if desired
+        # Remove raw npy files after zipping
         os.remove(train_input_path)
         os.remove(train_target_path)
         os.remove(train_times_path)
@@ -214,3 +238,4 @@ def xr_to_np(tiles, start_month, end_month, train_test_ratio=0.2, zip_setting=Fa
         os.remove(test_tile_ids_path)
 
         os.remove(tile_elev_path)
+        print("Zipped and removed local npy files.")

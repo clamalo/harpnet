@@ -1,11 +1,13 @@
-import os
+"""
+Setup script to ensure required directories exist.
+"""
 
+import os
 from src.constants import PROCESSED_DIR, ZIP_DIR, CHECKPOINTS_DIR, FIGURES_DIR
 
 def setup():
     """
-    Setup directories for a multi-tile training scenario.
-    No longer creates tile-specific directories, just ensures base dirs exist.
+    Setup base directories for processing data.
     """
     os.makedirs(PROCESSED_DIR, exist_ok=True)
     os.makedirs(ZIP_DIR, exist_ok=True)
