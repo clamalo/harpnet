@@ -24,7 +24,7 @@ end_month = (1980, 9)
 train_test_ratio = 0.2
 start_epoch, end_epoch = 0, 5
 max_ensemble_size = 8
-tiles = [24]
+tiles = [9,24]
 
 # Adjust this based on your workflow:
 zip_setting = 'load'  # Example usage; adjust as needed.
