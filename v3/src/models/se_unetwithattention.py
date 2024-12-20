@@ -1,9 +1,17 @@
+"""
+Defines a Squeeze-and-Excitation U-Net with attention mechanisms.
+This model extends the original U-Net with attention by adding SE blocks for channel recalibration.
+"""
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from src.constants import UNET_DEPTH, MODEL_INPUT_CHANNELS, MODEL_OUTPUT_CHANNELS, MODEL_OUTPUT_SHAPE
 
 class AttentionBlock(nn.Module):
+    """
+    Attention Block for selectively gating encoder features before combining with decoder features.
+    """
     def __init__(self, in_channels, gating_channels):
         super(AttentionBlock, self).__init__()
         self.theta_x = nn.Conv2d(in_channels=in_channels, out_channels=in_channels, kernel_size=(1, 1), stride=(2, 2))
@@ -24,6 +32,10 @@ class AttentionBlock(nn.Module):
         return y
 
 class SEBlock(nn.Module):
+    """
+    Squeeze-and-Excitation (SE) block for channel-wise feature recalibration.
+    Enhances informative features and suppresses less useful ones.
+    """
     def __init__(self, channel, reduction=16):
         super(SEBlock, self).__init__()
         self.fc = nn.Sequential(
@@ -34,12 +46,17 @@ class SEBlock(nn.Module):
         )
 
     def forward(self, x):
+        # Compute channel-wise statistics and rescale features
         b, c, _, _ = x.size()
         y = F.adaptive_avg_pool2d(x, 1).view(b, c)
         y = self.fc(y).view(b, c, 1, 1)
         return x * y.expand_as(x)
 
 class ResConvBlock(nn.Module):
+    """
+    Residual convolutional block with LayerNorm and SEBlock.
+    Maintains spatial dimensions and includes dropout.
+    """
     def __init__(self, in_channels, out_channels, shape=(64,64), dropout_rate=0.0):
         super(ResConvBlock, self).__init__()
         self.resconvblock = nn.Sequential(
@@ -66,6 +83,11 @@ class ResConvBlock(nn.Module):
         return x
 
 class Model(nn.Module):
+    """
+    Squeeze-and-Excitation U-Net with Attention.
+    Incorporates SE blocks in residual convolutional layers and uses attention on skip connections.
+    Suitable for precipitation downscaling.
+    """
     def __init__(self,
                  in_channels=MODEL_INPUT_CHANNELS,
                  out_channels=MODEL_OUTPUT_CHANNELS,
@@ -78,6 +100,7 @@ class Model(nn.Module):
         self.output_shape = output_shape
         self.depth = depth
 
+        # Define encoder channel sizes
         enc_channels = [64 * (2 ** i) for i in range(self.depth)]
         bridge_channels = enc_channels[-1] * 2
 
@@ -87,6 +110,7 @@ class Model(nn.Module):
             enc_shapes.append((base_h // (2**i), base_w // (2**i)))
         bridge_shape = (base_h // (2**self.depth), base_w // (2**self.depth))
 
+        # Encoders
         self.encoders = nn.ModuleList()
         prev_channels = self.in_channels
         for i in range(self.depth):
@@ -96,6 +120,7 @@ class Model(nn.Module):
         self.pool = nn.MaxPool2d(kernel_size=2, stride=2)
         self.bridge = ResConvBlock(enc_channels[-1], bridge_channels, shape=bridge_shape)
 
+        # Determine dropout rates for decoder layers
         def get_dropout_for_layer(layer_index):
             if layer_index == 0:
                 return 0.1
@@ -106,6 +131,7 @@ class Model(nn.Module):
             else:
                 return 0.5
 
+        # Decoders with attention
         self.upconvs = nn.ModuleList()
         self.attn_blocks = nn.ModuleList()
         self.decoders = nn.ModuleList()
@@ -123,7 +149,7 @@ class Model(nn.Module):
         self.final_conv = nn.Conv2d(enc_channels[0], self.out_channels, kernel_size=1)
 
     def forward(self, x):
-
+        # Encoder forward pass
         enc_results = []
         out = x
         for i, enc in enumerate(self.encoders):
@@ -135,6 +161,7 @@ class Model(nn.Module):
         out = self.pool(out)
         bridge_out = self.bridge(out)
 
+        # Decoder with attention gating
         dec_out = bridge_out
         for i in range(self.depth):
             up = self.upconvs[i](dec_out)

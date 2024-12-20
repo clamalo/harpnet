@@ -1,5 +1,5 @@
 """
-Plot and save a figure showing the defined grid tiles.
+Plots and saves an image showing the defined grid tiles over a geographical domain.
 """
 
 import matplotlib.pyplot as plt
@@ -11,7 +11,8 @@ from src.constants import FIGURES_DIR
 
 def plot_tiles():
     """
-    Plot the tile grid and save as an image.
+    Plot the tile grid on a map and save as an image.
+    Each tile is represented by a red box with its tile index at the center.
     """
     grid_tiles = get_all_tiles()
     fig = plt.figure(figsize=(10, 5))
@@ -19,6 +20,7 @@ def plot_tiles():
     ax.coastlines()
     ax.add_feature(cfeature.STATES)
 
+    # Draw each tile as a rectangle and annotate with tile index
     for tile in grid_tiles:
         lat_min, lat_max, lon_min, lon_max = grid_tiles[tile]
         ax.plot([lon_min, lon_max, lon_max, lon_min, lon_min],

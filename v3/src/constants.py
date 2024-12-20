@@ -1,6 +1,6 @@
 """
 Constants and configuration values for the HARPNET project.
-Paths and hyperparameters are defined here.
+Paths, model hyperparameters, and device settings are defined here.
 """
 
 import torch
@@ -20,7 +20,7 @@ TORCH_DEVICE = ("cuda" if torch.cuda.is_available()
 
 # Model hyperparameters
 MODEL_NAME = "unetwithattention"
-UNET_DEPTH = 1
+UNET_DEPTH = 2
 MODEL_INPUT_CHANNELS = 2
 MODEL_OUTPUT_CHANNELS = 1
 MODEL_OUTPUT_SHAPE = (64, 64)

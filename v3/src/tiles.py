@@ -1,10 +1,16 @@
+"""
+Defines functions for generating and accessing tile coordinates.
+Each tile covers a specific geographic area based on a fine resolution grid.
+"""
+
 import numpy as np
 from src.constants import MIN_LAT, MIN_LON, MAX_LAT, MAX_LON, TILE_SIZE, COARSE_RESOLUTION, FINE_RESOLUTION, PADDING
 
 def get_all_tiles():
     """
     Generate a dictionary of all tiles over the specified lat/lon domain.
-    Each tile covers TILE_SIZE * FINE_RESOLUTION degrees in both latitude and longitude.
+    Each tile is TILE_SIZE x TILE_SIZE pixels at FINE_RESOLUTION spacing.
+
     Returns:
         A dictionary {tile_index: (lat_min, lat_max, lon_min, lon_max)}.
     """
@@ -21,7 +27,6 @@ def get_all_tiles():
             lon_upper = current_lon + tile_size_degrees
             tiles_dict[tile_counter] = (current_lat, lat_upper, current_lon, lon_upper)
             tile_counter += 1
-            
             current_lon += tile_size_degrees
             
         current_lat += tile_size_degrees
@@ -30,8 +35,10 @@ def get_all_tiles():
 
 def tile_coordinates(tile_index):
     """
-    Given a tile index, return coarse and fine coordinate arrays.
-    The tile bounding box is obtained from get_all_tiles().
+    Given a tile index, return coarse and fine coordinate arrays for that tile.
+    The fine-resolution tile is TILE_SIZE x TILE_SIZE at FINE_RESOLUTION.
+    Coarse arrays have added padding if PADDING is specified.
+
     Returns:
         coarse_latitudes, coarse_longitudes, fine_latitudes, fine_longitudes
     """

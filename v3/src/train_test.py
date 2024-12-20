@@ -1,3 +1,8 @@
+"""
+Training and testing routines for the model.
+Includes functions for one epoch of training and testing, and a full train-test loop.
+"""
+
 import torch
 import torch.nn as nn
 from tqdm import tqdm
@@ -9,7 +14,7 @@ from src.constants import TORCH_DEVICE, CHECKPOINTS_DIR, RANDOM_SEED, MODEL_NAME
 from src.generate_dataloaders import generate_dataloaders
 import importlib
 
-# Dynamic import of model
+# Dynamically import model based on MODEL_NAME
 model_module = importlib.import_module(f"src.models.{MODEL_NAME}")
 ModelClass = model_module.Model
 
@@ -17,12 +22,25 @@ def train_model(model: nn.Module,
                 train_dataloader, 
                 optimizer: torch.optim.Optimizer, 
                 criterion: nn.Module) -> float:
+    """
+    Train the model for one epoch.
+
+    Args:
+        model: The model to train.
+        train_dataloader: DataLoader for training data.
+        optimizer: Torch optimizer.
+        criterion: Loss function.
+
+    Returns:
+        Average training loss over the epoch.
+    """
     model.train()
     train_losses = []
 
     for batch in tqdm(train_dataloader, desc="Training", unit="batch"):
         inputs, elev_data, targets, times, tile_ids = batch
 
+        # Interpolate inputs/elevation to 64x64 before concatenation
         inputs = torch.nn.functional.interpolate(inputs, size=(64, 64), mode='nearest')
         elev_data = torch.nn.functional.interpolate(elev_data, size=(64,64), mode='nearest')
         inputs = torch.cat([inputs, elev_data], dim=1)
@@ -43,6 +61,20 @@ def test_model(model: nn.Module,
                test_dataloader, 
                criterion: nn.Module, 
                focus_tile: Optional[int]=None) -> (float, float, Optional[float]):
+    """
+    Test the model on the test dataset.
+
+    Args:
+        model: Trained model.
+        test_dataloader: DataLoader for test set.
+        criterion: Loss function.
+        focus_tile: Optional tile index to compute loss specifically for that tile.
+
+    Returns:
+        mean_test_loss: Average MSE test loss.
+        mean_bilinear_loss: Average MSE loss of a bilinear interpolation baseline.
+        focus_tile_test_loss: If focus_tile is given, the average test loss for that tile.
+    """
     model.eval()
     test_losses = []
     bilinear_test_losses = []
@@ -61,7 +93,7 @@ def test_model(model: nn.Module,
             outputs = model(inputs)
             loss = criterion(outputs, targets)
 
-            # Compute bilinear baseline loss
+            # Compute bilinear baseline loss for comparison
             cropped_inputs = inputs[:,0:1,1:-1,1:-1]
             interpolated_inputs = torch.nn.functional.interpolate(cropped_inputs, size=(64, 64), mode='bilinear')
             bilinear_loss = criterion(interpolated_inputs, targets)
@@ -95,8 +127,19 @@ def train_test(train_dataloader,
                start_epoch: int=0, 
                end_epoch: int=20, 
                focus_tile: Optional[int]=None):
+    """
+    Full training/testing routine for a given model architecture.
+    Saves checkpoints at each epoch.
 
-    # Set seeds for reproducibility
+    Args:
+        train_dataloader: DataLoader for training.
+        test_dataloader: DataLoader for testing.
+        start_epoch: Starting epoch (useful for resuming).
+        end_epoch: Ending epoch.
+        focus_tile: Optional tile ID to track test loss specifically.
+    """
+
+    # Set random seeds for reproducibility
     random.seed(RANDOM_SEED)
     np.random.seed(RANDOM_SEED)
     torch.manual_seed(RANDOM_SEED)
@@ -109,6 +152,7 @@ def train_test(train_dataloader,
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
     criterion = nn.MSELoss()
 
+    # If resuming, load previous checkpoint
     if start_epoch != 0:
         checkpoint_path = os.path.join(CHECKPOINTS_DIR, f'{start_epoch-1}_model.pt')
         if os.path.exists(checkpoint_path):
@@ -116,6 +160,7 @@ def train_test(train_dataloader,
             model.load_state_dict(checkpoint['model_state_dict'])
             optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
 
+    # Training loop
     for epoch in range(start_epoch, end_epoch):
         print(f"\nEpoch {epoch} starting...")
         train_loss = train_model(model, train_dataloader, optimizer, criterion)
@@ -129,6 +174,7 @@ def train_test(train_dataloader,
             else:
                 print(f"Epoch {epoch}: No samples found for tile {focus_tile} in the test set.")
 
+        # Save checkpoint after each epoch
         torch.save({
             'model_state_dict': model.state_dict(),
             'optimizer_state_dict': optimizer.state_dict(),

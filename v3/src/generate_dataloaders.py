@@ -1,3 +1,9 @@
+"""
+Generates PyTorch dataloaders for training and testing.
+Loads previously processed coarse and fine inputs, targets, times, and tile IDs.
+Also provides elevation data for each tile.
+"""
+
 import numpy as np
 import torch
 from torch.utils.data import DataLoader, Dataset
@@ -9,10 +15,24 @@ def generate_dataloaders(tiles: List[int],
                          first_month: Tuple[int,int], 
                          last_month: Tuple[int,int], 
                          train_test_ratio: float):
+    """
+    Generate training and testing dataloaders based on preprocessed Numpy arrays.
 
-    # No seed setting here, rely on train.py
+    Args:
+        tiles: List of tile indices.
+        first_month: (year, month) start period.
+        last_month: (year, month) end period.
+        train_test_ratio: Ratio for splitting train/test data (handled previously).
+
+    Returns:
+        train_dataloader, test_dataloader
+    """
 
     class CombinedDataset(Dataset):
+        """
+        Combined dataset that contains inputs, targets, times, and tile IDs for multiple tiles.
+        Also includes elevation data for each tile.
+        """
         def __init__(self, inputs: np.ndarray, 
                      targets: np.ndarray, 
                      times: np.ndarray, 
@@ -40,6 +60,7 @@ def generate_dataloaders(tiles: List[int],
 
             return input_data, elev_data, target_data, time_data, tile_data
 
+    # Load preprocessed data arrays
     train_input_path = PROCESSED_DIR / "combined_train_input.npy"
     train_target_path = PROCESSED_DIR / "combined_train_target.npy"
     train_times_path = PROCESSED_DIR / "combined_train_times.npy"
@@ -52,7 +73,6 @@ def generate_dataloaders(tiles: List[int],
 
     tile_elev_path = PROCESSED_DIR / "combined_tile_elev.npy"
 
-    # Load arrays
     train_input = np.load(train_input_path)
     train_target = np.load(train_target_path)
     train_times = np.load(train_times_path)
@@ -74,6 +94,7 @@ def generate_dataloaders(tiles: List[int],
     loader_generator = torch.Generator()
     loader_generator.manual_seed(RANDOM_SEED)
 
+    # Create dataloaders
     train_dataloader = DataLoader(train_dataset, batch_size=32, shuffle=True, generator=loader_generator, num_workers=0)
     test_dataloader = DataLoader(test_dataset, batch_size=32, shuffle=False, num_workers=0)
 

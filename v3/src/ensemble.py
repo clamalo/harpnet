@@ -1,3 +1,8 @@
+"""
+Implements model ensembling by averaging model weights from multiple checkpoints.
+Evaluates the performance on a test set and saves the best ensemble model.
+"""
+
 import os
 import gc
 import torch
@@ -8,14 +13,27 @@ from src.generate_dataloaders import generate_dataloaders
 from src.constants import CHECKPOINTS_DIR, TORCH_DEVICE, MODEL_NAME
 import importlib
 
-# Dynamic import of model
+# Dynamic import of model based on MODEL_NAME from constants
 model_module = importlib.import_module(f"src.models.{MODEL_NAME}")
 ModelClass = model_module.Model
 
 def load_checkpoint_test_loss(checkpoint_path: str, device: str) -> Tuple[float, Dict[str, torch.Tensor], float]:
+    """
+    Load a checkpoint and extract test loss and model state_dict.
+
+    Args:
+        checkpoint_path: Path to the checkpoint file.
+        device: Torch device ('cpu', 'cuda', etc.).
+
+    Returns:
+        test_loss: The test loss stored in the checkpoint.
+        state_dict: The model weights.
+        bilinear_test_loss: The bilinear baseline test loss.
+    """
     checkpoint = torch.load(checkpoint_path, map_location=device)
     bilinear_test_loss = checkpoint['bilinear_test_loss']
 
+    # Extract test_loss robustly
     if 'test_loss' in checkpoint:
         test_loss = checkpoint['test_loss']
     elif 'test_losses' in checkpoint:
@@ -44,6 +62,16 @@ def load_checkpoint_test_loss(checkpoint_path: str, device: str) -> Tuple[float,
     return test_loss, state_dict, bilinear_test_loss
 
 def initialize_cumulative_state_dict(state_dict: Dict[str, torch.Tensor], device: str) -> Dict[str, torch.Tensor]:
+    """
+    Initialize a cumulative dictionary for weight averaging.
+
+    Args:
+        state_dict: State dict from a model.
+        device: Torch device.
+
+    Returns:
+        A dictionary with zero-initialized tensors of the same shape as the model weights.
+    """
     cumulative = {}
     for key, value in state_dict.items():
         if isinstance(value, torch.Tensor):
@@ -51,11 +79,29 @@ def initialize_cumulative_state_dict(state_dict: Dict[str, torch.Tensor], device
     return cumulative
 
 def add_state_dict_to_cumulative(cumulative: Dict[str, torch.Tensor], new_state: Dict[str, torch.Tensor]) -> None:
+    """
+    Add another model's weights to the cumulative weights.
+
+    Args:
+        cumulative: The cumulative dictionary.
+        new_state: Another model's state_dict to add.
+    """
     for key in cumulative.keys():
         if key in new_state and isinstance(new_state[key], torch.Tensor):
             cumulative[key] += new_state[key].float()
 
 def evaluate_ensemble(model: ModelClass, test_dataloader, device: str) -> float:
+    """
+    Evaluate the ensemble model on the test set and return MSE loss.
+
+    Args:
+        model: The ensemble model.
+        test_dataloader: Dataloader for test set.
+        device: Torch device.
+
+    Returns:
+        mean_loss: The average test MSE loss.
+    """
     loss_fn = torch.nn.MSELoss()
     total_loss = 0.0
     num_batches = 0
@@ -64,7 +110,7 @@ def evaluate_ensemble(model: ModelClass, test_dataloader, device: str) -> float:
     with torch.no_grad():
         for batch in test_dataloader:
             inputs, elev_data, targets, times, tile_ids = batch
-            # Keep original interpolation modes
+            # Interpolate inputs and elevation to (64,64)
             inputs = torch.nn.functional.interpolate(inputs, size=(64, 64), mode='nearest')
             elev_data = torch.nn.functional.interpolate(elev_data, size=(64,64), mode='nearest')
             inputs = torch.cat([inputs, elev_data], dim=1)
@@ -87,8 +133,16 @@ def ensemble(tiles: List[int],
              max_ensemble_size: Optional[int] = None) -> None:
     """
     Compute an ensemble of models by averaging their parameters.
-    """
+    Loads multiple checkpoints, sorts them by test loss, and incrementally averages top models.
+    Saves the best performing ensemble.
 
+    Args:
+        tiles: List of tile indices used.
+        start_month: (year, month) for start of dataset.
+        end_month: (year, month) for end of dataset.
+        train_test_ratio: Ratio used to split train/test data.
+        max_ensemble_size: Maximum number of models to include in ensemble.
+    """
     device = TORCH_DEVICE
     print(f"Using device: {device}")
 
@@ -110,6 +164,7 @@ def ensemble(tiles: List[int],
     checkpoints = []
     print(f"Found {len(checkpoint_files)} checkpoint file(s).")
 
+    # Load and record test losses
     for file_name in checkpoint_files:
         checkpoint_path = os.path.join(CHECKPOINTS_DIR, file_name)
         try:
@@ -142,11 +197,13 @@ def ensemble(tiles: List[int],
         max_ensemble_size = total_models
         print(f"No maximum ensemble size specified. Using all {max_ensemble_size} available checkpoints.")
 
+    # Start averaging from the best checkpoint
     first_checkpoint = sorted_checkpoints[0]
     test_loss, state_dict, bilinear_test_loss = load_checkpoint_test_loss(first_checkpoint['checkpoint_path'], device)
     cumulative_state_dict = initialize_cumulative_state_dict(state_dict, device)
     add_state_dict_to_cumulative(cumulative_state_dict, state_dict)
 
+    # Evaluate initial best model alone
     print(f"\nEvaluating ensemble with 1 model:")
     model.load_state_dict(state_dict)
     del state_dict
@@ -159,6 +216,7 @@ def ensemble(tiles: List[int],
     best_ensemble_state_dict = {k: v.clone() for k, v in model.state_dict().items()}
     best_bilinear_test_loss = bilinear_test_loss
 
+    # Incrementally add models to the ensemble
     for N in range(2, max_ensemble_size + 1):
         print(f"\nEvaluating ensemble with {N} model(s):")
         next_checkpoint = sorted_checkpoints[N-1]
@@ -193,6 +251,7 @@ def ensemble(tiles: List[int],
         del state_dict_n
         gc.collect()
 
+    # Save the best ensemble state if found
     if best_ensemble_state_dict is not None:
         model.load_state_dict(best_ensemble_state_dict, strict=False)
         print(f"\nOptimal ensemble size: {best_num_models} model(s) with Mean Loss = {best_mean_loss:.6f}")

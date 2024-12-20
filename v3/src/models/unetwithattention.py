@@ -1,8 +1,16 @@
+"""
+Defines a U-Net with attention model for precipitation downscaling.
+This is similar to the se_unetwithattention but without SE blocks.
+"""
+
 import torch
 import torch.nn as nn
 from src.constants import UNET_DEPTH, MODEL_INPUT_CHANNELS, MODEL_OUTPUT_CHANNELS, MODEL_OUTPUT_SHAPE
 
 class AttentionBlock(nn.Module):
+    """
+    Attention Block that selectively highlights relevant encoder features.
+    """
     def __init__(self, in_channels, gating_channels):
         super(AttentionBlock, self).__init__()
         self.theta_x = nn.Conv2d(in_channels=in_channels, out_channels=in_channels, kernel_size=(1, 1), stride=(2, 2))
@@ -23,6 +31,10 @@ class AttentionBlock(nn.Module):
         return y
 
 class ResConvBlock(nn.Module):
+    """
+    Residual convolutional block maintaining spatial dimensions.
+    Includes dropout for regularization.
+    """
     def __init__(self, in_channels, out_channels, shape=(64,64), dropout_rate=0.0):
         super(ResConvBlock, self).__init__()
         self.resconvblock = nn.Sequential(
@@ -47,6 +59,10 @@ class ResConvBlock(nn.Module):
         return x
 
 class Model(nn.Module):
+    """
+    U-Net with attention gates at skip connections.
+    Designed for precipitation downscaling from coarse to fine resolution grids.
+    """
     def __init__(self,
                  in_channels=MODEL_INPUT_CHANNELS,
                  out_channels=MODEL_OUTPUT_CHANNELS,
@@ -68,6 +84,7 @@ class Model(nn.Module):
             enc_shapes.append((base_h // (2**i), base_w // (2**i)))
         bridge_shape = (base_h // (2**self.depth), base_w // (2**self.depth))
 
+        # Encoder blocks
         self.encoders = nn.ModuleList()
         prev_channels = self.in_channels
         for i in range(self.depth):
@@ -87,6 +104,7 @@ class Model(nn.Module):
             else:
                 return 0.5
 
+        # Decoder with attention
         self.upconvs = nn.ModuleList()
         self.attn_blocks = nn.ModuleList()
         self.decoders = nn.ModuleList()
@@ -104,7 +122,7 @@ class Model(nn.Module):
         self.final_conv = nn.Conv2d(enc_channels[0], self.out_channels, kernel_size=1)
 
     def forward(self, x):
-
+        # Encoder forward pass
         enc_results = []
         out = x
         for i, enc in enumerate(self.encoders):
@@ -116,6 +134,7 @@ class Model(nn.Module):
         out = self.pool(out)
         bridge_out = self.bridge(out)
 
+        # Decoder with attention gating
         dec_out = bridge_out
         for i in range(self.depth):
             up = self.upconvs[i](dec_out)
