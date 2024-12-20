@@ -19,7 +19,8 @@ TORCH_DEVICE = ("cuda" if torch.cuda.is_available()
                 else "cpu")
 
 # Model hyperparameters
-UNET_DEPTH = 5
+MODEL_NAME = "unetwithattention"
+UNET_DEPTH = 1
 MODEL_INPUT_CHANNELS = 2
 MODEL_OUTPUT_CHANNELS = 1
 MODEL_OUTPUT_SHAPE = (64, 64)

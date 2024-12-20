@@ -1,7 +1,3 @@
-"""
-Training and testing logic for the U-Net with Attention model.
-"""
-
 import torch
 import torch.nn as nn
 from tqdm import tqdm
@@ -9,17 +5,18 @@ import os
 import random
 import numpy as np
 from typing import Optional
-from src.model import UNetWithAttention
-from src.constants import TORCH_DEVICE, CHECKPOINTS_DIR, RANDOM_SEED
+from src.constants import TORCH_DEVICE, CHECKPOINTS_DIR, RANDOM_SEED, MODEL_NAME
+from src.generate_dataloaders import generate_dataloaders
+import importlib
+
+# Dynamic import of model
+model_module = importlib.import_module(f"src.models.{MODEL_NAME}")
+ModelClass = model_module.Model
 
 def train_model(model: nn.Module, 
                 train_dataloader, 
                 optimizer: torch.optim.Optimizer, 
                 criterion: nn.Module) -> float:
-    """
-    Train the model for one epoch.
-    Returns the average training loss.
-    """
     model.train()
     train_losses = []
 
@@ -46,13 +43,6 @@ def test_model(model: nn.Module,
                test_dataloader, 
                criterion: nn.Module, 
                focus_tile: Optional[int]=None) -> (float, float, Optional[float]):
-    """
-    Test the model on the test_dataloader and compute test_loss and bilinear_test_loss.
-    If focus_tile is provided, also compute tile-specific test loss.
-
-    Returns:
-        test_loss, bilinear_test_loss, focus_tile_test_loss
-    """
     model.eval()
     test_losses = []
     bilinear_test_losses = []
@@ -105,11 +95,7 @@ def train_test(train_dataloader,
                start_epoch: int=0, 
                end_epoch: int=20, 
                focus_tile: Optional[int]=None):
-    """
-    Train and test the model for a given number of epochs.
-    Saves a checkpoint after each epoch.
-    Optionally compute loss specific to a focus_tile.
-    """
+
     # Set seeds for reproducibility
     random.seed(RANDOM_SEED)
     np.random.seed(RANDOM_SEED)
@@ -119,7 +105,7 @@ def train_test(train_dataloader,
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
 
-    model = UNetWithAttention().to(TORCH_DEVICE)
+    model = ModelClass().to(TORCH_DEVICE)
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
     criterion = nn.MSELoss()
 

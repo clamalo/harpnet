@@ -3,10 +3,14 @@ import gc
 import torch
 import numpy as np
 from tqdm import tqdm
-from typing import List, Optional, Tuple, Dict, Any
+from typing import List, Optional, Tuple, Dict
 from src.generate_dataloaders import generate_dataloaders
-from src.model import UNetWithAttention
-from src.constants import CHECKPOINTS_DIR, TORCH_DEVICE
+from src.constants import CHECKPOINTS_DIR, TORCH_DEVICE, MODEL_NAME
+import importlib
+
+# Dynamic import of model
+model_module = importlib.import_module(f"src.models.{MODEL_NAME}")
+ModelClass = model_module.Model
 
 def load_checkpoint_test_loss(checkpoint_path: str, device: str) -> Tuple[float, Dict[str, torch.Tensor], float]:
     checkpoint = torch.load(checkpoint_path, map_location=device)
@@ -51,7 +55,7 @@ def add_state_dict_to_cumulative(cumulative: Dict[str, torch.Tensor], new_state:
         if key in new_state and isinstance(new_state[key], torch.Tensor):
             cumulative[key] += new_state[key].float()
 
-def evaluate_ensemble(model: UNetWithAttention, test_dataloader, device: str) -> float:
+def evaluate_ensemble(model: ModelClass, test_dataloader, device: str) -> float:
     loss_fn = torch.nn.MSELoss()
     total_loss = 0.0
     num_batches = 0
@@ -85,8 +89,6 @@ def ensemble(tiles: List[int],
     Compute an ensemble of models by averaging their parameters.
     """
 
-    # No seed setting here.
-
     device = TORCH_DEVICE
     print(f"Using device: {device}")
 
@@ -95,7 +97,7 @@ def ensemble(tiles: List[int],
     print(f"Number of test batches: {len(test_dataloader)}")
 
     print("Initializing the model...")
-    model = UNetWithAttention().to(device)
+    model = ModelClass().to(device)
 
     checkpoint_files = [
         f for f in os.listdir(CHECKPOINTS_DIR)
