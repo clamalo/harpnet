@@ -9,6 +9,7 @@ import torch
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
 from typing import List, Tuple, Union
+from tqdm import tqdm
 
 from src.tiles import tile_coordinates
 from src.constants import RAW_DIR, PROCESSED_DIR, ZIP_DIR, HOUR_INCREMENT
@@ -20,6 +21,8 @@ def xr_to_np(tiles: List[int],
              zip_setting: Union[str,bool]=False):
     """
     Process multiple tiles and generate combined training/testing datasets.
+    Adds a tqdm progress bar that measures progress through the total
+    number of months times the number of tiles.
     """
 
     combined_zip_path = ZIP_DIR / "combined_dataset.zip"
@@ -44,16 +47,31 @@ def xr_to_np(tiles: List[int],
         else:
             raise FileNotFoundError(f"No zip file found at {combined_zip_path} to load from.")
 
+    # Prepare data storage
     tile_data = {tile: {"inputs": [], "targets": [], "times": []} for tile in tiles}
 
-    current_month = datetime(start_month[0], start_month[1], 1)
-    end_month_dt = datetime(end_month[0], end_month[1], 1)
+    # Calculate the total number of months to process
+    start_date = datetime(start_month[0], start_month[1], 1)
+    end_date = datetime(end_month[0], end_month[1], 1)
+    total_months = 0
+    temp_month = start_date
+    while temp_month <= end_date:
+        total_months += 1
+        temp_month += relativedelta(months=1)
+    total_iterations = total_months * len(tiles)
 
+    # Open elevation dataset
     elevation_ds = xr.open_dataset("/Users/clamalo/downloads/elevation.nc")
     if 'X' in elevation_ds.dims and 'Y' in elevation_ds.dims:
         elevation_ds = elevation_ds.rename({'X': 'lon', 'Y': 'lat'})
 
-    while current_month <= end_month_dt:
+    current_month = start_date
+
+    # Initialize the tqdm progress bar
+    pbar = tqdm(total=total_iterations, desc="Processing data")
+
+    # Process month by month
+    while current_month <= end_date:
         year = current_month.year
         month = current_month.month
         print(f'Processing {year}-{month:02d}')
@@ -73,6 +91,7 @@ def xr_to_np(tiles: List[int],
 
         times = month_ds.time.values
 
+        # Process each tile for this month
         for tile in tiles:
             coarse_latitudes, coarse_longitudes, fine_latitudes, fine_longitudes = tile_coordinates(tile)
 
@@ -87,7 +106,12 @@ def xr_to_np(tiles: List[int],
             tile_data[tile]["targets"].append(fine_tp)
             tile_data[tile]["times"].append(times)
 
+            # Update tqdm after each tile is processed for this month
+            pbar.update(1)
+
         current_month += relativedelta(months=1)
+
+    pbar.close()
 
     print("Computing elevation per tile...")
     num_tiles = len(tiles)
@@ -114,6 +138,7 @@ def xr_to_np(tiles: List[int],
     all_test_times = []
     all_test_tile_ids = []
 
+    # Split and combine data
     for tile_idx, tile in enumerate(tiles):
         inputs_arr = np.concatenate(tile_data[tile]["inputs"], axis=0)
         targets_arr = np.concatenate(tile_data[tile]["targets"], axis=0)
