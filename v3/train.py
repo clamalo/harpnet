@@ -48,7 +48,7 @@ if __name__ == "__main__":
 
     # Train and test the model over the specified epochs
     # Optionally focus on a specific tile (e.g., tile #24) for additional logging
-    train_test(train_dataloader, test_dataloader, start_epoch, end_epoch, focus_tile=24)
+    train_test(train_dataloader, test_dataloader, start_epoch, end_epoch, focus_tile=15)
 
     # Create an ensemble of the best-performing models
     ensemble(tiles, start_month, end_month, train_test_ratio, max_ensemble_size)
