@@ -1,39 +1,57 @@
-"""
-Utilities to get coordinates (lat/lon) for a given tile, both coarse and fine grids.
-"""
-
 import numpy as np
-from src.create_grid_tiles import create_grid_tiles
-from src.constants import SCALE_FACTOR
+from src.constants import MIN_LAT, MIN_LON, MAX_LAT, MAX_LON, TILE_SIZE, COARSE_RESOLUTION, FINE_RESOLUTION, PADDING
 
-def get_coordinates(tile: int):
-    """
-    Given a tile index, return coarse and fine lat/lon coordinates.
+def tiles():
+    # Determine how many degrees each tile covers
+    tile_size_degrees = TILE_SIZE * FINE_RESOLUTION
+    
+    tiles_dict = {}
+    tile_counter = 0
+    
+    current_lat = MIN_LAT
+    while current_lat + tile_size_degrees <= MAX_LAT:
+        lat_upper = current_lat + tile_size_degrees
+        
+        current_lon = MIN_LON
+        while current_lon + tile_size_degrees <= MAX_LON:
+            lon_upper = current_lon + tile_size_degrees
+            
+            # Store the full tile
+            tiles_dict[tile_counter] = [[current_lat, lat_upper],
+                                        [current_lon, lon_upper]]
+            tile_counter += 1
+            
+            current_lon += tile_size_degrees
+            
+        current_lat += tile_size_degrees
+    
+    return tiles_dict
 
-    Returns:
-        coarse_lats_pad, coarse_lons_pad, coarse_lats, coarse_lons, fine_lats, fine_lons
-    """
 
-    def scale_coordinates(x, scale_factor):
-        # Convert coarse coordinates into finer resolution
-        resolution = x[1] - x[0]
-        fine_resolution = resolution / scale_factor
-        x_fine = []
-        for center in x:
-            start = center - (resolution / 2) + (fine_resolution / 2)
-            fine_points = [start + i * fine_resolution for i in range(scale_factor)]
-            x_fine.extend(fine_points)
-        return np.array(x_fine)
+def tile_coordinates(tile):
+    bounds = tiles()[tile]
 
-    grid_tiles = create_grid_tiles()
-    tile_min_lat, tile_max_lat, tile_min_lon, tile_max_lon = grid_tiles[tile]
+    min_lat, max_lat = bounds[0]
+    min_lon, max_lon = bounds[1]
 
-    resolution = 0.25
-    coarse_lats_pad = np.arange(tile_min_lat - resolution, tile_max_lat + resolution, resolution)
-    coarse_lons_pad = np.arange(tile_min_lon - resolution, tile_max_lon + resolution, resolution)
-    coarse_lats = np.arange(tile_min_lat, tile_max_lat, resolution)
-    coarse_lons = np.arange(tile_min_lon, tile_max_lon, resolution)
-    fine_lats = scale_coordinates(coarse_lats, SCALE_FACTOR)
-    fine_lons = scale_coordinates(coarse_lons, SCALE_FACTOR)
+    # Fine-resolution arrays
+    fine_latitudes = np.arange(min_lat, max_lat, FINE_RESOLUTION)
+    fine_longitudes = np.arange(min_lon, max_lon, FINE_RESOLUTION)
 
-    return coarse_lats_pad, coarse_lons_pad, coarse_lats, coarse_lons, fine_lats, fine_lons
+    # Apply padding to coarse arrays if PADDING is a float/int
+    if isinstance(PADDING, (float, int)):
+        coarse_min_lat = min_lat - PADDING
+        coarse_max_lat = max_lat + PADDING
+        coarse_min_lon = min_lon - PADDING
+        coarse_max_lon = max_lon + PADDING
+    else:
+        coarse_min_lat = min_lat
+        coarse_max_lat = max_lat
+        coarse_min_lon = min_lon
+        coarse_max_lon = max_lon
+
+    # Coarse-resolution arrays
+    coarse_latitudes = np.arange(coarse_min_lat, coarse_max_lat, COARSE_RESOLUTION)
+    coarse_longitudes = np.arange(coarse_min_lon, coarse_max_lon, COARSE_RESOLUTION)
+
+    return coarse_latitudes, coarse_longitudes, fine_latitudes, fine_longitudes

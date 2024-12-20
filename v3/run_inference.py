@@ -1,3 +1,5 @@
+# File: /src/run_inference.py
+
 import os
 import torch
 import numpy as np
@@ -9,12 +11,10 @@ from pathlib import Path
 import cartopy.crs as ccrs
 import cartopy.feature as cfeature
 
-# Import project modules
-from src.create_grid_tiles import create_grid_tiles
-from src.get_coordinates import get_coordinates
-from src.constants import (RAW_DIR, MODEL_NAME, TORCH_DEVICE, SCALE_FACTOR,
+from src.get_coordinates import tiles, tile_coordinates
+from src.constants import (RAW_DIR, MODEL_NAME, TORCH_DEVICE,
                            MIN_LAT, MAX_LAT, MIN_LON, MAX_LON, MODEL_INPUT_CHANNELS,
-                           MODEL_OUTPUT_CHANNELS, FIGURES_DIR)
+                           MODEL_OUTPUT_CHANNELS, FIGURES_DIR, TILE_SIZE, FINE_RESOLUTION)
 import importlib
 
 # -----------------------------------------
@@ -22,17 +22,14 @@ import importlib
 start_date = (1980, 9, 1)
 end_date = (1980, 9, 3)
 checkpoint_path = "/Users/clamalo/documents/harpnet/v3/checkpoints/best/best_model.pt"
-plot_coarse = False  # If True, add a subplot for the coarse input
+plot_coarse = True  # If True, add a subplot for the coarse input
 # -----------------------------------------
 
-# Create output directory nested in the figures directory
 OUTPUT_DIR = FIGURES_DIR / "inference_output"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-# Conversion factor from millimeters to inches
 MM_TO_INCHES = 0.0393701
 
-# Load the chosen model dynamically
 model_module = importlib.import_module(f"src.models.{MODEL_NAME}")
 ModelClass = model_module.Model
 
@@ -48,86 +45,65 @@ def load_model(checkpoint_path: str):
     return model
 
 def get_tile_elevation(tile: int, elevation_ds):
-    """
-    Get the fine-resolution elevation array for a given tile.
-    Returns a numpy array of shape (1,64,64).
-    """
-    _, _, _, _, fine_lats, fine_lons = get_coordinates(tile)
-    elev_fine = elevation_ds.interp(lat=fine_lats, lon=fine_lons).topo.fillna(0.0).values.astype('float32')
-    # Normalize elevation
+    coarse_latitudes, coarse_longitudes, fine_latitudes, fine_longitudes = tile_coordinates(tile)
+    elev_fine = elevation_ds.interp(lat=fine_latitudes, lon=fine_longitudes).topo.fillna(0.0).values.astype('float32')
     elev_fine = elev_fine / 8848.9
     elev_fine = elev_fine[np.newaxis, ...]
     return elev_fine
 
 def prepare_inputs_for_tile(tile: int, day_ds, elevation_ds):
-    """
-    Prepare model inputs for a given tile on a given day.
-    'tp' in day_ds is in mm.
-    Returns:
-        times: array of times
-        inputs: torch.Tensor(T,2,64,64)
-        coarse_tp_64_mm: np.array(T,64,64) coarse input precipitation in mm (already upsampled to 64x64)
-    """
-    coarse_lats_pad, coarse_lons_pad, _, _, fine_lats, fine_lons = get_coordinates(tile)
-    coarse_ds = day_ds.interp(lat=coarse_lats_pad, lon=coarse_lons_pad)
-    coarse_tp = coarse_ds.tp.values.astype('float32')  # mm
+    coarse_latitudes, coarse_longitudes, fine_latitudes, fine_longitudes = tile_coordinates(tile)
+    # Direct interpolation for coarse and fine data
+    coarse_ds = day_ds.interp(lat=coarse_latitudes, lon=coarse_longitudes)
+    fine_ds = day_ds.interp(lat=fine_latitudes, lon=fine_longitudes)
 
+    coarse_tp = coarse_ds.tp.values.astype('float32')  # mm
     times = coarse_ds.time.values
     T = len(times)
 
-    # (T,16,16) -> (T,1,16,16)
     coarse_tp = np.expand_dims(coarse_tp, axis=1)
-
     device = TORCH_DEVICE
     coarse_tp_torch = torch.from_numpy(coarse_tp).to(device)
 
     elev_fine = get_tile_elevation(tile, elevation_ds)
     elev_fine_torch = torch.from_numpy(elev_fine).to(device)
 
-    # Interpolate to (64,64)
-    coarse_tp_64 = torch.nn.functional.interpolate(coarse_tp_torch, size=(64,64), mode='nearest')  # (T,1,64,64)
-    elev_64 = elev_fine_torch.unsqueeze(0).expand(T, -1, -1, -1) # (T,1,64,64)
+    # Interpolate coarse input to 64x64 resolution
+    coarse_tp_64 = torch.nn.functional.interpolate(coarse_tp_torch, size=(64,64), mode='nearest')
+    elev_64 = elev_fine_torch.unsqueeze(0).expand(T, -1, -1, -1)
 
-    inputs = torch.cat([coarse_tp_64, elev_64], dim=1)  # (T,2,64,64)
-
-    # Convert coarse_tp_64 to numpy (T,64,64) for plotting if needed
-    coarse_tp_64_mm = coarse_tp_64.squeeze(1).cpu().numpy()  # (T,64,64)
+    inputs = torch.cat([coarse_tp_64, elev_64], dim=1)
+    coarse_tp_64_mm = coarse_tp_64.squeeze(1).cpu().numpy()
 
     return times, inputs, coarse_tp_64_mm
 
 def get_tile_ground_truth(tile: int, day_ds):
-    """
-    Get ground truth for tile at fine resolution.
-    'tp' in mm.
-    """
-    _, _, _, _, fine_lats, fine_lons = get_coordinates(tile)
-    fine_ds = day_ds.interp(lat=fine_lats, lon=fine_lons)
-    fine_tp = fine_ds.tp.values.astype('float32')  # (T,64,64) in mm
+    _, _, fine_latitudes, fine_longitudes = tile_coordinates(tile)
+    fine_ds = day_ds.interp(lat=fine_latitudes, lon=fine_longitudes)
+    fine_tp = fine_ds.tp.values.astype('float32')  # (T,64,64) mm
     return fine_tp
 
-def stitch_tiles(tile_data_dict, tiles):
-    """
-    Stitch tiles into one large domain.
-    tile_data_dict[tile] = (T,64,64)
-    """
-    grid_domains = create_grid_tiles()
-    tile_size_degrees = int(16 / SCALE_FACTOR)
-    lat_count = (MAX_LAT - MIN_LAT) // tile_size_degrees
-    lon_count = (MAX_LON - MIN_LON) // tile_size_degrees
+def stitch_tiles(tile_data_dict, tile_list):
+    grid_domains = tiles()
+    tile_size_degrees = TILE_SIZE * FINE_RESOLUTION
+    lat_count = int((MAX_LAT - MIN_LAT) / tile_size_degrees)
+    lon_count = int((MAX_LON - MIN_LON) / tile_size_degrees)
 
     T = None
-    for t in tiles:
+    for t in tile_list:
         arr = tile_data_dict[t]
         T = arr.shape[0]
         break
 
     stitched = np.zeros((T, 64*lat_count, 64*lon_count), dtype='float32')
 
-    for tile in tiles:
-        lat_min, lat_max, lon_min, lon_max = grid_domains[tile]
+    for tile in tile_list:
+        bounds = grid_domains[tile]
+        lat_min, lat_max = bounds[0]
+        lon_min, lon_max = bounds[1]
 
-        tile_row = (lat_min - MIN_LAT) // tile_size_degrees
-        tile_col = (lon_min - MIN_LON) // tile_size_degrees
+        tile_row = int((lat_min - MIN_LAT) / tile_size_degrees)
+        tile_col = int((lon_min - MIN_LON) / tile_size_degrees)
 
         arr = tile_data_dict[tile]
         row_start = tile_row * 64
@@ -140,14 +116,6 @@ def stitch_tiles(tile_data_dict, tiles):
     return stitched
 
 def plot_and_save_images(stitched_coarse, stitched_model, stitched_truth, times, year, month, day, plot_coarse):
-    """
-    Plot each timestep comparison and save images.
-    If plot_coarse is True, then 3 subplots:
-      Left: coarse input
-      Middle: downscaled
-      Right: truth
-    Otherwise, 2 subplots: downscaled and truth.
-    """
     vmax_val = 0.5
     cmap_choice = 'viridis'
     extent = [MIN_LON, MAX_LON, MIN_LAT, MAX_LAT]
@@ -155,7 +123,6 @@ def plot_and_save_images(stitched_coarse, stitched_model, stitched_truth, times,
     for i, t in enumerate(times):
         if plot_coarse:
             fig = plt.figure(figsize=(12,6))
-            # Coarse subplot
             ax1 = fig.add_subplot(1, 3, 1, projection=ccrs.PlateCarree())
             ax1.set_extent(extent, crs=ccrs.PlateCarree())
             ax1.coastlines()
@@ -165,7 +132,6 @@ def plot_and_save_images(stitched_coarse, stitched_model, stitched_truth, times,
                               vmin=0, vmax=vmax_val)
             ax1.set_title("Coarse Input")
 
-            # Downscaled
             ax2 = fig.add_subplot(1, 3, 2, projection=ccrs.PlateCarree())
             ax2.set_extent(extent, crs=ccrs.PlateCarree())
             ax2.coastlines()
@@ -175,7 +141,6 @@ def plot_and_save_images(stitched_coarse, stitched_model, stitched_truth, times,
                               vmin=0, vmax=vmax_val)
             ax2.set_title("Downscaled Output")
 
-            # Truth
             ax3 = fig.add_subplot(1, 3, 3, projection=ccrs.PlateCarree())
             ax3.set_extent(extent, crs=ccrs.PlateCarree())
             ax3.coastlines()
@@ -217,11 +182,6 @@ def plot_and_save_images(stitched_coarse, stitched_model, stitched_truth, times,
         plt.close(fig)
 
 def plot_total_precipitation(total_coarse, total_model, total_truth, plot_coarse):
-    """
-    Plot total precipitation over the entire period for model and truth.
-    If plot_coarse is True, also plot coarse total.
-    The max value is the max of all available data.
-    """
     all_values = [total_model.max(), total_truth.max()]
     if plot_coarse:
         all_values.append(total_coarse.max())
@@ -232,7 +192,6 @@ def plot_total_precipitation(total_coarse, total_model, total_truth, plot_coarse
 
     if plot_coarse:
         fig = plt.figure(figsize=(12,6))
-        # Coarse total
         ax1 = fig.add_subplot(1, 3, 1, projection=ccrs.PlateCarree())
         ax1.set_extent(extent, crs=ccrs.PlateCarree())
         ax1.coastlines()
@@ -242,7 +201,6 @@ def plot_total_precipitation(total_coarse, total_model, total_truth, plot_coarse
                           vmin=0, vmax=vmax_val)
         ax1.set_title("Coarse Total")
 
-        # Model total
         ax2 = fig.add_subplot(1, 3, 2, projection=ccrs.PlateCarree())
         ax2.set_extent(extent, crs=ccrs.PlateCarree())
         ax2.coastlines()
@@ -252,7 +210,6 @@ def plot_total_precipitation(total_coarse, total_model, total_truth, plot_coarse
                           vmin=0, vmax=vmax_val)
         ax2.set_title("Downscaled Total")
 
-        # Truth total
         ax3 = fig.add_subplot(1, 3, 3, projection=ccrs.PlateCarree())
         ax3.set_extent(extent, crs=ccrs.PlateCarree())
         ax3.coastlines()
@@ -267,7 +224,6 @@ def plot_total_precipitation(total_coarse, total_model, total_truth, plot_coarse
         cbar.set_label('Precipitation (inches)')
     else:
         fig = plt.figure(figsize=(12,6))
-        # Model total
         ax1 = fig.add_subplot(1, 2, 1, projection=ccrs.PlateCarree())
         ax1.set_extent(extent, crs=ccrs.PlateCarree())
         ax1.coastlines()
@@ -277,7 +233,6 @@ def plot_total_precipitation(total_coarse, total_model, total_truth, plot_coarse
                           vmin=0, vmax=vmax_val)
         ax1.set_title("Downscaled Total")
 
-        # Truth total
         ax2 = fig.add_subplot(1, 2, 2, projection=ccrs.PlateCarree())
         ax2.set_extent(extent, crs=ccrs.PlateCarree())
         ax2.coastlines()
@@ -295,7 +250,6 @@ def plot_total_precipitation(total_coarse, total_model, total_truth, plot_coarse
     plt.savefig(filename, dpi=150)
     plt.close(fig)
 
-# Global accumulators for total precipitation
 stitched_model_total = None
 stitched_truth_total = None
 stitched_coarse_total = None
@@ -303,21 +257,15 @@ stitched_coarse_total = None
 def process_day(model, elevation_ds, day_ds, year, month, day):
     global stitched_model_total, stitched_truth_total, stitched_coarse_total
 
-    grid_domains = create_grid_tiles()
-    valid_tiles = []
-    for t, bbox in grid_domains.items():
-        lat_min, lat_max, lon_min, lon_max = bbox
-        if lat_max <= MAX_LAT and lon_max <= MAX_LON:
-            valid_tiles.append(t)
+    grid_domains = tiles()
+    valid_tiles = list(grid_domains.keys())
 
-    tiles = valid_tiles
     tile_predictions = {}
     tile_ground_truth_data = {}
     tile_coarse_data = {}
     times_reference = None
 
-    # Process each tile
-    for tile in tiles:
+    for tile in valid_tiles:
         times, inputs, coarse_tp_64_mm = prepare_inputs_for_tile(tile, day_ds, elevation_ds)
         if times_reference is None:
             times_reference = times
@@ -326,30 +274,28 @@ def process_day(model, elevation_ds, day_ds, year, month, day):
                 raise ValueError("Time dimension mismatch.")
 
         with torch.no_grad():
-            preds = model(inputs)  # (T,1,64,64)
-            preds = preds.squeeze(1).cpu().numpy()  # mm
+            preds = model(inputs)
+            preds = preds.squeeze(1).cpu().numpy()
 
-        fine_tp = get_tile_ground_truth(tile, day_ds)  # mm
+        fine_tp = get_tile_ground_truth(tile, day_ds)
 
         tile_predictions[tile] = preds
         tile_ground_truth_data[tile] = fine_tp
         tile_coarse_data[tile] = coarse_tp_64_mm
 
-    stitched_model = stitch_tiles(tile_predictions, tiles)   # (T,H,W) mm
-    stitched_truth = stitch_tiles(tile_ground_truth_data, tiles)  # (T,H,W) mm
-    stitched_coarse = stitch_tiles(tile_coarse_data, tiles)  # (T,H,W) mm coarse input
+    stitched_model = stitch_tiles(tile_predictions, valid_tiles)
+    stitched_truth = stitch_tiles(tile_ground_truth_data, valid_tiles)
+    stitched_coarse = stitch_tiles(tile_coarse_data, valid_tiles)
 
-    # Convert to inches
     stitched_model_inches = stitched_model * MM_TO_INCHES
     stitched_truth_inches = stitched_truth * MM_TO_INCHES
     stitched_coarse_inches = stitched_coarse * MM_TO_INCHES
 
-    # Plot daily
-    plot_and_save_images(stitched_coarse_inches, stitched_model_inches, stitched_truth_inches, times_reference, year, month, day, plot_coarse)
+    plot_and_save_images(stitched_coarse_inches, stitched_model_inches, stitched_truth_inches,
+                         times_reference, year, month, day, plot_coarse)
     print(f"Inference complete for {year}-{month:02d}-{day:02d}.")
 
-    # Accumulate totals
-    day_model_total = stitched_model_inches.sum(axis=0)  # (H,W)
+    day_model_total = stitched_model_inches.sum(axis=0)
     day_truth_total = stitched_truth_inches.sum(axis=0)
     day_coarse_total = stitched_coarse_inches.sum(axis=0)
 

@@ -10,7 +10,7 @@ from datetime import datetime
 from dateutil.relativedelta import relativedelta
 from typing import List, Tuple, Union
 
-from src.get_coordinates import get_coordinates
+from src.get_coordinates import tile_coordinates
 from src.constants import RAW_DIR, PROCESSED_DIR, ZIP_DIR, HOUR_INCREMENT
 
 def xr_to_np(tiles: List[int], 
@@ -21,8 +21,6 @@ def xr_to_np(tiles: List[int],
     """
     Process multiple tiles and generate combined training/testing datasets.
     """
-
-    # No seed setting here. Rely on train.py.
 
     combined_zip_path = ZIP_DIR / "combined_dataset.zip"
 
@@ -76,13 +74,11 @@ def xr_to_np(tiles: List[int],
         times = month_ds.time.values
 
         for tile in tiles:
-            coarse_lats_pad, coarse_lons_pad, coarse_lats, coarse_lons, fine_lats, fine_lons = get_coordinates(tile)
+            coarse_latitudes, coarse_longitudes, fine_latitudes, fine_longitudes = tile_coordinates(tile)
 
-            tile_ds = month_ds.sel(lat=slice(coarse_lats_pad[0]-0.25, coarse_lats_pad[-1]+0.25),
-                                   lon=slice(coarse_lons_pad[0]-0.25, coarse_lons_pad[-1]+0.25))
-
-            coarse_ds = tile_ds.interp(lat=coarse_lats_pad, lon=coarse_lons_pad)
-            fine_ds = tile_ds.interp(lat=fine_lats, lon=fine_lons)
+            # Direct interpolation from month_ds
+            coarse_ds = month_ds.interp(lat=coarse_latitudes, lon=coarse_longitudes)
+            fine_ds = month_ds.interp(lat=fine_latitudes, lon=fine_longitudes)
 
             coarse_tp = coarse_ds.tp.values.astype('float32')
             fine_tp = fine_ds.tp.values.astype('float32')
@@ -96,14 +92,14 @@ def xr_to_np(tiles: List[int],
     print("Computing elevation per tile...")
     num_tiles = len(tiles)
     sample_tile = tiles[0]
-    _, _, _, _, fine_lats_sample, fine_lons_sample = get_coordinates(sample_tile)
-    Hf = len(fine_lats_sample)
-    Wf = len(fine_lons_sample)
+    _, _, fine_latitudes_sample, fine_longitudes_sample = tile_coordinates(sample_tile)
+    Hf = len(fine_latitudes_sample)
+    Wf = len(fine_longitudes_sample)
 
     tile_elev_all = np.zeros((num_tiles, 1, Hf, Wf), dtype='float32')
     for i, tile in enumerate(tiles):
-        _, _, _, _, fine_lats, fine_lons = get_coordinates(tile)
-        elev_fine = elevation_ds.interp(lat=fine_lats, lon=fine_lons).topo.fillna(0.0).values.astype('float32')
+        _, _, fine_latitudes, fine_longitudes = tile_coordinates(tile)
+        elev_fine = elevation_ds.interp(lat=fine_latitudes, lon=fine_longitudes).topo.fillna(0.0).values.astype('float32')
         elev_fine = elev_fine / 8848.9  # Normalize elevation
         tile_elev_all[i, 0, :, :] = elev_fine
 
@@ -130,7 +126,6 @@ def xr_to_np(tiles: List[int],
         if len(targets_arr.shape) == 3:
             targets_arr = np.expand_dims(targets_arr, axis=1)
 
-        # Shuffle once, relying on global seed for determinism
         indices = np.random.permutation(len(times_s))
         inputs_arr = inputs_arr[indices]
         targets_arr = targets_arr[indices]

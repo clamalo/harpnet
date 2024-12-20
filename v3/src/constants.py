@@ -25,11 +25,15 @@ MODEL_INPUT_CHANNELS = 2
 MODEL_OUTPUT_CHANNELS = 1
 MODEL_OUTPUT_SHAPE = (64, 64)
 
-# Data grid controls
-HOUR_INCREMENT = 1  # 1 for full hourly data, 3 for every 3-hour data
-SCALE_FACTOR = 4    # E.g., 8 for 3km, 4 for 6km resolution
-MIN_LAT, MIN_LON = 34, -125
-MAX_LAT, MAX_LON = 51, -104
-
 # Seed for reproducibility
 RANDOM_SEED = 42
+
+# Training run settings
+MIN_LAT, MAX_LAT = 34.0, 50.0
+MIN_LON, MAX_LON = -125.0, -104.0
+HOUR_INCREMENT = 1
+
+TILE_SIZE = 64
+COARSE_RESOLUTION = 0.25
+FINE_RESOLUTION = 0.0625
+PADDING = 0.25
