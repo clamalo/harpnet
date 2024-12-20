@@ -21,34 +21,33 @@ torch.backends.cudnn.benchmark = False
 torch.use_deterministic_algorithms(True)
 
 # Variables controlling the data time range, train/test ratio, and training epochs
-start_month = (1979, 10)   # Start year-month for data processing
-end_month = (2022, 9)      # End year-month for data processing
-train_test_ratio = 0.2     # Fraction of data used for testing
-start_epoch, end_epoch = 0, 10   # Training epochs range
+# Note: These might no longer be needed if the data is already processed.
+start_month = (1979, 10)   # Start year-month for data processing (not used by generate_dataloaders now)
+end_month = (1980, 9)      # End year-month for data processing (not used)
+train_test_ratio = 0.2     # Fraction of data used for testing (already applied during preprocessing)
+start_epoch, end_epoch = 0, 5  # Training epochs range
 max_ensemble_size = 8      # Maximum number of models to include in ensemble
-tiles = list(range(0,20))  # Tiles to process
+tiles = list(range(0,20))  # Tiles to process (not needed by generate_dataloaders anymore if data is prepped)
 
-# Specify zipping behavior for processed data
-zip_setting = 'load'  # Options: 'save', 'load', or False
+zip_setting = 'save'  # Options: 'save', 'load', or False
 
 if __name__ == "__main__":
-    # Setup the environment (e.g., ensure directories exist)
+    # Setup environment
     setup()
 
-    # Convert raw NetCDF data to Numpy arrays, optionally zip data after processing
+    # Convert data if needed. If zip_setting='load' and data is already processed, this just loads it.
     xr_to_np(tiles, start_month, end_month, train_test_ratio, zip_setting=zip_setting)
 
-    # If we chose to 'save', the data is now zipped and local files removed, so no training is possible
+    # If we chose to 'save', data is zipped and removed, no training possible
     if zip_setting == 'save':
         print("Data preprocessed, zipped, and removed. No training performed.")
         exit(0)
 
-    # Generate DataLoaders for training and testing
-    train_dataloader, test_dataloader = generate_dataloaders(tiles, start_month, end_month, train_test_ratio)
+    # Generate DataLoaders (no arguments needed now)
+    train_dataloader, test_dataloader = generate_dataloaders()
 
-    # Train and test the model over the specified epochs
-    # Optionally focus on a specific tile (e.g., tile #24) for additional logging
-    train_test(train_dataloader, test_dataloader, start_epoch, end_epoch, focus_tile=15)
+    # Train and test the model
+    train_test(train_dataloader, test_dataloader, start_epoch, end_epoch, focus_tile=4)
 
-    # Create an ensemble of the best-performing models
+    # Create an ensemble
     ensemble(tiles, start_month, end_month, train_test_ratio, max_ensemble_size)

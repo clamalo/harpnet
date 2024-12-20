@@ -39,12 +39,7 @@ def train_model(model: nn.Module,
 
     for batch in tqdm(train_dataloader, desc="Training", unit="batch"):
         inputs, elev_data, targets, times, tile_ids = batch
-
-        # Interpolate inputs/elevation to 64x64 before concatenation
-        inputs = torch.nn.functional.interpolate(inputs, size=(64, 64), mode='nearest')
-        elev_data = torch.nn.functional.interpolate(elev_data, size=(64,64), mode='nearest')
-        inputs = torch.cat([inputs, elev_data], dim=1)
-
+        # inputs already contains elevation as second channel
         inputs = inputs.to(TORCH_DEVICE)
         targets = targets.to(TORCH_DEVICE)
 
@@ -60,34 +55,26 @@ def train_model(model: nn.Module,
 def test_model(model: nn.Module, 
                test_dataloader, 
                criterion: nn.Module, 
-               focus_tile: Optional[int]=None) -> (float, float, Optional[float]):
+               focus_tile: Optional[int]=None) -> (float, float, Optional[float], Optional[float]):
     """
-    Test the model on the test dataset.
-
-    Args:
-        model: Trained model.
-        test_dataloader: DataLoader for test set.
-        criterion: Loss function.
-        focus_tile: Optional tile index to compute loss specifically for that tile.
+    Test the model on the test dataset and also compute bilinear baseline for comparison.
+    If focus_tile is provided, also compute losses specifically for that tile.
 
     Returns:
-        mean_test_loss: Average MSE test loss.
-        mean_bilinear_loss: Average MSE loss of a bilinear interpolation baseline.
-        focus_tile_test_loss: If focus_tile is given, the average test loss for that tile.
+        mean_test_loss: Average MSE test loss over all test samples.
+        mean_bilinear_loss: Average MSE bilinear baseline loss over all test samples.
+        focus_tile_test_loss: Average MSE test loss for the focus_tile if provided.
+        focus_tile_bilinear_loss: Average MSE bilinear baseline loss for the focus_tile if provided.
     """
     model.eval()
     test_losses = []
     bilinear_test_losses = []
     focus_tile_losses = []
+    focus_tile_bilinear_losses = []
 
     with torch.no_grad():
         for batch in tqdm(test_dataloader, desc="Testing", unit="batch"):
             inputs, elev_data, targets, times, tile_ids = batch
-
-            inputs = torch.nn.functional.interpolate(inputs, size=(64, 64), mode='nearest')
-            elev_data = torch.nn.functional.interpolate(elev_data, size=(64, 64), mode='nearest')
-            inputs = torch.cat([inputs, elev_data], dim=1)
-
             inputs = inputs.to(TORCH_DEVICE)
             targets = targets.to(TORCH_DEVICE)
             outputs = model(inputs)
@@ -104,23 +91,28 @@ def test_model(model: nn.Module,
             if focus_tile is not None:
                 mask = (tile_ids == focus_tile)
                 if mask.any():
+                    # Focus tile model loss
                     focus_outputs = outputs[mask.to(TORCH_DEVICE)]
                     focus_targets = targets[mask.to(TORCH_DEVICE)]
                     focus_loss = criterion(focus_outputs, focus_targets)
                     focus_tile_losses.append(focus_loss.item())
 
+                    # Focus tile bilinear loss
+                    focus_bilinear_inputs = interpolated_inputs[mask.to(TORCH_DEVICE)]
+                    focus_bilinear_loss = criterion(focus_bilinear_inputs, focus_targets)
+                    focus_tile_bilinear_losses.append(focus_bilinear_loss.item())
+
     mean_test_loss = sum(test_losses) / len(test_losses) if test_losses else float('inf')
     mean_bilinear_loss = sum(bilinear_test_losses) / len(bilinear_test_losses) if bilinear_test_losses else float('inf')
 
-    if focus_tile is not None:
-        if focus_tile_losses:
-            focus_tile_test_loss = sum(focus_tile_losses) / len(focus_tile_losses)
-        else:
-            focus_tile_test_loss = None
+    if focus_tile is not None and focus_tile_losses:
+        focus_tile_test_loss = sum(focus_tile_losses) / len(focus_tile_losses)
+        focus_tile_bilinear_loss = sum(focus_tile_bilinear_losses) / len(focus_tile_bilinear_losses) if focus_tile_bilinear_losses else None
     else:
         focus_tile_test_loss = None
+        focus_tile_bilinear_loss = None
 
-    return mean_test_loss, mean_bilinear_loss, focus_tile_test_loss
+    return mean_test_loss, mean_bilinear_loss, focus_tile_test_loss, focus_tile_bilinear_loss
 
 def train_test(train_dataloader, 
                test_dataloader, 
@@ -164,13 +156,16 @@ def train_test(train_dataloader,
     for epoch in range(start_epoch, end_epoch):
         print(f"\nEpoch {epoch} starting...")
         train_loss = train_model(model, train_dataloader, optimizer, criterion)
-        test_loss, bilinear_test_loss, focus_tile_loss = test_model(model, test_dataloader, criterion, focus_tile)
+        test_loss, bilinear_test_loss, focus_tile_loss, focus_tile_bilinear_loss = test_model(model, test_dataloader, criterion, focus_tile)
 
         print(f'Epoch {epoch}: Train loss = {train_loss}, Test loss = {test_loss}, Bilinear test loss = {bilinear_test_loss}')
 
         if focus_tile is not None:
             if focus_tile_loss is not None:
-                print(f"Epoch {epoch}: Test loss for tile {focus_tile} = {focus_tile_loss}")
+                if focus_tile_bilinear_loss is not None:
+                    print(f"Epoch {epoch}: Test loss for tile {focus_tile} = {focus_tile_loss}, Bilinear test loss for tile {focus_tile} = {focus_tile_bilinear_loss}")
+                else:
+                    print(f"Epoch {epoch}: Test loss for tile {focus_tile} = {focus_tile_loss}")
             else:
                 print(f"Epoch {epoch}: No samples found for tile {focus_tile} in the test set.")
 

@@ -3,8 +3,9 @@
 Implements model ensembling by averaging model weights from multiple checkpoints.
 Evaluates the performance on a test set and saves the best ensemble model.
 
-Now includes a function to run ensemble logic on a specified directory.
+This file now includes the run_ensemble_on_directory function again to be used by fine_tuning.py.
 """
+
 import os
 import gc
 import torch
@@ -20,18 +21,6 @@ model_module = importlib.import_module(f"src.models.{MODEL_NAME}")
 ModelClass = model_module.Model
 
 def load_checkpoint_test_loss(checkpoint_path: str, device: str) -> Tuple[float, Dict[str, torch.Tensor], float]:
-    """
-    Load a checkpoint and extract test loss and model state_dict.
-
-    Args:
-        checkpoint_path: Path to the checkpoint file.
-        device: Torch device ('cpu', 'cuda', etc.).
-
-    Returns:
-        test_loss: The test loss stored in the checkpoint.
-        state_dict: The model weights.
-        bilinear_test_loss: The bilinear baseline test loss.
-    """
     checkpoint = torch.load(checkpoint_path, map_location=device)
     bilinear_test_loss = checkpoint['bilinear_test_loss']
 
@@ -64,16 +53,6 @@ def load_checkpoint_test_loss(checkpoint_path: str, device: str) -> Tuple[float,
     return test_loss, state_dict, bilinear_test_loss
 
 def initialize_cumulative_state_dict(state_dict: Dict[str, torch.Tensor], device: str) -> Dict[str, torch.Tensor]:
-    """
-    Initialize a cumulative dictionary for weight averaging.
-
-    Args:
-        state_dict: State dict from a model.
-        device: Torch device.
-
-    Returns:
-        A dictionary with zero-initialized tensors of the same shape as the model weights.
-    """
     cumulative = {}
     for key, value in state_dict.items():
         if isinstance(value, torch.Tensor):
@@ -81,29 +60,11 @@ def initialize_cumulative_state_dict(state_dict: Dict[str, torch.Tensor], device
     return cumulative
 
 def add_state_dict_to_cumulative(cumulative: Dict[str, torch.Tensor], new_state: Dict[str, torch.Tensor]) -> None:
-    """
-    Add another model's weights to the cumulative weights.
-
-    Args:
-        cumulative: The cumulative dictionary.
-        new_state: Another model's state_dict to add.
-    """
     for key in cumulative.keys():
         if key in new_state and isinstance(new_state[key], torch.Tensor):
             cumulative[key] += new_state[key].float()
 
 def evaluate_ensemble(model: ModelClass, test_dataloader, device: str) -> float:
-    """
-    Evaluate the ensemble model on the test set and return MSE loss.
-
-    Args:
-        model: The ensemble model.
-        test_dataloader: Dataloader for test set.
-        device: Torch device.
-
-    Returns:
-        mean_loss: The average test MSE loss.
-    """
     loss_fn = torch.nn.MSELoss()
     total_loss = 0.0
     num_batches = 0
@@ -112,11 +73,6 @@ def evaluate_ensemble(model: ModelClass, test_dataloader, device: str) -> float:
     with torch.no_grad():
         for batch in test_dataloader:
             inputs, elev_data, targets, times, tile_ids = batch
-            # Interpolate inputs and elevation to (64,64)
-            inputs = torch.nn.functional.interpolate(inputs, size=(64, 64), mode='nearest')
-            elev_data = torch.nn.functional.interpolate(elev_data, size=(64,64), mode='nearest')
-            inputs = torch.cat([inputs, elev_data], dim=1)
-
             inputs = inputs.to(device)
             targets = targets.to(device)
             outputs = model(inputs)
@@ -133,23 +89,11 @@ def ensemble(tiles: List[int],
              end_month: Tuple[int,int], 
              train_test_ratio: float, 
              max_ensemble_size: Optional[int] = None) -> None:
-    """
-    Compute an ensemble of models by averaging their parameters.
-    Loads multiple checkpoints, sorts them by test loss, and incrementally averages top models.
-    Saves the best performing ensemble.
-
-    Args:
-        tiles: List of tile indices used.
-        start_month: (year, month) for start of dataset.
-        end_month: (year, month) for end of dataset.
-        train_test_ratio: Ratio used to split train/test data.
-        max_ensemble_size: Maximum number of models to include in ensemble.
-    """
     device = TORCH_DEVICE
     print(f"Using device: {device}")
 
     print("Generating data loaders for all tiles combined...")
-    train_dataloader, test_dataloader = generate_dataloaders(tiles, start_month, end_month, train_test_ratio)
+    train_dataloader, test_dataloader = generate_dataloaders()
     print(f"Number of test batches: {len(test_dataloader)}")
 
     print("Initializing the model...")
