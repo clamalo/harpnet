@@ -1,3 +1,10 @@
+# File: /run_inference.py
+"""
+Adapted inference script to use fine-tuned best weights per tile if they exist.
+If a tile-specific best model is found at `checkpoints/best/<tile>_best.pt`, it uses that.
+Otherwise, it falls back to the global best model at `checkpoints/best/best_model.pt`.
+"""
+
 import os
 import torch
 import numpy as np
@@ -12,14 +19,14 @@ import cartopy.feature as cfeature
 from src.tiles import get_all_tiles, tile_coordinates
 from src.constants import (RAW_DIR, MODEL_NAME, TORCH_DEVICE,
                            MIN_LAT, MAX_LAT, MIN_LON, MAX_LON, MODEL_INPUT_CHANNELS,
-                           MODEL_OUTPUT_CHANNELS, FIGURES_DIR, TILE_SIZE, FINE_RESOLUTION)
+                           MODEL_OUTPUT_CHANNELS, FIGURES_DIR, TILE_SIZE, FINE_RESOLUTION, CHECKPOINTS_DIR)
 import importlib
 
 # -----------------------------------------
 # User-controlled variables
 start_date = (1980, 9, 1)
 end_date = (1980, 9, 3)
-checkpoint_path = "/Users/clamalo/documents/harpnet/v3/checkpoints/best/best_model.pt"
+global_best_checkpoint_path = CHECKPOINTS_DIR / "best" / "best_model.pt"
 plot_coarse = False  # If True, also display the coarse input field in the plots
 # -----------------------------------------
 
@@ -31,17 +38,23 @@ MM_TO_INCHES = 0.0393701
 model_module = importlib.import_module(f"src.models.{MODEL_NAME}")
 ModelClass = model_module.Model
 
-def load_model(checkpoint_path: str):
+def load_model_for_tile(tile: int):
     """
-    Load a trained model from a given checkpoint file.
-
-    Args:
-        checkpoint_path (str): Path to the model checkpoint.
+    Load a model suitable for the given tile.
+    If tile-specific fine-tuned best weights are available:
+        Use `checkpoints/best/<tile>_best.pt`.
+    Otherwise, fall back to the global best model.
 
     Returns:
-        nn.Module: The loaded and evaluated model.
+        A model instance loaded with the appropriate weights.
     """
     device = TORCH_DEVICE
+    tile_best_path = CHECKPOINTS_DIR / 'best' / f"{tile}_best.pt"
+    if tile_best_path.exists():
+        checkpoint_path = tile_best_path
+    else:
+        checkpoint_path = global_best_checkpoint_path
+
     model = ModelClass().to(device)
     checkpoint = torch.load(checkpoint_path, map_location=device)
     # Handle different checkpoint formats
@@ -70,7 +83,7 @@ def get_tile_elevation(tile: int, elevation_ds):
     elev_fine = elev_fine[np.newaxis, ...]
     return elev_fine
 
-def prepare_inputs_for_tile(tile: int, day_ds, elevation_ds):
+def prepare_inputs_for_tile(tile: int, day_ds, elevation_ds, model_device):
     """
     Prepare the input tensors for a given tile on a given day.
     Interpolates coarse precipitation and adds elevation data.
@@ -79,6 +92,7 @@ def prepare_inputs_for_tile(tile: int, day_ds, elevation_ds):
         tile (int): Tile index.
         day_ds (xarray.Dataset): Daily dataset of precipitation.
         elevation_ds (xarray.Dataset): Elevation dataset.
+        model_device (str): Torch device
 
     Returns:
         times (np.ndarray): Array of timestamps.
@@ -94,11 +108,10 @@ def prepare_inputs_for_tile(tile: int, day_ds, elevation_ds):
     # Convert coarse data and elevation to model inputs
     coarse_tp = coarse_ds.tp.values.astype('float32')
     coarse_tp = np.expand_dims(coarse_tp, axis=1)
-    device = TORCH_DEVICE
-    coarse_tp_torch = torch.from_numpy(coarse_tp).to(device)
+    coarse_tp_torch = torch.from_numpy(coarse_tp).to(model_device)
 
     elev_fine = get_tile_elevation(tile, elevation_ds)
-    elev_fine_torch = torch.from_numpy(elev_fine).to(device)
+    elev_fine_torch = torch.from_numpy(elev_fine).to(model_device)
 
     # Resample coarse input to the target size and concatenate elevation
     coarse_tp_64 = torch.nn.functional.interpolate(coarse_tp_torch, size=(64,64), mode='nearest')
@@ -129,7 +142,7 @@ def stitch_tiles(tile_data_dict, tile_list):
     Combine per-tile arrays into a single stitched image covering the entire domain.
 
     Args:
-        tile_data_dict (dict): Dictionary {tile: np.ndarray(T,H,W)} to stitch.
+        tile_data_dict (dict): {tile: np.ndarray(T,H,W)}
         tile_list (list): List of tile indices.
 
     Returns:
@@ -169,14 +182,6 @@ def plot_and_save_images(stitched_coarse, stitched_model, stitched_truth, times,
     """
     Plot and save daily precipitation maps (coarse, model output, ground truth).
     Handles either two-plot or three-plot layout depending on `plot_coarse`.
-
-    Args:
-        stitched_coarse (np.ndarray): Coarse interpolated precipitation in inches.
-        stitched_model (np.ndarray): Model downscaled precipitation in inches.
-        stitched_truth (np.ndarray): Ground truth fine-resolution precipitation in inches.
-        times (np.ndarray): Array of timestamps.
-        year, month, day (int): Date parameters for saving plots.
-        plot_coarse (bool): If True, include coarse plot in the figure.
     """
     vmax_val = 0.5
     cmap_choice = 'viridis'
@@ -251,12 +256,6 @@ def plot_total_precipitation(total_coarse, total_model, total_truth, plot_coarse
     """
     Plot the total accumulated precipitation over the entire processed period.
     Compares coarse, downscaled, and ground truth totals.
-
-    Args:
-        total_coarse (np.ndarray): Accumulated coarse precipitation in inches.
-        total_model (np.ndarray): Accumulated model downscaled precipitation in inches.
-        total_truth (np.ndarray): Accumulated ground truth precipitation in inches.
-        plot_coarse (bool): If True, show coarse totals as well.
     """
     all_values = [total_model.max(), total_truth.max()]
     if plot_coarse:
@@ -330,24 +329,11 @@ def plot_total_precipitation(total_coarse, total_model, total_truth, plot_coarse
     plt.savefig(filename, dpi=150)
     plt.close(fig)
 
-# Global accumulators for total precipitation
 stitched_model_total = None
 stitched_truth_total = None
 stitched_coarse_total = None
 
-def process_day(model, elevation_ds, day_ds, year, month, day):
-    """
-    Process one day of data for all tiles:
-    - Performs model inference.
-    - Stitches tile data into domain-wide arrays.
-    - Accumulates daily totals and saves daily comparison plots.
-
-    Args:
-        model (nn.Module): The trained model.
-        elevation_ds (xarray.Dataset): Elevation dataset.
-        day_ds (xarray.Dataset): Dataset for the specific day.
-        year, month, day (int): The date being processed.
-    """
+def process_day(elevation_ds, day_ds, year, month, day):
     global stitched_model_total, stitched_truth_total, stitched_coarse_total
 
     grid_domains = get_all_tiles()
@@ -356,22 +342,18 @@ def process_day(model, elevation_ds, day_ds, year, month, day):
     tile_predictions = {}
     tile_ground_truth_data = {}
     tile_coarse_data = {}
-    times_reference = None
 
-    # Run inference for each tile
+    device = TORCH_DEVICE
+
+    # For each tile, load a tile-specific model if available, else global model
+    # Then run inference for that tile
     for tile in valid_tiles:
-        times, inputs, coarse_tp_64_mm = prepare_inputs_for_tile(tile, day_ds, elevation_ds)
-        if times_reference is None:
-            times_reference = times
-        else:
-            # Ensure consistent time dimension across all tiles
-            if not np.array_equal(times_reference, times):
-                raise ValueError("Time dimension mismatch among tiles.")
-
+        # Load model for this tile
+        model = load_model_for_tile(tile)
+        times, inputs, coarse_tp_64_mm = prepare_inputs_for_tile(tile, day_ds, elevation_ds, device)
         with torch.no_grad():
             preds = model(inputs)
             preds = preds.squeeze(1).cpu().numpy()
-
         fine_tp = get_tile_ground_truth(tile, day_ds)
 
         tile_predictions[tile] = preds
@@ -390,7 +372,7 @@ def process_day(model, elevation_ds, day_ds, year, month, day):
 
     # Plot daily comparisons
     plot_and_save_images(stitched_coarse_inches, stitched_model_inches, stitched_truth_inches,
-                         times_reference, year, month, day, plot_coarse)
+                         times, year, month, day, plot_coarse)
     print(f"Inference complete for {year}-{month:02d}-{day:02d}.")
 
     # Accumulate daily totals
@@ -408,17 +390,6 @@ def process_day(model, elevation_ds, day_ds, year, month, day):
         stitched_coarse_total += day_coarse_total
 
 def main():
-    """
-    Main function to run inference over a specified date range.
-    For each day:
-        - Load the model and elevation data.
-        - Extract daily precipitation data.
-        - Perform inference and plot outputs.
-    Finally, plot the total accumulated precipitation over the entire period.
-    """
-    model = load_model(checkpoint_path)
-    model.eval()
-
     elevation_ds = xr.open_dataset("/Users/clamalo/downloads/elevation.nc")
     # Rename dims if required
     if 'X' in elevation_ds.dims and 'Y' in elevation_ds.dims:
@@ -451,7 +422,7 @@ def main():
             continue
 
         # Process the day (run inference, save plots)
-        process_day(model, elevation_ds, day_slice, year, month, day)
+        process_day(elevation_ds, day_slice, year, month, day)
         processed_any = True
         current_dt += timedelta(days=1)
 

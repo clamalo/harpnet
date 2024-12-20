@@ -1,8 +1,10 @@
+# File: /src/ensemble.py
 """
 Implements model ensembling by averaging model weights from multiple checkpoints.
 Evaluates the performance on a test set and saves the best ensemble model.
-"""
 
+Now includes a function to run ensemble logic on a specified directory.
+"""
 import os
 import gc
 import torch
@@ -271,3 +273,93 @@ def ensemble(tiles: List[int],
             print(f"Failed to save the best ensemble model: {e}")
     else:
         print("\nNo valid ensemble found.")
+
+
+def run_ensemble_on_directory(directory_path: str, test_dataloader, device: str, output_path: str) -> str:
+    """
+    Runs the ensemble logic on all checkpoints found in the specified directory.
+    Sorts them by test_loss, tries ensemble averaging from 1 to N models, and saves the best.
+
+    Args:
+        directory_path: The directory containing checkpoint files.
+        test_dataloader: Dataloader for testing.
+        device: Torch device.
+        output_path: Path to save the best ensemble model.
+
+    Returns:
+        The path to the saved best ensemble model.
+    """
+    model = ModelClass().to(device)
+
+    checkpoint_files = [
+        f for f in os.listdir(directory_path)
+        if os.path.isfile(os.path.join(directory_path, f)) and f.endswith('_model.pt')
+    ]
+
+    if not checkpoint_files:
+        raise FileNotFoundError(f"No checkpoint files found in directory: {directory_path}")
+
+    checkpoints = []
+    for file_name in checkpoint_files:
+        checkpoint_path = os.path.join(directory_path, file_name)
+        try:
+            test_loss, state_dict, bilinear_test_loss = load_checkpoint_test_loss(checkpoint_path, device)
+            checkpoints.append({
+                'file_name': file_name,
+                'test_loss': test_loss,
+                'checkpoint_path': checkpoint_path,
+                'bilinear_test_loss': bilinear_test_loss,
+                'state_dict': state_dict
+            })
+        except Exception as e:
+            print(f"Skipping checkpoint '{file_name}': {e}")
+
+    if not checkpoints:
+        raise ValueError("No valid checkpoints with test_loss found in the specified directory.")
+
+    sorted_checkpoints = sorted(checkpoints, key=lambda x: x['test_loss'])
+
+    # Start from the best single checkpoint
+    first = sorted_checkpoints[0]
+    cumulative_state_dict = initialize_cumulative_state_dict(first['state_dict'], device)
+    add_state_dict_to_cumulative(cumulative_state_dict, first['state_dict'])
+
+    model.load_state_dict(first['state_dict'], strict=False)
+    best_mean_loss = evaluate_ensemble(model, test_dataloader, device)
+    best_num_models = 1
+    best_ensemble_state_dict = {k: v.clone() for k,v in model.state_dict().items()}
+    best_bilinear = first['bilinear_test_loss']
+
+    # Try ensembles of increasing size
+    for N in range(2, len(sorted_checkpoints)+1):
+        next_ckpt = sorted_checkpoints[N-1]
+        add_state_dict_to_cumulative(cumulative_state_dict, next_ckpt['state_dict'])
+        averaged_state_dict = {k: (v/N) for k,v in cumulative_state_dict.items()}
+        try:
+            model.load_state_dict(averaged_state_dict, strict=False)
+        except Exception as e:
+            print(f"Failed to load averaged state_dict for N={N}: {e}")
+            del averaged_state_dict
+            gc.collect()
+            continue
+
+        mean_loss = evaluate_ensemble(model, test_dataloader, device)
+        if mean_loss < best_mean_loss:
+            best_mean_loss = mean_loss
+            best_num_models = N
+            best_ensemble_state_dict = {key: val.clone() for key,val in model.state_dict().items()}
+            best_bilinear = next_ckpt['bilinear_test_loss']
+
+        del averaged_state_dict
+        gc.collect()
+
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+
+    torch.save({
+        'model_state_dict': best_ensemble_state_dict,
+        'test_loss': best_mean_loss,
+        'bilinear_test_loss': best_bilinear
+    }, output_path)
+
+    print(f"Best ensemble for {directory_path} found with {best_num_models} model(s), saved to {output_path}.")
+    return output_path
