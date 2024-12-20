@@ -20,7 +20,7 @@ import importlib
 start_date = (1980, 9, 1)
 end_date = (1980, 9, 3)
 checkpoint_path = "/Users/clamalo/documents/harpnet/v3/checkpoints/best/best_model.pt"
-plot_coarse = True  # If True, also display the coarse input field in the plots
+plot_coarse = False  # If True, also display the coarse input field in the plots
 # -----------------------------------------
 
 OUTPUT_DIR = FIGURES_DIR / "inference_output"
