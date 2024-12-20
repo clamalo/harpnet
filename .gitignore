@@ -18,3 +18,5 @@ v3/tiles/
 v3/zips/
 v3/data/
 v3/figures/rt/
+v3/figures/inference_output/
+v3/checkpoints/

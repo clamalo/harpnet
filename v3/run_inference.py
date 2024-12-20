@@ -1,5 +1,3 @@
-# File: /src/run_inference.py
-
 import os
 import torch
 import numpy as np
@@ -11,7 +9,7 @@ from pathlib import Path
 import cartopy.crs as ccrs
 import cartopy.feature as cfeature
 
-from src.get_coordinates import tiles, tile_coordinates
+from src.tiles import get_all_tiles, tile_coordinates
 from src.constants import (RAW_DIR, MODEL_NAME, TORCH_DEVICE,
                            MIN_LAT, MAX_LAT, MIN_LON, MAX_LON, MODEL_INPUT_CHANNELS,
                            MODEL_OUTPUT_CHANNELS, FIGURES_DIR, TILE_SIZE, FINE_RESOLUTION)
@@ -84,7 +82,7 @@ def get_tile_ground_truth(tile: int, day_ds):
     return fine_tp
 
 def stitch_tiles(tile_data_dict, tile_list):
-    grid_domains = tiles()
+    grid_domains = get_all_tiles()
     tile_size_degrees = TILE_SIZE * FINE_RESOLUTION
     lat_count = int((MAX_LAT - MIN_LAT) / tile_size_degrees)
     lon_count = int((MAX_LON - MIN_LON) / tile_size_degrees)
@@ -98,10 +96,7 @@ def stitch_tiles(tile_data_dict, tile_list):
     stitched = np.zeros((T, 64*lat_count, 64*lon_count), dtype='float32')
 
     for tile in tile_list:
-        bounds = grid_domains[tile]
-        lat_min, lat_max = bounds[0]
-        lon_min, lon_max = bounds[1]
-
+        lat_min, lat_max, lon_min, lon_max = grid_domains[tile]
         tile_row = int((lat_min - MIN_LAT) / tile_size_degrees)
         tile_col = int((lon_min - MIN_LON) / tile_size_degrees)
 
@@ -257,7 +252,7 @@ stitched_coarse_total = None
 def process_day(model, elevation_ds, day_ds, year, month, day):
     global stitched_model_total, stitched_truth_total, stitched_coarse_total
 
-    grid_domains = tiles()
+    grid_domains = get_all_tiles()
     valid_tiles = list(grid_domains.keys())
 
     tile_predictions = {}

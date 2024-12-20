@@ -10,7 +10,7 @@ from datetime import datetime
 from dateutil.relativedelta import relativedelta
 from typing import List, Tuple, Union
 
-from src.get_coordinates import tile_coordinates
+from src.tiles import tile_coordinates
 from src.constants import RAW_DIR, PROCESSED_DIR, ZIP_DIR, HOUR_INCREMENT
 
 def xr_to_np(tiles: List[int], 
@@ -97,8 +97,8 @@ def xr_to_np(tiles: List[int],
     Wf = len(fine_longitudes_sample)
 
     tile_elev_all = np.zeros((num_tiles, 1, Hf, Wf), dtype='float32')
-    for i, tile in enumerate(tiles):
-        _, _, fine_latitudes, fine_longitudes = tile_coordinates(tile)
+    for i, t in enumerate(tiles):
+        _, _, fine_latitudes, fine_longitudes = tile_coordinates(t)
         elev_fine = elevation_ds.interp(lat=fine_latitudes, lon=fine_longitudes).topo.fillna(0.0).values.astype('float32')
         elev_fine = elev_fine / 8848.9  # Normalize elevation
         tile_elev_all[i, 0, :, :] = elev_fine
