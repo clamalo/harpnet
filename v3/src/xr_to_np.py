@@ -25,14 +25,7 @@ def xr_to_np(tiles: List[int],
     - For each month, we determine test times first, ensuring that every tile in that month uses the same test times.
     - Exactly 20% of the times are set aside for test, and the rest for train.
     - All tiles share the same test times for that month.
-    - Print the first 10 sorted train times and test times for tile 0 in a nice human-readable format.
-
-    Steps:
-    - Load one month of data.
-    - Determine all times available that month.
-    - Randomly select 20% of these times as test times (reproducible).
-    - For each tile, split data into train/test based on whether a sample's time is in the test times or not.
-    - Print out requested info for tile 0.
+    - Print out requested info for tile 0 in a nice human-readable format.
     - Save monthly chunks to disk.
     - After all months are processed, concatenate into final combined arrays.
     """
@@ -142,7 +135,6 @@ def xr_to_np(tiles: List[int],
             continue
 
         # Determine which times are for test:
-        # We pick 20% of the times for test
         test_count = int(train_test_ratio * T)
         time_indices = np.arange(T)
         np.random.seed(RANDOM_SEED + month_counter)
@@ -179,13 +171,9 @@ def xr_to_np(tiles: List[int],
             if len(fine_tp.shape) == 3:
                 fine_tp = fine_tp[:, np.newaxis, :, :]      # (T,1,Hf,Wf)
 
-            # Split according to test_times_set
-            # Create a boolean mask for test samples based on time
             time64 = times.astype('datetime64[s]').astype(np.int64)
-            # Check membership in test_times_set (which stores np.datetime64 objects)
-            # Convert each time to np.datetime64 for membership
-            time_as_datetime = times.astype('datetime64[ns]')  # ns precision for membership check
-            
+            time_as_datetime = times.astype('datetime64[ns]')
+
             test_mask = np.array([t in test_times_set for t in time_as_datetime])
             train_mask = ~test_mask
 
@@ -245,30 +233,37 @@ def xr_to_np(tiles: List[int],
 
     pbar.close()
 
-    # Now combine all monthly chunks into final combined files in a streaming fashion
     print("Combining monthly chunks into final arrays...")
 
     def concatenate_npy_files(file_prefixes, suffix):
         # suffix like "_input.npy", "_target.npy", etc.
-        arrays = []
+
+        # First pass: determine total size and verify consistency
+        total_samples = 0
+        shape = None
+        dtype = None
         for fp in file_prefixes:
-            arr = np.load(fp + suffix, mmap_mode='r')
-            arrays.append(arr)
-        # To avoid huge memory usage, let's concatenate in a memory-efficient manner
-        # We'll do a two-pass: first determine total size, then create final array and copy
-        total_samples = sum(a.shape[0] for a in arrays)
+            arr = np.load(fp + suffix)
+            if shape is None:
+                shape = arr.shape[1:]
+                dtype = arr.dtype
+            total_samples += arr.shape[0]
+
         if total_samples == 0:
-            # In case no data at all
-            return np.empty((0,) + arrays[0].shape[1:], dtype=arrays[0].dtype)
-        
-        shape = (total_samples,) + arrays[0].shape[1:]
-        final_arr = np.empty(shape, dtype=arrays[0].dtype)
+            return np.empty((0,) + shape, dtype=dtype)
+
+        final_arr = np.empty((total_samples,) + shape, dtype=dtype)
 
         start = 0
-        for arr in arrays:
-            length = arr.shape[0]
-            final_arr[start:start+length] = arr
-            start += length
+        # Add a tqdm progress bar for merging files
+        with tqdm(total=len(file_prefixes), desc=f"Merging {suffix} files", unit="file") as merge_pbar:
+            for fp in file_prefixes:
+                arr = np.load(fp + suffix)
+                length = arr.shape[0]
+                final_arr[start:start+length] = arr
+                start += length
+                merge_pbar.update(1)
+
         return final_arr
 
     # Train sets
@@ -313,7 +308,7 @@ def xr_to_np(tiles: List[int],
          final_test_input, final_test_target, final_test_times, final_test_tile_ids)
     gc.collect()
 
-    # Optionally zip if zip_setting='save'
+    # Optionally zip if zip_setting=='save'
     if zip_setting == 'save':
         print("Zipping processed data...")
         with zipfile.ZipFile(combined_zip_path, 'w', compression=zipfile.ZIP_STORED) as zipf:

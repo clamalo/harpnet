@@ -22,12 +22,11 @@ torch.use_deterministic_algorithms(True)
 
 # Variables controlling the data time range, train/test ratio, and training epochs
 start_month = (1979, 10)   # Start year-month for data processing
-end_month = (1980, 9)      # End year-month for data processing
+end_month = (2022, 9)      # End year-month for data processing
 train_test_ratio = 0.2     # Fraction of data used for testing
 start_epoch, end_epoch = 0, 10   # Training epochs range
 max_ensemble_size = 8      # Maximum number of models to include in ensemble
-# tiles = list(range(0,20))  # Tiles to process
-tiles = [0, 5, 10, 15]
+tiles = list(range(0,20))  # Tiles to process
 
 # Specify zipping behavior for processed data
 zip_setting = 'load'  # Options: 'save', 'load', or False
