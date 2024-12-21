@@ -72,17 +72,31 @@ class Model(nn.Module):
     def __init__(self, in_channels=MODEL_INPUT_CHANNELS, out_channels=MODEL_OUTPUT_CHANNELS, output_shape=(TILE_SIZE,TILE_SIZE)):
         super(Model, self).__init__()
 
-        # Encoder pathway
-        self.enc1 = ResConvBlock(in_channels, 64, (64,64))
-        self.enc2 = ResConvBlock(64, 128, (32,32))
-        self.enc3 = ResConvBlock(128, 256, (16,16))
-        self.enc4 = ResConvBlock(256, 512, (8,8))
-        self.enc5 = ResConvBlock(512, 1024, (4,4))
+        # Given TILE_SIZE=32, after each pool dimension halves:
+        # enc1: (32x32)
+        # enc2: (16x16)
+        # enc3: (8x8)
+        # enc4: (4x4)
+        # enc5: (2x2)
+        # bridge: (1x1)
+        #
+        # Decoder mirrors this process in reverse:
+        # dec5: (2x2)
+        # dec4: (4x4)
+        # dec3: (8x8)
+        # dec2: (16x16)
+        # dec1: (32x32)
+
+        self.enc1 = ResConvBlock(in_channels, 64, (32,32))
+        self.enc2 = ResConvBlock(64, 128, (16,16))
+        self.enc3 = ResConvBlock(128, 256, (8,8))
+        self.enc4 = ResConvBlock(256, 512, (4,4))
+        self.enc5 = ResConvBlock(512, 1024, (2,2))
 
         self.pool = nn.MaxPool2d(kernel_size=2, stride=2)
 
         # Bridge
-        self.bridge = ResConvBlock(1024, 2048, (2,2))
+        self.bridge = ResConvBlock(1024, 2048, (1,1))
 
         # Attention blocks for gating skip connections
         self.attn_block5 = AttentionBlock(1024, 2048)
@@ -98,11 +112,11 @@ class Model(nn.Module):
         self.upconv2 = nn.ConvTranspose2d(256, 128, kernel_size=2, stride=2)
         self.upconv1 = nn.ConvTranspose2d(128, 64, kernel_size=2, stride=2)
 
-        self.dec5 = ResConvBlock(2048, 1024, (4,4), dropout_rate=0.5)
-        self.dec4 = ResConvBlock(1024, 512, (8,8), dropout_rate=0.5)
-        self.dec3 = ResConvBlock(512, 256, (16,16), dropout_rate=0.3)
-        self.dec2 = ResConvBlock(256, 128, (32,32), dropout_rate=0.3)
-        self.dec1 = ResConvBlock(128, 64, (64,64), dropout_rate=0.1)
+        self.dec5 = ResConvBlock(2048, 1024, (2,2), dropout_rate=0.5)
+        self.dec4 = ResConvBlock(1024, 512, (4,4), dropout_rate=0.5)
+        self.dec3 = ResConvBlock(512, 256, (8,8), dropout_rate=0.3)
+        self.dec2 = ResConvBlock(256, 128, (16,16), dropout_rate=0.3)
+        self.dec1 = ResConvBlock(128, 64, (32,32), dropout_rate=0.1)
 
         self.final_conv = nn.Conv2d(64, out_channels, kernel_size=1)
         self.output_shape = output_shape

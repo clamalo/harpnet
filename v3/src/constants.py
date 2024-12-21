@@ -23,19 +23,11 @@ MODEL_NAME = "unetwithattention"
 UNET_DEPTH = 1
 MODEL_INPUT_CHANNELS = 2
 MODEL_OUTPUT_CHANNELS = 1
-MODEL_OUTPUT_SHAPE = (64, 64)
+MODEL_OUTPUT_SHAPE = (32, 32)  # Changed from (64,64) to (32,32)
+# Note: TILE_SIZE is 32, so MODEL_OUTPUT_SHAPE now matches TILE_SIZE.
 
 # Seed for reproducibility
 RANDOM_SEED = 42
-
-# # Training run settings
-# MIN_LAT, MAX_LAT = 34.0, 50.0
-# MIN_LON, MAX_LON = -125.0, -104.0
-# HOUR_INCREMENT = 1
-# TILE_SIZE = 64
-# COARSE_RESOLUTION = 0.25
-# FINE_RESOLUTION = 0.0625
-# PADDING = 0.25
 
 # Training run settings
 MIN_LAT, MAX_LAT = 34.0, 50.0

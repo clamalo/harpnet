@@ -19,7 +19,7 @@ model_module = importlib.import_module(f"src.models.{MODEL_NAME}")
 ModelClass = model_module.Model
 
 # User-adjustable parameters
-TILES_TO_FINE_TUNE = [4]  # List of tile indices to fine-tune
+TILES_TO_FINE_TUNE = [10]  # List of tile indices to fine-tune
 FINE_TUNE_EPOCHS = 5
 INITIAL_CHECKPOINT = CHECKPOINTS_DIR / 'best' / 'best_model.pt'
 
