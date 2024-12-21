@@ -4,8 +4,8 @@ Training and testing routines for the model.
 Includes functions for one epoch of training and testing, and a full train-test loop.
 
 Now updated so that normalization stats are loaded lazily, i.e., only when test_model()
-actually needs them. This avoids the issue where the file normalization_stats.npy doesn't
-exist yet at import time.
+actually needs them. This prevents issues where the file normalization_stats.npy might
+not exist until after data processing is completed.
 """
 
 import torch
@@ -25,6 +25,7 @@ from src.constants import (
 )
 from src.generate_dataloaders import generate_dataloaders
 import importlib
+from tabulate import tabulate
 
 # Dynamically import model based on MODEL_NAME
 model_module = importlib.import_module(f"src.models.{MODEL_NAME}")
@@ -91,25 +92,14 @@ def test_model(model: nn.Module,
     Returns:
         A tuple of 16 items:
 
-        1) mean_test_loss (MSE in normalized space)
-        2) mean_bilinear_loss (MSE in normalized space)
-        3) focus_tile_test_loss (MSE normalized), or None
-        4) focus_tile_bilinear_loss (MSE normalized), or None
-
-        5) unnorm_test_mse
-        6) unnorm_bilinear_mse
-        7) unnorm_focus_tile_mse or None
-        8) unnorm_focus_tile_bilinear_mse or None
-
-        9) unnorm_test_mae
-        10) unnorm_bilinear_mae
-        11) unnorm_focus_tile_mae or None
-        12) unnorm_focus_tile_bilinear_mae or None
-
-        13) unnorm_test_corr
-        14) unnorm_bilinear_corr
-        15) unnorm_focus_tile_corr or None
-        16) unnorm_focus_tile_bilinear_corr or None
+        (mean_test_loss, mean_bilinear_loss,
+         focus_tile_test_loss, focus_tile_bilinear_loss,
+         unnorm_test_mse, unnorm_bilinear_mse,
+         unnorm_focus_tile_mse, unnorm_focus_tile_bilinear_mse,
+         unnorm_test_mae, unnorm_bilinear_mae,
+         unnorm_focus_tile_mae, unnorm_focus_tile_bilinear_mae,
+         unnorm_test_corr, unnorm_bilinear_corr,
+         unnorm_focus_tile_corr, unnorm_focus_tile_bilinear_corr)
     """
     # Load mean/std stats at the time of testing
     MEAN_VAL, STD_VAL = _lazy_load_stats()
@@ -286,9 +276,7 @@ def train_test(train_dataloader,
     Full training/testing routine for a given model architecture.
     Saves checkpoints at each epoch.
 
-    Because we're loading the normalization stats lazily, this file
-    won't error out if those stats don't exist until the user actually
-    calls the 'test_model' function.
+    After each epoch, metrics are displayed in a nicely formatted table for easier analysis.
     """
 
     # Set random seeds for reproducibility
@@ -327,24 +315,23 @@ def train_test(train_dataloader,
          unnorm_test_corr, unnorm_bilinear_corr,
          unnorm_focus_tile_corr, unnorm_focus_tile_bilinear_corr) = metrics
 
-        # Print normalized-space losses
-        print(f'Epoch {epoch}:')
-        print(f'  Train Loss (normalized MSE): {train_loss:.6f}')
-        print(f'  Test Loss (normalized MSE): {mean_test_loss:.6f}')
-        print(f'  Bilinear Test (normalized MSE): {mean_bilinear_loss:.6f}')
+        # Prepare data for table
+        # Focus tile columns or N/A if not available
+        ft_mse_norm = f"{focus_tile_test_loss:.6f}" if focus_tile_test_loss is not None else "N/A"
+        ft_mse_unnorm = f"{unnorm_focus_tile_mse:.6f}" if unnorm_focus_tile_mse is not None else "N/A"
+        ft_mae_unnorm = f"{unnorm_focus_tile_mae:.6f}" if unnorm_focus_tile_mae is not None else "N/A"
+        ft_corr_unnorm = f"{unnorm_focus_tile_corr:.4f}" if unnorm_focus_tile_corr is not None else "N/A"
 
-        # Print unnormalized metrics
-        print(f'  Unnorm Test MSE: {unnorm_test_mse:.6f},  Bilinear: {unnorm_bilinear_mse:.6f}')
-        print(f'  Unnorm Test MAE: {unnorm_test_mae:.6f},  Bilinear: {unnorm_bilinear_mae:.6f}')
-        print(f'  Unnorm Test Corr: {unnorm_test_corr:.4f}, Bilinear: {unnorm_bilinear_corr:.4f}')
+        # Create a table with the results
+        headers = ["Metric", "Train", "Test", "Bilinear", f"Focus Tile {focus_tile if focus_tile is not None else ''}"]
+        data = [
+            ["MSE (Normalized)", f"{train_loss:.6f}", f"{mean_test_loss:.6f}", f"{mean_bilinear_loss:.6f}", ft_mse_norm],
+            ["MSE (Unnorm)", "-", f"{unnorm_test_mse:.6f}", f"{unnorm_bilinear_mse:.6f}", ft_mse_unnorm],
+            ["MAE (Unnorm)", "-", f"{unnorm_test_mae:.6f}", f"{unnorm_bilinear_mae:.6f}", ft_mae_unnorm],
+            ["Corr (Unnorm)", "-", f"{unnorm_test_corr:.4f}", f"{unnorm_bilinear_corr:.4f}", ft_corr_unnorm],
+        ]
 
-        if focus_tile is not None and focus_tile_test_loss is not None:
-            print(f"  Focus Tile {focus_tile} (normalized MSE): {focus_tile_test_loss:.6f}, Bilinear: {focus_tile_bilinear_loss:.6f}")
-            print(f"  Focus Tile {focus_tile} Unnorm MSE: {unnorm_focus_tile_mse:.6f}, Bilinear: {unnorm_focus_tile_bilinear_mse:.6f}")
-            print(f"  Focus Tile {focus_tile} Unnorm MAE: {unnorm_focus_tile_mae:.6f}, Bilinear: {unnorm_focus_tile_bilinear_mae:.6f}")
-            print(f"  Focus Tile {focus_tile} Unnorm Corr: {unnorm_focus_tile_corr:.4f}, Bilinear: {unnorm_focus_tile_bilinear_corr:.4f}")
-        elif focus_tile is not None:
-            print(f"  No samples found for tile {focus_tile} in the test set.")
+        print(tabulate(data, headers=headers, tablefmt="pretty"))
 
         # Save checkpoint after each epoch (normalized weights)
         torch.save({
