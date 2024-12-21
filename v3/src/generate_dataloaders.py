@@ -7,7 +7,7 @@ import numpy as np
 import torch
 from torch.utils.data import DataLoader, Dataset
 from pathlib import Path
-from src.constants import PROCESSED_DIR, RANDOM_SEED, NORMALIZATION_STATS_FILE
+from src.constants import PROCESSED_DIR, RANDOM_SEED, NORMALIZATION_STATS_FILE, TILE_SIZE
 from typing import List, Tuple, Optional
 
 class CombinedDataset(Dataset):
@@ -55,13 +55,13 @@ class CombinedDataset(Dataset):
         tile_idx = self.tile_id_to_index[tile_data]
         elev_data = torch.from_numpy(self.tile_elev[tile_idx]) # (1,Hf,Wf)
 
-        # Interpolate to 64x64
-        input_data = torch.nn.functional.interpolate(input_data.unsqueeze(0), size=(64, 64), mode='nearest').squeeze(0)
-        elev_data = torch.nn.functional.interpolate(elev_data.unsqueeze(0), size=(64,64), mode='nearest').squeeze(0)
-        target_data = torch.nn.functional.interpolate(target_data.unsqueeze(0), size=(64,64), mode='nearest').squeeze(0)
+        # Interpolate to TILE_SIZE x TILE_SIZE
+        input_data = torch.nn.functional.interpolate(input_data.unsqueeze(0), size=(TILE_SIZE,TILE_SIZE), mode='nearest').squeeze(0)
+        elev_data = torch.nn.functional.interpolate(elev_data.unsqueeze(0), size=(TILE_SIZE,TILE_SIZE), mode='nearest').squeeze(0)
+        target_data = torch.nn.functional.interpolate(target_data.unsqueeze(0), size=(TILE_SIZE,TILE_SIZE), mode='nearest').squeeze(0)
 
         # Combine inputs with elevation
-        input_data = torch.cat([input_data, elev_data], dim=0) # (2,64,64)
+        input_data = torch.cat([input_data, elev_data], dim=0) # (2,H,W)
 
         # Normalize precipitation channels (input_data[0,:,:] is precip)
         input_data[0,:,:] = (input_data[0,:,:] - self.mean) / self.std

@@ -17,13 +17,13 @@ import cartopy.feature as cfeature
 
 from src.tiles import get_all_tiles, tile_coordinates
 from src.constants import (RAW_DIR, MODEL_NAME, TORCH_DEVICE,
-                           MIN_LAT, MAX_LAT, MIN_LON, MAX_LON, FIGURES_DIR, TILE_SIZE, FINE_RESOLUTION, CHECKPOINTS_DIR, NORMALIZATION_STATS_FILE)
+                           MIN_LAT, MAX_LAT, MIN_LON, MAX_LON, FIGURES_DIR, TILE_SIZE, FINE_RESOLUTION, CHECKPOINTS_DIR, NORMALIZATION_STATS_FILE, TILE_SIZE)
 import importlib
 
 # -----------------------------------------
 # User-controlled variables
-start_date = (2020, 3, 13)
-end_date = (2020, 3, 16)
+start_date = (2021, 2, 14)
+end_date = (2021, 2, 18)
 global_best_checkpoint_path = CHECKPOINTS_DIR / "best" / "best_model.pt" 
 plot_coarse = False  # If True, also display the coarse input field in the plots
 # -----------------------------------------
@@ -79,8 +79,8 @@ def prepare_inputs_for_tile(tile: int, day_ds, elevation_ds, model_device):
     elev_fine_torch = torch.from_numpy(elev_fine).to(model_device)
 
     # Interpolate coarse to 64x64
-    coarse_tp_64 = torch.nn.functional.interpolate(coarse_tp_torch, size=(64,64), mode='nearest')
-    elev_64 = torch.nn.functional.interpolate(elev_fine_torch.unsqueeze(0).expand(T,-1,-1,-1), size=(64,64), mode='nearest')
+    coarse_tp_64 = torch.nn.functional.interpolate(coarse_tp_torch, size=(TILE_SIZE,TILE_SIZE), mode='nearest')
+    elev_64 = torch.nn.functional.interpolate(elev_fine_torch.unsqueeze(0).expand(T,-1,-1,-1), size=(TILE_SIZE,TILE_SIZE), mode='nearest')
     elev_64 = elev_64.squeeze(0)
 
     # Normalize precipitation: (x - mean)/std
@@ -108,7 +108,7 @@ def stitch_tiles(tile_data_dict, tile_list):
         T = arr.shape[0]
         break
 
-    stitched = np.zeros((T, 64*lat_count, 64*lon_count), dtype='float32')
+    stitched = np.zeros((T, TILE_SIZE*lat_count, TILE_SIZE*lon_count), dtype='float32')
 
     for tile in tile_list:
         lat_min, lat_max, lon_min, lon_max = grid_domains[tile]
@@ -116,10 +116,10 @@ def stitch_tiles(tile_data_dict, tile_list):
         tile_col = int((lon_min - MIN_LON) / tile_size_degrees)
 
         arr = tile_data_dict[tile]
-        row_start = tile_row * 64
-        row_end = row_start + 64
-        col_start = tile_col * 64
-        col_end = col_start + 64
+        row_start = tile_row * TILE_SIZE
+        row_end = row_start + TILE_SIZE
+        col_start = tile_col * TILE_SIZE
+        col_end = col_start + TILE_SIZE
 
         stitched[:, row_start:row_end, col_start:col_end] = arr
 
@@ -301,7 +301,7 @@ def process_day(elevation_ds, day_ds, year, month, day):
         # Add channel dimension
         fine_tp_torch = fine_tp_torch.unsqueeze(1)  # (T,1,64,64)
 
-        fine_tp_64 = torch.nn.functional.interpolate(fine_tp_torch, size=(64,64), mode='nearest').squeeze(1).numpy()
+        fine_tp_64 = torch.nn.functional.interpolate(fine_tp_torch, size=(TILE_SIZE,TILE_SIZE), mode='nearest').squeeze(1).numpy()
 
         tile_predictions[tile] = preds_mm # (T,64,64) in mm
         tile_ground_truth_data[tile] = fine_tp_64 # (T,64,64) in mm

@@ -27,9 +27,11 @@ end_month = (1980, 9)      # End year-month for data processing (not used)
 train_test_ratio = 0.2     # Fraction of data used for testing (already applied during preprocessing)
 start_epoch, end_epoch = 0, 5  # Training epochs range
 max_ensemble_size = 8      # Maximum number of models to include in ensemble
-tiles = list(range(0,20))  # Tiles to process (not needed by generate_dataloaders anymore if data is prepped)
+# tiles = list(range(0,20))  # Tiles to process (not needed by generate_dataloaders anymore if data is prepped)
+tiles = [8, 10]
+focus_tile = 8
 
-zip_setting = 'save'  # Options: 'save', 'load', or False
+zip_setting = 'load'  # Options: 'save', 'load', or False
 
 if __name__ == "__main__":
     # Setup environment
@@ -47,7 +49,7 @@ if __name__ == "__main__":
     train_dataloader, test_dataloader = generate_dataloaders()
 
     # Train and test the model
-    train_test(train_dataloader, test_dataloader, start_epoch, end_epoch, focus_tile=4)
+    train_test(train_dataloader, test_dataloader, start_epoch, end_epoch, focus_tile=focus_tile)
 
     # Create an ensemble
     ensemble(tiles, start_month, end_month, train_test_ratio, max_ensemble_size)

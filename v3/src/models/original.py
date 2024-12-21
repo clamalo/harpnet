@@ -5,7 +5,7 @@ Includes a ResConvBlock for residual convolutions and an AttentionBlock for feat
 
 import torch
 import torch.nn as nn
-from src.constants import UNET_DEPTH, MODEL_INPUT_CHANNELS, MODEL_OUTPUT_CHANNELS
+from src.constants import UNET_DEPTH, MODEL_INPUT_CHANNELS, MODEL_OUTPUT_CHANNELS, TILE_SIZE
 
 class AttentionBlock(nn.Module):
     """
@@ -40,7 +40,7 @@ class ResConvBlock(nn.Module):
     Residual Convolutional Block.
     Applies two convolutions with residual shortcut and optional dropout, maintaining spatial dimensions.
     """
-    def __init__(self, in_channels, out_channels, shape=(64,64), dropout_rate=0.0):
+    def __init__(self, in_channels, out_channels, shape=(TILE_SIZE,TILE_SIZE), dropout_rate=0.0):
         super(ResConvBlock, self).__init__()
         self.resconvblock = nn.Sequential(
             nn.Conv2d(in_channels, out_channels, 3, padding=1),
@@ -69,7 +69,7 @@ class Model(nn.Module):
     A U-Net style model with attention blocks at skip connections and residual convolutional blocks.
     Designed for precipitation downscaling tasks.
     """
-    def __init__(self, in_channels=MODEL_INPUT_CHANNELS, out_channels=MODEL_OUTPUT_CHANNELS, output_shape=(64,64)):
+    def __init__(self, in_channels=MODEL_INPUT_CHANNELS, out_channels=MODEL_OUTPUT_CHANNELS, output_shape=(TILE_SIZE,TILE_SIZE)):
         super(Model, self).__init__()
 
         # Encoder pathway

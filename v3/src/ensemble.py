@@ -1,20 +1,20 @@
-# File: /src/ensemble.py
 """
-Implements model ensembling by averaging model weights from multiple checkpoints.
-Evaluates the performance on a test set and saves the best ensemble model.
+Ensemble logic now leverages test_model from train_test.py for evaluation.
+All evaluation is done by calling test_model defined in train_test.py.
 
-This file now includes the run_ensemble_on_directory function again to be used by fine_tuning.py.
+This removes redundancy and ensures that all training/evaluation code is centralized in train_test.py.
 """
 
 import os
 import gc
 import torch
 import numpy as np
-from tqdm import tqdm
 from typing import List, Optional, Tuple, Dict
 from src.generate_dataloaders import generate_dataloaders
 from src.constants import CHECKPOINTS_DIR, TORCH_DEVICE, MODEL_NAME
 import importlib
+import torch.nn as nn
+from src.train_test import test_model  # Use the central test function
 
 # Dynamic import of model based on MODEL_NAME from constants
 model_module = importlib.import_module(f"src.models.{MODEL_NAME}")
@@ -64,25 +64,28 @@ def add_state_dict_to_cumulative(cumulative: Dict[str, torch.Tensor], new_state:
         if key in new_state and isinstance(new_state[key], torch.Tensor):
             cumulative[key] += new_state[key].float()
 
-def evaluate_ensemble(model: ModelClass, test_dataloader, device: str) -> float:
-    loss_fn = torch.nn.MSELoss()
-    total_loss = 0.0
-    num_batches = 0
+def evaluate_model(model: ModelClass, test_dataloader, device: str) -> float:
+    """
+    Evaluate the model using test_model from train_test.py for unified metrics.
+    Returns normalized test_loss for ensemble logic and prints metrics.
+    """
+    criterion = nn.MSELoss()
+    metrics = test_model(model, test_dataloader, criterion, focus_tile=None)
+    (mean_test_loss, mean_bilinear_loss,
+     focus_tile_test_loss, focus_tile_bilinear_loss,
+     unnorm_test_mse, unnorm_bilinear_mse,
+     unnorm_focus_tile_mse, unnorm_focus_tile_bilinear_mse,
+     unnorm_test_mae, unnorm_bilinear_mae,
+     unnorm_focus_tile_mae, unnorm_focus_tile_bilinear_mae,
+     unnorm_test_corr, unnorm_bilinear_corr,
+     unnorm_focus_tile_corr, unnorm_focus_tile_bilinear_corr) = metrics
 
-    model.eval()
-    with torch.no_grad():
-        for batch in test_dataloader:
-            inputs, elev_data, targets, times, tile_ids = batch
-            inputs = inputs.to(device)
-            targets = targets.to(device)
-            outputs = model(inputs)
+    # Print a short summary similar to previous evaluation
+    print("Ensemble Evaluation:")
+    print(f"  Normalized MSE: {mean_test_loss:.6f}")
+    print(f"  Unnorm MSE: {unnorm_test_mse:.6f}, Unnorm MAE: {unnorm_test_mae:.6f}, Unnorm Corr: {unnorm_test_corr:.4f}")
 
-            loss = loss_fn(outputs, targets)
-            total_loss += loss.item()
-            num_batches += 1
-
-    mean_loss = total_loss / num_batches if num_batches > 0 else float('inf')
-    return mean_loss
+    return mean_test_loss
 
 def ensemble(tiles: List[int], 
              start_month: Tuple[int,int], 
@@ -110,7 +113,7 @@ def ensemble(tiles: List[int],
     checkpoints = []
     print(f"Found {len(checkpoint_files)} checkpoint file(s).")
 
-    # Load and record test losses
+    # Load and record test losses (normalized)
     for file_name in checkpoint_files:
         checkpoint_path = os.path.join(CHECKPOINTS_DIR, file_name)
         try:
@@ -121,17 +124,18 @@ def ensemble(tiles: List[int],
                 'checkpoint_path': checkpoint_path,
                 'bilinear_test_loss': bilinear_test_loss
             })
-            print(f"Loaded checkpoint '{file_name}' with test_loss: {test_loss}")
+            print(f"Loaded checkpoint '{file_name}' with normalized test_loss: {test_loss}")
         except (KeyError, TypeError, ValueError) as e:
             print(f"Skipping checkpoint '{file_name}': {e}")
 
     if not checkpoints:
         raise ValueError("No valid checkpoints with test_loss found.")
 
+    # Sort by normalized test_loss ascending
     sorted_checkpoints = sorted(checkpoints, key=lambda x: x['test_loss'])
     print("\nCheckpoints sorted by test_loss (ascending):")
     for ckpt in sorted_checkpoints:
-        print(f"  {ckpt['file_name']}: Test Loss = {ckpt['test_loss']}")
+        print(f"  {ckpt['file_name']}: Normalized Test Loss = {ckpt['test_loss']}")
 
     total_models = len(sorted_checkpoints)
     print(f"\nTotal valid checkpoints to consider: {total_models}")
@@ -149,13 +153,12 @@ def ensemble(tiles: List[int],
     cumulative_state_dict = initialize_cumulative_state_dict(state_dict, device)
     add_state_dict_to_cumulative(cumulative_state_dict, state_dict)
 
-    # Evaluate initial best model alone
-    print(f"\nEvaluating ensemble with 1 model:")
+    # Evaluate the best single model alone
+    print(f"\nEvaluating ensemble with 1 model (checkpoint: {first_checkpoint['file_name']}):")
     model.load_state_dict(state_dict)
     del state_dict
     gc.collect()
-    mean_loss = evaluate_ensemble(model, test_dataloader, device)
-    print(f"Ensemble with 1 model: Mean Loss = {mean_loss:.6f}")
+    mean_loss = evaluate_model(model, test_dataloader, device)
 
     best_mean_loss = mean_loss
     best_num_models = 1
@@ -173,6 +176,7 @@ def ensemble(tiles: List[int],
             print(f"Failed to load state_dict from '{next_checkpoint['file_name']}': {e}")
             continue
 
+        # Average the weights
         averaged_state_dict = {key: (val / N) for key, val in cumulative_state_dict.items()}
 
         try:
@@ -184,9 +188,8 @@ def ensemble(tiles: List[int],
             gc.collect()
             continue
 
-        mean_loss = evaluate_ensemble(model, test_dataloader, device)
-        print(f"Ensemble with {N} model(s): Mean Loss = {mean_loss:.6f}")
-
+        # Evaluate the ensemble using test_model
+        mean_loss = evaluate_model(model, test_dataloader, device)
         if mean_loss < best_mean_loss:
             best_mean_loss = mean_loss
             best_num_models = N
@@ -200,16 +203,16 @@ def ensemble(tiles: List[int],
     # Save the best ensemble state if found
     if best_ensemble_state_dict is not None:
         model.load_state_dict(best_ensemble_state_dict, strict=False)
-        print(f"\nOptimal ensemble size: {best_num_models} model(s) with Mean Loss = {best_mean_loss:.6f}")
+        print(f"\nOptimal ensemble size: {best_num_models} model(s) with Normalized MSE = {best_mean_loss:.6f}")
 
         best_dir = os.path.join(CHECKPOINTS_DIR, 'best')
         os.makedirs(best_dir, exist_ok=True)
 
-        best_model_path = os.path.join(best_dir, f"best_model.pt")
+        best_model_path = os.path.join(best_dir, "best_model.pt")
         try:
             torch.save({
                 'model_state_dict': best_ensemble_state_dict,
-                'test_loss': best_mean_loss,
+                'test_loss': best_mean_loss,            # Normalized test loss
                 'bilinear_test_loss': best_bilinear_test_loss
             }, best_model_path)
             print(f"Best ensemble model saved to: {best_model_path}")
@@ -221,17 +224,8 @@ def ensemble(tiles: List[int],
 
 def run_ensemble_on_directory(directory_path: str, test_dataloader, device: str, output_path: str) -> str:
     """
-    Runs the ensemble logic on all checkpoints found in the specified directory.
-    Sorts them by test_loss, tries ensemble averaging from 1 to N models, and saves the best.
-
-    Args:
-        directory_path: The directory containing checkpoint files.
-        test_dataloader: Dataloader for testing.
-        device: Torch device.
-        output_path: Path to save the best ensemble model.
-
-    Returns:
-        The path to the saved best ensemble model.
+    Runs the ensemble logic on all checkpoints found in the specified directory,
+    uses test_model from train_test.py for evaluation, and saves the best.
     """
     model = ModelClass().to(device)
 
@@ -269,7 +263,9 @@ def run_ensemble_on_directory(directory_path: str, test_dataloader, device: str,
     add_state_dict_to_cumulative(cumulative_state_dict, first['state_dict'])
 
     model.load_state_dict(first['state_dict'], strict=False)
-    best_mean_loss = evaluate_ensemble(model, test_dataloader, device)
+    single_mean_loss = evaluate_model(model, test_dataloader, device)
+
+    best_mean_loss = single_mean_loss
     best_num_models = 1
     best_ensemble_state_dict = {k: v.clone() for k,v in model.state_dict().items()}
     best_bilinear = first['bilinear_test_loss']
@@ -287,9 +283,9 @@ def run_ensemble_on_directory(directory_path: str, test_dataloader, device: str,
             gc.collect()
             continue
 
-        mean_loss = evaluate_ensemble(model, test_dataloader, device)
-        if mean_loss < best_mean_loss:
-            best_mean_loss = mean_loss
+        ensemble_mean_loss = evaluate_model(model, test_dataloader, device)
+        if ensemble_mean_loss < best_mean_loss:
+            best_mean_loss = ensemble_mean_loss
             best_num_models = N
             best_ensemble_state_dict = {key: val.clone() for key,val in model.state_dict().items()}
             best_bilinear = next_ckpt['bilinear_test_loss']
@@ -305,5 +301,5 @@ def run_ensemble_on_directory(directory_path: str, test_dataloader, device: str,
         'bilinear_test_loss': best_bilinear
     }, output_path)
 
-    print(f"Best ensemble for {directory_path} found with {best_num_models} model(s), saved to {output_path}.")
+    print(f"Best ensemble for {directory_path} found with {best_num_models} model(s), normalized MSE={best_mean_loss:.6f}.")
     return output_path

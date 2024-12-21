@@ -6,7 +6,7 @@ This model extends the original U-Net with attention by adding SE blocks for cha
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from src.constants import UNET_DEPTH, MODEL_INPUT_CHANNELS, MODEL_OUTPUT_CHANNELS, MODEL_OUTPUT_SHAPE
+from src.constants import UNET_DEPTH, MODEL_INPUT_CHANNELS, MODEL_OUTPUT_CHANNELS, MODEL_OUTPUT_SHAPE, TILE_SIZE
 
 class AttentionBlock(nn.Module):
     """
@@ -57,7 +57,7 @@ class ResConvBlock(nn.Module):
     Residual convolutional block with LayerNorm and SEBlock.
     Maintains spatial dimensions and includes dropout.
     """
-    def __init__(self, in_channels, out_channels, shape=(64,64), dropout_rate=0.0):
+    def __init__(self, in_channels, out_channels, shape=(TILE_SIZE, TILE_SIZE), dropout_rate=0.0):
         super(ResConvBlock, self).__init__()
         self.resconvblock = nn.Sequential(
             nn.Conv2d(in_channels, out_channels, 3, padding=1),

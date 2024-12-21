@@ -28,13 +28,22 @@ MODEL_OUTPUT_SHAPE = (64, 64)
 # Seed for reproducibility
 RANDOM_SEED = 42
 
+# # Training run settings
+# MIN_LAT, MAX_LAT = 34.0, 50.0
+# MIN_LON, MAX_LON = -125.0, -104.0
+# HOUR_INCREMENT = 1
+# TILE_SIZE = 64
+# COARSE_RESOLUTION = 0.25
+# FINE_RESOLUTION = 0.0625
+# PADDING = 0.25
+
 # Training run settings
 MIN_LAT, MAX_LAT = 34.0, 50.0
 MIN_LON, MAX_LON = -125.0, -104.0
 HOUR_INCREMENT = 1
-TILE_SIZE = 64
+TILE_SIZE = 32
 COARSE_RESOLUTION = 0.25
-FINE_RESOLUTION = 0.0625
+FINE_RESOLUTION = 0.125
 PADDING = 0.25
 
 # Normalization stats file (created after xr_to_np finishes)

@@ -5,7 +5,7 @@ This is similar to the se_unetwithattention but without SE blocks.
 
 import torch
 import torch.nn as nn
-from src.constants import UNET_DEPTH, MODEL_INPUT_CHANNELS, MODEL_OUTPUT_CHANNELS, MODEL_OUTPUT_SHAPE
+from src.constants import UNET_DEPTH, MODEL_INPUT_CHANNELS, MODEL_OUTPUT_CHANNELS, MODEL_OUTPUT_SHAPE, TILE_SIZE
 
 class AttentionBlock(nn.Module):
     """
@@ -35,7 +35,7 @@ class ResConvBlock(nn.Module):
     Residual convolutional block maintaining spatial dimensions.
     Includes dropout for regularization.
     """
-    def __init__(self, in_channels, out_channels, shape=(64,64), dropout_rate=0.0):
+    def __init__(self, in_channels, out_channels, shape=(TILE_SIZE, TILE_SIZE), dropout_rate=0.0):
         super(ResConvBlock, self).__init__()
         self.resconvblock = nn.Sequential(
             nn.Conv2d(in_channels, out_channels, 3, padding=1),
