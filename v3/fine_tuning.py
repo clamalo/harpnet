@@ -7,6 +7,7 @@ import os
 import random
 import numpy as np
 import torch
+import logging
 from pathlib import Path
 
 from src.constants import (CHECKPOINTS_DIR, TORCH_DEVICE, RANDOM_SEED, MODEL_NAME)
@@ -30,7 +31,6 @@ def fine_tune_single_tile(tile: int,
     tile_ckpt_dir = CHECKPOINTS_DIR / str(tile)
     os.makedirs(tile_ckpt_dir, exist_ok=True)
 
-    # Load dataloaders with focus on this tile
     train_dataloader, test_dataloader = generate_dataloaders(focus_tile=tile)
 
     model = ModelClass().to(device)
@@ -42,9 +42,9 @@ def fine_tune_single_tile(tile: int,
     checkpoint = torch.load(initial_checkpoint, map_location=device)
     model.load_state_dict(checkpoint['model_state_dict'], strict=False)
 
-    print(f"Starting fine-tuning for tile {tile} from checkpoint {initial_checkpoint} for {fine_tune_epochs} epochs.")
+    logging.info(f"Starting fine-tuning for tile {tile} from checkpoint {initial_checkpoint} for {fine_tune_epochs} epochs.")
     for epoch in range(fine_tune_epochs):
-        print(f"Tile {tile}, Epoch {epoch}...")
+        logging.info(f"Tile {tile}, Epoch {epoch}...")
         train_loss = train_one_epoch(model, train_dataloader, optimizer, criterion)
         metrics = test_model(model, test_dataloader, criterion, focus_tile=tile)
 
@@ -59,13 +59,13 @@ def fine_tune_single_tile(tile: int,
         unnorm_focus_tile_corr = metrics["unnorm_focus_tile_corr"]
         unnorm_focus_tile_bilinear_corr = metrics["unnorm_focus_tile_bilinear_corr"]
 
-        print(f'Epoch {epoch}: Train loss (normalized MSE) = {train_loss:.6f}')
-        print(f'  Test (normalized MSE): {mean_test_loss:.6f}, Bilinear: {mean_bilinear_loss:.6f}')
+        logging.info(f'Epoch {epoch}: Train loss (normalized MSE) = {train_loss:.6f}')
+        logging.info(f'  Test (normalized MSE): {mean_test_loss:.6f}, Bilinear: {mean_bilinear_loss:.6f}')
         if focus_tile_test_loss is not None:
-            print(f'  Focus Tile {tile} (normalized MSE): {focus_tile_test_loss:.6f}, Bilinear: {focus_tile_bilinear_loss:.6f}')
-            print(f'  Focus Tile {tile} Unnorm MSE: {unnorm_focus_tile_mse:.6f}, Bilinear: {unnorm_focus_tile_bilinear_mse:.6f}')
-            print(f'  Focus Tile {tile} Unnorm MAE: {unnorm_focus_tile_mae:.6f}, Bilinear: {unnorm_focus_tile_bilinear_mae:.6f}')
-            print(f'  Focus Tile {tile} Unnorm Corr: {unnorm_focus_tile_corr:.4f}, Bilinear: {unnorm_focus_tile_bilinear_corr:.4f}')
+            logging.info(f'  Focus Tile {tile} (normalized MSE): {focus_tile_test_loss:.6f}, Bilinear: {focus_tile_bilinear_loss:.6f}')
+            logging.info(f'  Focus Tile {tile} Unnorm MSE: {unnorm_focus_tile_mse:.6f}, Bilinear: {unnorm_focus_tile_bilinear_mse:.6f}')
+            logging.info(f'  Focus Tile {tile} Unnorm MAE: {unnorm_focus_tile_mae:.6f}, Bilinear: {unnorm_focus_tile_bilinear_mae:.6f}')
+            logging.info(f'  Focus Tile {tile} Unnorm Corr: {unnorm_focus_tile_corr:.4f}, Bilinear: {unnorm_focus_tile_bilinear_corr:.4f}')
 
         torch.save({
             'model_state_dict': model.state_dict(),
@@ -77,7 +77,7 @@ def fine_tune_single_tile(tile: int,
 
     best_output_path = CHECKPOINTS_DIR / 'best' / f"{tile}_best.pt"
     run_ensemble_on_directory(str(tile_ckpt_dir), test_dataloader, device, str(best_output_path))
-    print(f"Best fine-tuned model for tile {tile} saved at {best_output_path}")
+    logging.info(f"Best fine-tuned model for tile {tile} saved at {best_output_path}")
 
 
 if __name__ == "__main__":

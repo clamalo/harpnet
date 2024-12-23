@@ -11,6 +11,8 @@ from pathlib import Path
 # ----------------------------------------------------------
 RAW_DIR = Path("/Volumes/T9/monthly")
 PROCESSED_DIR = Path("/Users/clamalo/documents/harpnet/v3/tiles")
+# Normalization stats file (created after xr_to_np finishes)
+NORMALIZATION_STATS_FILE = PROCESSED_DIR / "normalization_stats.npy"
 ZIP_DIR = Path("/Users/clamalo/documents/harpnet/v3/zips")
 CHECKPOINTS_DIR = Path("/Users/clamalo/documents/harpnet/v3/checkpoints")
 FIGURES_DIR = Path("figures")
@@ -50,9 +52,6 @@ TILE_SIZE = 32
 COARSE_RESOLUTION = 0.25
 FINE_RESOLUTION = 0.125
 PADDING = 0.25
-
-# Normalization stats file (created after xr_to_np finishes)
-NORMALIZATION_STATS_FILE = PROCESSED_DIR / "normalization_stats.npy"
 
 # Controls for data/time range and training
 DATA_START_MONTH = (1979, 10)  # (year, month)

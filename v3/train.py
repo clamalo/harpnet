@@ -1,6 +1,9 @@
 import random
 import numpy as np
 import torch
+import logging
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
 from src.setup import setup
 from src.xr_to_np import xr_to_np
@@ -51,7 +54,7 @@ if __name__ == "__main__":
 
     # If we chose to 'save', data is zipped and removed, so we skip training
     if ZIP_SETTING == 'save':
-        print("Data preprocessed, zipped, and removed. No training performed.")
+        logging.info("Data preprocessed, zipped, and removed. No training performed.")
         exit(0)
 
     # Generate DataLoaders

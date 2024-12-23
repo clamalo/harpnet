@@ -6,6 +6,7 @@ import zipfile
 import gc
 import random
 import torch
+import logging
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
 from typing import List, Tuple, Union
@@ -69,7 +70,7 @@ def xr_to_np(tiles: List[int],
         elevation_ds = elevation_ds.rename({'X': 'lon', 'Y': 'lat'})
 
     # Compute elevation arrays once for all tiles
-    print("Computing elevation per tile...")
+    logging.info("Computing elevation per tile...")
     sample_tile = tiles[0]
     _, _, fine_latitudes_sample, fine_longitudes_sample = tile_coordinates(sample_tile)
     Hf = len(fine_latitudes_sample)
@@ -219,7 +220,7 @@ def xr_to_np(tiles: List[int],
 
     pbar.close()
 
-    print("Combining monthly chunks into final arrays...")
+    logging.info("Combining monthly chunks into final arrays...")
 
     def concatenate_npy_files(file_prefixes, suffix):
         total_samples = 0
@@ -284,19 +285,13 @@ def xr_to_np(tiles: List[int],
     np.save(test_tile_ids_path, final_test_tile_ids)
 
     # Compute normalization stats from training targets
-    # We'll normalize precipitation (both input and target) using the training target stats.
-    # Flatten all training target precipitation values:
     if final_train_target.size > 0:
-        # final_train_target shape: (N,1,Hf,Wf)
         train_targets_flat = final_train_target.flatten()
-        # Compute mean and std
         mean_val = float(train_targets_flat.mean())
         std_val = float(train_targets_flat.std())
-        # If std is zero (degenerate case), set it to a small number to avoid division by zero
         if std_val < 1e-8:
             std_val = 1e-8
     else:
-        # No training data, fallback
         mean_val = 0.0
         std_val = 1.0
 
@@ -309,7 +304,7 @@ def xr_to_np(tiles: List[int],
 
     # Optionally zip if zip_setting=='save'
     if zip_setting == 'save':
-        print("Zipping processed data...")
+        logging.info("Zipping processed data...")
         with zipfile.ZipFile(combined_zip_path, 'w', compression=zipfile.ZIP_STORED) as zipf:
             zipf.write(train_input_path, "combined_train_input.npy")
             zipf.write(train_target_path, "combined_train_target.npy")
@@ -333,4 +328,4 @@ def xr_to_np(tiles: List[int],
         os.remove(test_tile_ids_path)
         os.remove(tile_elev_path)
         os.remove(normalization_stats_path)
-        print("Zipped and removed local npy files.")
+        logging.info("Zipped and removed local npy files.")

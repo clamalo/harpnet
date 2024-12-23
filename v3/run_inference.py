@@ -1,4 +1,3 @@
-# File: /run_inference.py
 """
 Adapted inference script to use normalized inputs and then inverse normalization after inference.
 If a tile-specific best model is found, it uses that; otherwise uses global best model.
@@ -11,6 +10,7 @@ import xarray as xr
 import matplotlib.pyplot as plt
 from datetime import datetime, timedelta
 from pathlib import Path
+import logging
 
 import cartopy.crs as ccrs
 import cartopy.feature as cfeature
@@ -83,7 +83,7 @@ def prepare_inputs_for_tile(tile: int, day_ds, elevation_ds, model_device):
     elev_64 = torch.nn.functional.interpolate(elev_fine_torch.unsqueeze(0).expand(T,-1,-1,-1), size=(TILE_SIZE,TILE_SIZE), mode='nearest')
     elev_64 = elev_64.squeeze(0)
 
-    # Normalize precipitation: (x - mean)/std
+    # Normalize precipitation
     coarse_tp_64_norm = (coarse_tp_64 - mean_val)/std_val
 
     inputs = torch.cat([coarse_tp_64_norm, elev_64], dim=1) # (T,2,64,64)
@@ -239,7 +239,6 @@ def plot_total_precipitation(total_coarse, total_model, total_truth, plot_coarse
         cbar = fig.colorbar(im1, ax=[ax1, ax2, ax3], fraction=0.046, pad=0.04)
         cbar.set_label('Precipitation (inches)')
     else:
-        # Just model and truth totals
         fig = plt.figure(figsize=(12,6))
         ax1 = fig.add_subplot(1, 2, 1, projection=ccrs.PlateCarree())
         ax1.set_extent(extent, crs=ccrs.PlateCarree())
@@ -283,7 +282,6 @@ def process_day(elevation_ds, day_ds, year, month, day):
 
     device = TORCH_DEVICE
 
-    # For each tile
     for tile in valid_tiles:
         model = load_model_for_tile(tile)
         times, inputs, coarse_tp_64_mm = prepare_inputs_for_tile(tile, day_ds, elevation_ds, device)
@@ -292,35 +290,29 @@ def process_day(elevation_ds, day_ds, year, month, day):
             preds_norm = model(inputs)  # preds in normalized form
             preds_norm = preds_norm.squeeze(1).cpu().numpy()
 
-        # Inverse normalization: preds_mm = (preds_norm * std_val) + mean_val
         preds_mm = (preds_norm * std_val) + mean_val
 
-        fine_tp = get_tile_ground_truth(tile, day_ds) # mm, shape (T,64,64) if already res is correct
-        # Ensure fine_tp_torch is (T,1,Hf,Wf) before interpolate
-        fine_tp_torch = torch.from_numpy(fine_tp)  # shape (T,64,64)
-        # Add channel dimension
-        fine_tp_torch = fine_tp_torch.unsqueeze(1)  # (T,1,64,64)
-
+        fine_tp = get_tile_ground_truth(tile, day_ds)
+        fine_tp_torch = torch.from_numpy(fine_tp)
+        fine_tp_torch = fine_tp_torch.unsqueeze(1)
         fine_tp_64 = torch.nn.functional.interpolate(fine_tp_torch, size=(TILE_SIZE,TILE_SIZE), mode='nearest').squeeze(1).numpy()
 
-        tile_predictions[tile] = preds_mm # (T,64,64) in mm
-        tile_ground_truth_data[tile] = fine_tp_64 # (T,64,64) in mm
-        tile_coarse_data[tile] = coarse_tp_64_mm # (T,64,64) in mm already
+        tile_predictions[tile] = preds_mm
+        tile_ground_truth_data[tile] = fine_tp_64
+        tile_coarse_data[tile] = coarse_tp_64_mm
 
     stitched_model = stitch_tiles(tile_predictions, valid_tiles)
     stitched_truth = stitch_tiles(tile_ground_truth_data, valid_tiles)
     stitched_coarse = stitch_tiles(tile_coarse_data, valid_tiles)
 
-    # Convert mm to inches for plotting
     stitched_model_inches = stitched_model * MM_TO_INCHES
     stitched_truth_inches = stitched_truth * MM_TO_INCHES
     stitched_coarse_inches = stitched_coarse * MM_TO_INCHES
 
     plot_and_save_images(stitched_coarse_inches, stitched_model_inches, stitched_truth_inches,
                          times, year, month, day, plot_coarse)
-    print(f"Inference complete for {year}-{month:02d}-{day:02d}.")
+    logging.info(f"Inference complete for {year}-{month:02d}-{day:02d}.")
 
-    # Accumulate daily totals
     day_model_total = stitched_model_inches.sum(axis=0)
     day_truth_total = stitched_truth_inches.sum(axis=0)
     day_coarse_total = stitched_coarse_inches.sum(axis=0)
@@ -349,7 +341,7 @@ def main():
         year, month, day = current_dt.year, current_dt.month, current_dt.day
         data_file = RAW_DIR / f"{year}-{month:02d}.nc"
         if not data_file.exists():
-            print(f"Data file {data_file} not found. Skipping {year}-{month:02d}-{day:02d}.")
+            logging.warning(f"Data file {data_file} not found. Skipping {year}-{month:02d}-{day:02d}.")
             current_dt += timedelta(days=1)
             continue
 
@@ -359,7 +351,7 @@ def main():
         end_time = start_time + np.timedelta64(23, 'h') + np.timedelta64(59, 'm') + np.timedelta64(59, 's')
         day_slice = month_ds.sel(time=slice(start_time, end_time))
         if len(day_slice.time) == 0:
-            print(f"No data found for {day_str} in {data_file}. Skipping.")
+            logging.warning(f"No data found for {day_str} in {data_file}. Skipping.")
             current_dt += timedelta(days=1)
             continue
 
@@ -369,7 +361,7 @@ def main():
 
     if processed_any:
         plot_total_precipitation(stitched_coarse_total, stitched_model_total, stitched_truth_total, plot_coarse)
-        print("Total precipitation plots saved.")
+        logging.info("Total precipitation plots saved.")
 
 if __name__ == "__main__":
     main()

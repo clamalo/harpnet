@@ -1,4 +1,3 @@
-# File: /src/train_test.py
 """
 Training and testing routines for the model.
 Includes functions for one epoch of training and testing, and a full train-test loop.
@@ -14,6 +13,7 @@ from tqdm import tqdm
 import os
 import random
 import numpy as np
+import logging
 from typing import Optional
 from src.constants import (
     TORCH_DEVICE,
@@ -90,25 +90,7 @@ def test_model(model: nn.Module,
         focus_tile: Optional tile ID to compute metrics for that specific tile as well.
 
     Returns:
-        A dictionary containing all normalized and unnormalized metrics, for example:
-        {
-          "mean_test_loss": <float>,
-          "mean_bilinear_loss": <float>,
-          "focus_tile_test_loss": <float or None>,
-          "focus_tile_bilinear_loss": <float or None>,
-          "unnorm_test_mse": <float>,
-          "unnorm_bilinear_mse": <float>,
-          "unnorm_focus_tile_mse": <float or None>,
-          "unnorm_focus_tile_bilinear_mse": <float or None>,
-          "unnorm_test_mae": <float>,
-          "unnorm_bilinear_mae": <float>,
-          "unnorm_focus_tile_mae": <float or None>,
-          "unnorm_focus_tile_bilinear_mae": <float or None>,
-          "unnorm_test_corr": <float>,
-          "unnorm_bilinear_corr": <float>,
-          "unnorm_focus_tile_corr": <float or None>,
-          "unnorm_focus_tile_bilinear_corr": <float or None>
-        }
+        A dictionary containing all normalized and unnormalized metrics.
     """
     # Load mean/std stats at the time of testing
     MEAN_VAL, STD_VAL = _lazy_load_stats()
@@ -138,14 +120,13 @@ def test_model(model: nn.Module,
             # MSE in normalized space
             loss = criterion(outputs, targets)
 
-            # Bilinear baseline in normalized space
+            # Bilinear baseline in normalized space (nearest from cropped input)
             cropped_inputs = inputs[:, 0:1, 1:-1, 1:-1]
             interpolated_inputs = torch.nn.functional.interpolate(
                 cropped_inputs, size=(TILE_SIZE, TILE_SIZE), mode='bilinear'
             )
             bilinear_loss = criterion(interpolated_inputs, targets)
 
-            # Collect MSE for entire dataset
             test_losses.append(loss.item())
             bilinear_test_losses.append(bilinear_loss.item())
 
@@ -171,7 +152,6 @@ def test_model(model: nn.Module,
                     focus_tile_targets_norm.append(focus_targets_norm.cpu().numpy())
                     focus_tile_bilinear_norm.append(focus_bilinear_norm_.cpu().numpy())
 
-    # Mean MSE in normalized space
     mean_test_loss = sum(test_losses) / len(test_losses) if test_losses else float('inf')
     mean_bilinear_loss = sum(bilinear_test_losses) / len(bilinear_test_losses) if bilinear_test_losses else float('inf')
 
@@ -182,14 +162,11 @@ def test_model(model: nn.Module,
         focus_tile_test_loss = None
         focus_tile_bilinear_loss = None
 
-    # ----------------------
-    # Unnormalize for metrics
-    # ----------------------
-    all_preds_norm = np.concatenate(all_preds_norm, axis=0)   # shape: (N,1,TILE_SIZE,TILE_SIZE)
+    # Unnormalize for additional metrics
+    all_preds_norm = np.concatenate(all_preds_norm, axis=0)
     all_targets_norm = np.concatenate(all_targets_norm, axis=0)
     all_bilinear_norm = np.concatenate(all_bilinear_norm, axis=0)
 
-    # Unnormalize
     all_preds_unnorm = (all_preds_norm * STD_VAL) + MEAN_VAL
     all_targets_unnorm = (all_targets_norm * STD_VAL) + MEAN_VAL
     all_bilinear_unnorm = (all_bilinear_norm * STD_VAL) + MEAN_VAL
@@ -198,15 +175,12 @@ def test_model(model: nn.Module,
     targets_unnorm_flat = all_targets_unnorm.flatten()
     bilinear_unnorm_flat = all_bilinear_unnorm.flatten()
 
-    # MSE in unnormalized space
     unnorm_test_mse = np.mean((preds_unnorm_flat - targets_unnorm_flat)**2)
     unnorm_bilinear_mse = np.mean((bilinear_unnorm_flat - targets_unnorm_flat)**2)
 
-    # MAE in unnormalized space
     unnorm_test_mae = np.mean(np.abs(preds_unnorm_flat - targets_unnorm_flat))
     unnorm_bilinear_mae = np.mean(np.abs(bilinear_unnorm_flat - targets_unnorm_flat))
 
-    # Corr in unnormalized space
     if np.std(targets_unnorm_flat) > 1e-8 and np.std(preds_unnorm_flat) > 1e-8:
         unnorm_test_corr = np.corrcoef(targets_unnorm_flat, preds_unnorm_flat)[0, 1]
     else:
@@ -218,7 +192,7 @@ def test_model(model: nn.Module,
         unnorm_bilinear_corr = float('nan')
 
     if focus_tile is not None and focus_tile_losses:
-        ft_preds_norm = np.concatenate(focus_tile_preds_norm, axis=0)   # shape: (N_ft,1,TILE_SIZE,TILE_SIZE)
+        ft_preds_norm = np.concatenate(focus_tile_preds_norm, axis=0)
         ft_targets_norm = np.concatenate(focus_tile_targets_norm, axis=0)
         ft_bilinear_norm = np.concatenate(focus_tile_bilinear_norm, axis=0)
 
@@ -230,15 +204,12 @@ def test_model(model: nn.Module,
         ft_targets_unnorm_flat = ft_targets_unnorm.flatten()
         ft_bilinear_unnorm_flat = ft_bilinear_unnorm.flatten()
 
-        # MSE
         unnorm_focus_tile_mse = np.mean((ft_preds_unnorm_flat - ft_targets_unnorm_flat)**2)
         unnorm_focus_tile_bilinear_mse = np.mean((ft_bilinear_unnorm_flat - ft_targets_unnorm_flat)**2)
 
-        # MAE
         unnorm_focus_tile_mae = np.mean(np.abs(ft_preds_unnorm_flat - ft_targets_unnorm_flat))
         unnorm_focus_tile_bilinear_mae = np.mean(np.abs(ft_bilinear_unnorm_flat - ft_targets_unnorm_flat))
 
-        # Corr
         if np.std(ft_targets_unnorm_flat) > 1e-8 and np.std(ft_preds_unnorm_flat) > 1e-8:
             unnorm_focus_tile_corr = np.corrcoef(ft_targets_unnorm_flat, ft_preds_unnorm_flat)[0, 1]
         else:
@@ -309,14 +280,12 @@ def train_test(train_dataloader,
             model.load_state_dict(checkpoint['model_state_dict'])
             optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
 
-    # Training loop
     for epoch in range(start_epoch, end_epoch):
-        print(f"\nEpoch {epoch} starting...")
+        logging.info(f"\nEpoch {epoch} starting...")
         train_loss = train_one_epoch(model, train_dataloader, optimizer, criterion)
 
         metrics = test_model(model, test_dataloader, criterion, focus_tile)
 
-        # Extract dictionary items
         mean_test_loss = metrics["mean_test_loss"]
         mean_bilinear_loss = metrics["mean_bilinear_loss"]
         focus_tile_test_loss = metrics["focus_tile_test_loss"]
@@ -330,13 +299,11 @@ def train_test(train_dataloader,
         unnorm_bilinear_corr = metrics["unnorm_bilinear_corr"]
         unnorm_focus_tile_corr = metrics["unnorm_focus_tile_corr"]
 
-        # Focus tile columns or N/A if not available
         ft_mse_norm = f"{focus_tile_test_loss:.6f}" if focus_tile_test_loss is not None else "N/A"
         ft_mse_unnorm = f"{unnorm_focus_tile_mse:.6f}" if unnorm_focus_tile_mse is not None else "N/A"
         ft_mae_unnorm = f"{unnorm_focus_tile_mae:.6f}" if unnorm_focus_tile_mae is not None else "N/A"
         ft_corr_unnorm = f"{unnorm_focus_tile_corr:.4f}" if unnorm_focus_tile_corr is not None else "N/A"
 
-        # Create a table with the results
         headers = ["Metric", "Train", "Test", "Bilinear", f"Focus Tile {focus_tile if focus_tile is not None else ''}"]
         data = [
             ["MSE (Normalized)", f"{train_loss:.6f}", f"{mean_test_loss:.6f}", f"{mean_bilinear_loss:.6f}", ft_mse_norm],
@@ -344,10 +311,9 @@ def train_test(train_dataloader,
             ["MAE (Unnorm)", "-", f"{unnorm_test_mae:.6f}", f"{unnorm_bilinear_mae:.6f}", ft_mae_unnorm],
             ["Corr (Unnorm)", "-", f"{unnorm_test_corr:.4f}", f"{unnorm_bilinear_corr:.4f}", ft_corr_unnorm],
         ]
+        table_str = tabulate(data, headers=headers, tablefmt="pretty")
+        logging.info("\n" + table_str)
 
-        print(tabulate(data, headers=headers, tablefmt="pretty"))
-
-        # Save checkpoint after each epoch (normalized weights)
         torch.save({
             'model_state_dict': model.state_dict(),
             'optimizer_state_dict': optimizer.state_dict(),
