@@ -47,14 +47,17 @@ def fine_tune_single_tile(tile: int,
         print(f"Tile {tile}, Epoch {epoch}...")
         train_loss = train_one_epoch(model, train_dataloader, optimizer, criterion)
         metrics = test_model(model, test_dataloader, criterion, focus_tile=tile)
-        (mean_test_loss, mean_bilinear_loss,
-         focus_tile_test_loss, focus_tile_bilinear_loss,
-         unnorm_test_mse, unnorm_bilinear_mse,
-         unnorm_focus_tile_mse, unnorm_focus_tile_bilinear_mse,
-         unnorm_test_mae, unnorm_bilinear_mae,
-         unnorm_focus_tile_mae, unnorm_focus_tile_bilinear_mae,
-         unnorm_test_corr, unnorm_bilinear_corr,
-         unnorm_focus_tile_corr, unnorm_focus_tile_bilinear_corr) = metrics
+
+        mean_test_loss = metrics["mean_test_loss"]
+        mean_bilinear_loss = metrics["mean_bilinear_loss"]
+        focus_tile_test_loss = metrics["focus_tile_test_loss"]
+        focus_tile_bilinear_loss = metrics["focus_tile_bilinear_loss"]
+        unnorm_focus_tile_mse = metrics["unnorm_focus_tile_mse"]
+        unnorm_focus_tile_bilinear_mse = metrics["unnorm_focus_tile_bilinear_mse"]
+        unnorm_focus_tile_mae = metrics["unnorm_focus_tile_mae"]
+        unnorm_focus_tile_bilinear_mae = metrics["unnorm_focus_tile_bilinear_mae"]
+        unnorm_focus_tile_corr = metrics["unnorm_focus_tile_corr"]
+        unnorm_focus_tile_bilinear_corr = metrics["unnorm_focus_tile_bilinear_corr"]
 
         print(f'Epoch {epoch}: Train loss (normalized MSE) = {train_loss:.6f}')
         print(f'  Test (normalized MSE): {mean_test_loss:.6f}, Bilinear: {mean_bilinear_loss:.6f}')
@@ -75,6 +78,7 @@ def fine_tune_single_tile(tile: int,
     best_output_path = CHECKPOINTS_DIR / 'best' / f"{tile}_best.pt"
     run_ensemble_on_directory(str(tile_ckpt_dir), test_dataloader, device, str(best_output_path))
     print(f"Best fine-tuned model for tile {tile} saved at {best_output_path}")
+
 
 if __name__ == "__main__":
     random.seed(RANDOM_SEED)

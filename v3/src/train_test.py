@@ -90,16 +90,25 @@ def test_model(model: nn.Module,
         focus_tile: Optional tile ID to compute metrics for that specific tile as well.
 
     Returns:
-        A tuple of 16 items:
-
-        (mean_test_loss, mean_bilinear_loss,
-         focus_tile_test_loss, focus_tile_bilinear_loss,
-         unnorm_test_mse, unnorm_bilinear_mse,
-         unnorm_focus_tile_mse, unnorm_focus_tile_bilinear_mse,
-         unnorm_test_mae, unnorm_bilinear_mae,
-         unnorm_focus_tile_mae, unnorm_focus_tile_bilinear_mae,
-         unnorm_test_corr, unnorm_bilinear_corr,
-         unnorm_focus_tile_corr, unnorm_focus_tile_bilinear_corr)
+        A dictionary containing all normalized and unnormalized metrics, for example:
+        {
+          "mean_test_loss": <float>,
+          "mean_bilinear_loss": <float>,
+          "focus_tile_test_loss": <float or None>,
+          "focus_tile_bilinear_loss": <float or None>,
+          "unnorm_test_mse": <float>,
+          "unnorm_bilinear_mse": <float>,
+          "unnorm_focus_tile_mse": <float or None>,
+          "unnorm_focus_tile_bilinear_mse": <float or None>,
+          "unnorm_test_mae": <float>,
+          "unnorm_bilinear_mae": <float>,
+          "unnorm_focus_tile_mae": <float or None>,
+          "unnorm_focus_tile_bilinear_mae": <float or None>,
+          "unnorm_test_corr": <float>,
+          "unnorm_bilinear_corr": <float>,
+          "unnorm_focus_tile_corr": <float or None>,
+          "unnorm_focus_tile_bilinear_corr": <float or None>
+        }
     """
     # Load mean/std stats at the time of testing
     MEAN_VAL, STD_VAL = _lazy_load_stats()
@@ -239,7 +248,6 @@ def test_model(model: nn.Module,
             unnorm_focus_tile_bilinear_corr = np.corrcoef(ft_targets_unnorm_flat, ft_bilinear_unnorm_flat)[0, 1]
         else:
             unnorm_focus_tile_bilinear_corr = float('nan')
-
     else:
         unnorm_focus_tile_mse = None
         unnorm_focus_tile_bilinear_mse = None
@@ -248,23 +256,24 @@ def test_model(model: nn.Module,
         unnorm_focus_tile_corr = None
         unnorm_focus_tile_bilinear_corr = None
 
-    return (
-        # Normalized MSE
-        mean_test_loss, mean_bilinear_loss,
-        focus_tile_test_loss, focus_tile_bilinear_loss,
-
-        # Unnormalized MSE
-        unnorm_test_mse, unnorm_bilinear_mse,
-        unnorm_focus_tile_mse, unnorm_focus_tile_bilinear_mse,
-
-        # Unnormalized MAE
-        unnorm_test_mae, unnorm_bilinear_mae,
-        unnorm_focus_tile_mae, unnorm_focus_tile_bilinear_mae,
-
-        # Unnormalized Correlation
-        unnorm_test_corr, unnorm_bilinear_corr,
-        unnorm_focus_tile_corr, unnorm_focus_tile_bilinear_corr
-    )
+    return {
+        "mean_test_loss": mean_test_loss,
+        "mean_bilinear_loss": mean_bilinear_loss,
+        "focus_tile_test_loss": focus_tile_test_loss,
+        "focus_tile_bilinear_loss": focus_tile_bilinear_loss,
+        "unnorm_test_mse": unnorm_test_mse,
+        "unnorm_bilinear_mse": unnorm_bilinear_mse,
+        "unnorm_focus_tile_mse": unnorm_focus_tile_mse,
+        "unnorm_focus_tile_bilinear_mse": unnorm_focus_tile_bilinear_mse,
+        "unnorm_test_mae": unnorm_test_mae,
+        "unnorm_bilinear_mae": unnorm_bilinear_mae,
+        "unnorm_focus_tile_mae": unnorm_focus_tile_mae,
+        "unnorm_focus_tile_bilinear_mae": unnorm_focus_tile_bilinear_mae,
+        "unnorm_test_corr": unnorm_test_corr,
+        "unnorm_bilinear_corr": unnorm_bilinear_corr,
+        "unnorm_focus_tile_corr": unnorm_focus_tile_corr,
+        "unnorm_focus_tile_bilinear_corr": unnorm_focus_tile_bilinear_corr
+    }
 
 
 def train_test(train_dataloader, 
@@ -306,16 +315,21 @@ def train_test(train_dataloader,
         train_loss = train_one_epoch(model, train_dataloader, optimizer, criterion)
 
         metrics = test_model(model, test_dataloader, criterion, focus_tile)
-        (mean_test_loss, mean_bilinear_loss,
-         focus_tile_test_loss, focus_tile_bilinear_loss,
-         unnorm_test_mse, unnorm_bilinear_mse,
-         unnorm_focus_tile_mse, unnorm_focus_tile_bilinear_mse,
-         unnorm_test_mae, unnorm_bilinear_mae,
-         unnorm_focus_tile_mae, unnorm_focus_tile_bilinear_mae,
-         unnorm_test_corr, unnorm_bilinear_corr,
-         unnorm_focus_tile_corr, unnorm_focus_tile_bilinear_corr) = metrics
 
-        # Prepare data for table
+        # Extract dictionary items
+        mean_test_loss = metrics["mean_test_loss"]
+        mean_bilinear_loss = metrics["mean_bilinear_loss"]
+        focus_tile_test_loss = metrics["focus_tile_test_loss"]
+        unnorm_test_mse = metrics["unnorm_test_mse"]
+        unnorm_bilinear_mse = metrics["unnorm_bilinear_mse"]
+        unnorm_focus_tile_mse = metrics["unnorm_focus_tile_mse"]
+        unnorm_test_mae = metrics["unnorm_test_mae"]
+        unnorm_bilinear_mae = metrics["unnorm_bilinear_mae"]
+        unnorm_focus_tile_mae = metrics["unnorm_focus_tile_mae"]
+        unnorm_test_corr = metrics["unnorm_test_corr"]
+        unnorm_bilinear_corr = metrics["unnorm_bilinear_corr"]
+        unnorm_focus_tile_corr = metrics["unnorm_focus_tile_corr"]
+
         # Focus tile columns or N/A if not available
         ft_mse_norm = f"{focus_tile_test_loss:.6f}" if focus_tile_test_loss is not None else "N/A"
         ft_mse_unnorm = f"{unnorm_focus_tile_mse:.6f}" if unnorm_focus_tile_mse is not None else "N/A"

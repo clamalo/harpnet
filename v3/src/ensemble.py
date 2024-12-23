@@ -34,7 +34,7 @@ def load_checkpoint_test_loss(checkpoint_path: str, device: str) -> Tuple[float,
         elif isinstance(test_loss, dict):
             test_loss = test_loss.get('mse_loss', None)
             if test_loss is None:
-                raise KeyError(f"'mse_loss' not found in 'test_losses' for checkpoint {checkpoint_path}.")
+                raise KeyError(f"'mse_loss' not found in 'test_losses' in checkpoint {checkpoint_path}.")
         else:
             raise TypeError(f"Unexpected type for 'test_losses' in checkpoint {checkpoint_path}: {type(test_loss)}")
     else:
@@ -71,21 +71,12 @@ def evaluate_model(model: ModelClass, test_dataloader, device: str) -> float:
     """
     criterion = nn.MSELoss()
     metrics = test_model(model, test_dataloader, criterion, focus_tile=None)
-    (mean_test_loss, mean_bilinear_loss,
-     focus_tile_test_loss, focus_tile_bilinear_loss,
-     unnorm_test_mse, unnorm_bilinear_mse,
-     unnorm_focus_tile_mse, unnorm_focus_tile_bilinear_mse,
-     unnorm_test_mae, unnorm_bilinear_mae,
-     unnorm_focus_tile_mae, unnorm_focus_tile_bilinear_mae,
-     unnorm_test_corr, unnorm_bilinear_corr,
-     unnorm_focus_tile_corr, unnorm_focus_tile_bilinear_corr) = metrics
 
-    # Print a short summary similar to previous evaluation
     print("Ensemble Evaluation:")
-    print(f"  Normalized MSE: {mean_test_loss:.6f}")
-    print(f"  Unnorm MSE: {unnorm_test_mse:.6f}, Unnorm MAE: {unnorm_test_mae:.6f}, Unnorm Corr: {unnorm_test_corr:.4f}")
+    print(f"  Normalized MSE: {metrics['mean_test_loss']:.6f}")
+    print(f"  Unnorm MSE: {metrics['unnorm_test_mse']:.6f}, Unnorm MAE: {metrics['unnorm_test_mae']:.6f}, Unnorm Corr: {metrics['unnorm_test_corr']:.4f}")
 
-    return mean_test_loss
+    return metrics["mean_test_loss"]
 
 def ensemble(tiles: List[int], 
              start_month: Tuple[int,int], 
@@ -263,7 +254,8 @@ def run_ensemble_on_directory(directory_path: str, test_dataloader, device: str,
     add_state_dict_to_cumulative(cumulative_state_dict, first['state_dict'])
 
     model.load_state_dict(first['state_dict'], strict=False)
-    single_mean_loss = evaluate_model(model, test_dataloader, device)
+    single_metrics = test_model(model, test_dataloader, nn.MSELoss(), focus_tile=None)
+    single_mean_loss = single_metrics["mean_test_loss"]
 
     best_mean_loss = single_mean_loss
     best_num_models = 1
@@ -283,7 +275,8 @@ def run_ensemble_on_directory(directory_path: str, test_dataloader, device: str,
             gc.collect()
             continue
 
-        ensemble_mean_loss = evaluate_model(model, test_dataloader, device)
+        ensemble_metrics = test_model(model, test_dataloader, nn.MSELoss(), focus_tile=None)
+        ensemble_mean_loss = ensemble_metrics["mean_test_loss"]
         if ensemble_mean_loss < best_mean_loss:
             best_mean_loss = ensemble_mean_loss
             best_num_models = N
