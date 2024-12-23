@@ -65,3 +65,10 @@ FOCUS_TILE = 8
 
 # Whether to save or load zipped data (options: 'save', 'load', or False)
 ZIP_SETTING = 'load'
+
+# ----------------------------------------------------------
+# Pre-model interpolation setting
+# ----------------------------------------------------------
+# This controls how low-resolution data is interpolated before being passed into the model.
+# Examples: "nearest", "bilinear", "bicubic", etc.
+PRE_MODEL_INTERPOLATION = "nearest"

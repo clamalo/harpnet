@@ -17,7 +17,7 @@ import cartopy.feature as cfeature
 
 from src.tiles import get_all_tiles, tile_coordinates
 from src.constants import (RAW_DIR, MODEL_NAME, TORCH_DEVICE,
-                           MIN_LAT, MAX_LAT, MIN_LON, MAX_LON, FIGURES_DIR, TILE_SIZE, FINE_RESOLUTION, CHECKPOINTS_DIR, NORMALIZATION_STATS_FILE, TILE_SIZE)
+                           MIN_LAT, MAX_LAT, MIN_LON, MAX_LON, FIGURES_DIR, TILE_SIZE, FINE_RESOLUTION, CHECKPOINTS_DIR, NORMALIZATION_STATS_FILE, TILE_SIZE, PRE_MODEL_INTERPOLATION)
 import importlib
 
 # -----------------------------------------
@@ -79,8 +79,8 @@ def prepare_inputs_for_tile(tile: int, day_ds, elevation_ds, model_device):
     elev_fine_torch = torch.from_numpy(elev_fine).to(model_device)
 
     # Interpolate coarse to 64x64
-    coarse_tp_64 = torch.nn.functional.interpolate(coarse_tp_torch, size=(TILE_SIZE,TILE_SIZE), mode='nearest')
-    elev_64 = torch.nn.functional.interpolate(elev_fine_torch.unsqueeze(0).expand(T,-1,-1,-1), size=(TILE_SIZE,TILE_SIZE), mode='nearest')
+    coarse_tp_64 = torch.nn.functional.interpolate(coarse_tp_torch, size=(TILE_SIZE,TILE_SIZE), mode=PRE_MODEL_INTERPOLATION)
+    elev_64 = torch.nn.functional.interpolate(elev_fine_torch.unsqueeze(0).expand(T,-1,-1,-1), size=(TILE_SIZE,TILE_SIZE), mode=PRE_MODEL_INTERPOLATION)
     elev_64 = elev_64.squeeze(0)
 
     # Normalize precipitation
@@ -270,7 +270,7 @@ stitched_model_total = None
 stitched_truth_total = None
 stitched_coarse_total = None
 
-def process_day(elevation_ds, day_ds, year, month, day):
+def process_day(elevation_ds, day_slice, year, month, day):
     global stitched_model_total, stitched_truth_total, stitched_coarse_total
 
     grid_domains = get_all_tiles()
@@ -284,7 +284,7 @@ def process_day(elevation_ds, day_ds, year, month, day):
 
     for tile in valid_tiles:
         model = load_model_for_tile(tile)
-        times, inputs, coarse_tp_64_mm = prepare_inputs_for_tile(tile, day_ds, elevation_ds, device)
+        times, inputs, coarse_tp_64_mm = prepare_inputs_for_tile(tile, day_slice, elevation_ds, device)
 
         with torch.no_grad():
             preds_norm = model(inputs)  # preds in normalized form
@@ -292,10 +292,11 @@ def process_day(elevation_ds, day_ds, year, month, day):
 
         preds_mm = (preds_norm * std_val) + mean_val
 
-        fine_tp = get_tile_ground_truth(tile, day_ds)
+        fine_tp = get_tile_ground_truth(tile, day_slice)
         fine_tp_torch = torch.from_numpy(fine_tp)
         fine_tp_torch = fine_tp_torch.unsqueeze(1)
-        fine_tp_64 = torch.nn.functional.interpolate(fine_tp_torch, size=(TILE_SIZE,TILE_SIZE), mode='nearest').squeeze(1).numpy()
+        # Ground truth also resized with the same mode
+        fine_tp_64 = torch.nn.functional.interpolate(fine_tp_torch, size=(TILE_SIZE,TILE_SIZE), mode=PRE_MODEL_INTERPOLATION).squeeze(1).numpy()
 
         tile_predictions[tile] = preds_mm
         tile_ground_truth_data[tile] = fine_tp_64
