@@ -6,7 +6,7 @@ This model extends the original U-Net with attention by adding SE blocks for cha
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from src.constants import UNET_DEPTH, MODEL_INPUT_CHANNELS, MODEL_OUTPUT_CHANNELS, MODEL_OUTPUT_SHAPE, TILE_SIZE
+from src.constants import UNET_DEPTH, MODEL_INPUT_CHANNELS, MODEL_OUTPUT_CHANNELS, TILE_SIZE
 
 class AttentionBlock(nn.Module):
     """
@@ -91,20 +91,20 @@ class Model(nn.Module):
     def __init__(self,
                  in_channels=MODEL_INPUT_CHANNELS,
                  out_channels=MODEL_OUTPUT_CHANNELS,
-                 output_shape=MODEL_OUTPUT_SHAPE,
                  depth=UNET_DEPTH):
         super(Model, self).__init__()
 
         self.in_channels = in_channels
         self.out_channels = out_channels
-        self.output_shape = output_shape
         self.depth = depth
+
+        # We'll assume the base shape is (TILE_SIZE, TILE_SIZE) instead of reading MODEL_OUTPUT_SHAPE
+        base_h, base_w = TILE_SIZE, TILE_SIZE
 
         # Define encoder channel sizes
         enc_channels = [64 * (2 ** i) for i in range(self.depth)]
         bridge_channels = enc_channels[-1] * 2
 
-        base_h, base_w = self.output_shape
         enc_shapes = []
         for i in range(self.depth):
             enc_shapes.append((base_h // (2**i), base_w // (2**i)))
@@ -120,7 +120,6 @@ class Model(nn.Module):
         self.pool = nn.MaxPool2d(kernel_size=2, stride=2)
         self.bridge = ResConvBlock(enc_channels[-1], bridge_channels, shape=bridge_shape)
 
-        # Determine dropout rates for decoder layers
         def get_dropout_for_layer(layer_index):
             if layer_index == 0:
                 return 0.1

@@ -5,7 +5,7 @@ This is similar to the se_unetwithattention but without SE blocks.
 
 import torch
 import torch.nn as nn
-from src.constants import UNET_DEPTH, MODEL_INPUT_CHANNELS, MODEL_OUTPUT_CHANNELS, MODEL_OUTPUT_SHAPE, TILE_SIZE
+from src.constants import UNET_DEPTH, MODEL_INPUT_CHANNELS, MODEL_OUTPUT_CHANNELS, TILE_SIZE
 
 class AttentionBlock(nn.Module):
     """
@@ -66,19 +66,17 @@ class Model(nn.Module):
     def __init__(self,
                  in_channels=MODEL_INPUT_CHANNELS,
                  out_channels=MODEL_OUTPUT_CHANNELS,
-                 output_shape=MODEL_OUTPUT_SHAPE,
                  depth=UNET_DEPTH):
         super(Model, self).__init__()
 
         self.in_channels = in_channels
         self.out_channels = out_channels
-        self.output_shape = output_shape
         self.depth = depth
 
+        base_h, base_w = TILE_SIZE, TILE_SIZE
         enc_channels = [64 * (2 ** i) for i in range(self.depth)]
         bridge_channels = enc_channels[-1] * 2
 
-        base_h, base_w = self.output_shape
         enc_shapes = []
         for i in range(self.depth):
             enc_shapes.append((base_h // (2**i), base_w // (2**i)))
