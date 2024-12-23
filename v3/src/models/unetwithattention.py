@@ -66,14 +66,16 @@ class Model(nn.Module):
     def __init__(self,
                  in_channels=MODEL_INPUT_CHANNELS,
                  out_channels=MODEL_OUTPUT_CHANNELS,
-                 depth=UNET_DEPTH):
+                 depth=UNET_DEPTH,
+                 tile_size=TILE_SIZE):
         super(Model, self).__init__()
 
         self.in_channels = in_channels
         self.out_channels = out_channels
         self.depth = depth
+        self.tile_size = tile_size
 
-        base_h, base_w = TILE_SIZE, TILE_SIZE
+        base_h, base_w = tile_size, tile_size
         enc_channels = [64 * (2 ** i) for i in range(self.depth)]
         bridge_channels = enc_channels[-1] * 2
 
