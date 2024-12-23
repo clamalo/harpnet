@@ -1,6 +1,13 @@
 """
 Adapted inference script to use normalized inputs and then inverse normalization after inference.
 If a tile-specific best model is found, it uses that; otherwise uses global best model.
+
+Behavior on Missing Files:
+    1. If the daily NetCDF file (e.g. year-month.nc) is not found, we log a warning and skip that day. 
+       This allows partial coverage in the inference period.
+    2. If no days were processed (i.e., all files were missing), no plots are generated.
+
+All other logic for skipping or raising errors is identical to how the rest of the system handles data.
 """
 
 import os
@@ -328,6 +335,10 @@ def process_day(elevation_ds, day_slice, year, month, day):
         stitched_coarse_total += day_coarse_total
 
 def main():
+    """
+    Runs inference over the specified date range. Any day whose data file doesn't exist 
+    gets skipped with a warning. If no days are successfully processed, nothing is plotted.
+    """
     elevation_ds = xr.open_dataset("/Users/clamalo/downloads/elevation.nc")
     if 'X' in elevation_ds.dims and 'Y' in elevation_ds.dims:
         elevation_ds = elevation_ds.rename({'X': 'lon', 'Y': 'lat'})

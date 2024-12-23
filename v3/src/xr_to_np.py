@@ -24,6 +24,21 @@ def xr_to_np(tiles: List[int],
     Process raw NetCDF data for multiple tiles and generate combined training and testing datasets.
     After final arrays are concatenated, compute global mean/std of training target precipitation and
     save them for normalization in subsequent steps.
+
+    Behavior on Missing Files:
+        1. If 'zip_setting' is 'load' but the combined zip file doesn't exist, this function will raise 
+           FileNotFoundError because loading from the non-existent file is not possible.
+        2. If monthly NetCDF files (e.g., year-month.nc) are missing, the function logs a warning and 
+           skips that month instead of throwing an error. This allows partial coverage in data processing.
+
+    Args:
+        tiles: List of tile indices to process.
+        start_month: (year, month) to begin data.
+        end_month: (year, month) to end data.
+        train_test_ratio: Ratio for test split.
+        zip_setting: 'load' to load from an existing combined zip, 'save' to zip at completion, 
+                     or False to do no zipping. If 'load' is specified and the zip file is missing, 
+                     FileNotFoundError is raised.
     """
 
     random.seed(RANDOM_SEED)
@@ -108,6 +123,7 @@ def xr_to_np(tiles: List[int],
         month = current_month.month
         file_path = RAW_DIR / f'{year}-{month:02d}.nc'
         if not file_path.exists():
+            logging.warning(f"Monthly data file not found: {file_path}. Skipping month {year}-{month:02d}.")
             for _ in tiles:
                 pbar.update(1)
             current_month += relativedelta(months=1)

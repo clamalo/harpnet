@@ -30,7 +30,7 @@ TORCH_DEVICE = (
 # Model hyperparameters
 # ----------------------------------------------------------
 MODEL_NAME = "unetwithattention"
-UNET_DEPTH = 4
+UNET_DEPTH = 1
 MODEL_INPUT_CHANNELS = 2
 MODEL_OUTPUT_CHANNELS = 1
 

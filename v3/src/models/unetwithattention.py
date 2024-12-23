@@ -1,6 +1,9 @@
 """
 Defines a U-Net with attention model for precipitation downscaling.
 This is similar to the se_unetwithattention but without SE blocks.
+
+Updated: Replaced the final torch.clamp with a Softplus activation to allow for strictly
+non-negative outputs while preserving gradient flow near zero.
 """
 
 import torch
@@ -62,6 +65,9 @@ class Model(nn.Module):
     """
     U-Net with attention gates at skip connections.
     Designed for precipitation downscaling from coarse to fine resolution grids.
+
+    Updated: Removed final clamp and replaced with Softplus to avoid negative outputs
+    without hard-clamping gradients.
     """
     def __init__(self,
                  in_channels=MODEL_INPUT_CHANNELS,
@@ -120,6 +126,7 @@ class Model(nn.Module):
             prev_dec_channels = enc_ch
 
         self.final_conv = nn.Conv2d(enc_channels[0], self.out_channels, kernel_size=1)
+        self.final_activation = nn.Softplus()
 
     def forward(self, x):
         # Encoder forward pass
@@ -145,5 +152,6 @@ class Model(nn.Module):
             dec_out = self.decoders[i](merged)
 
         final = self.final_conv(dec_out)
-        final = torch.clamp(final, min=0)
+        final = self.final_activation(final)  # Softplus activation for non-negative output
+
         return final

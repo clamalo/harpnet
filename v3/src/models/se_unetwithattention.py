@@ -1,6 +1,9 @@
 """
 Defines a Squeeze-and-Excitation U-Net with attention mechanisms.
 This model extends the original U-Net with attention by adding SE blocks for channel recalibration.
+
+Updated: Replaced the final torch.clamp with a Softplus activation to allow for strictly
+non-negative outputs while preserving gradient flow near zero.
 """
 
 import torch
@@ -87,6 +90,8 @@ class Model(nn.Module):
     Squeeze-and-Excitation U-Net with Attention.
     Incorporates SE blocks in residual convolutional layers and uses attention on skip connections.
     Suitable for precipitation downscaling.
+
+    Updated: Final clamp replaced by Softplus activation for non-negative outputs.
     """
     def __init__(self,
                  in_channels=MODEL_INPUT_CHANNELS,
@@ -148,6 +153,7 @@ class Model(nn.Module):
             prev_dec_channels = enc_ch
 
         self.final_conv = nn.Conv2d(enc_channels[0], self.out_channels, kernel_size=1)
+        self.final_activation = nn.Softplus()  # Ensures non-negative outputs without clamping
 
     def forward(self, x):
         # Encoder forward pass
@@ -173,5 +179,6 @@ class Model(nn.Module):
             dec_out = self.decoders[i](merged)
 
         final = self.final_conv(dec_out)
-        final = torch.clamp(final, min=0)
+        final = self.final_activation(final)  # Softplus activation
+
         return final

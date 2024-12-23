@@ -1,6 +1,9 @@
 """
 Defines a U-Net style model with attention mechanisms for precipitation downscaling.
 Includes a ResConvBlock for residual convolutions and an AttentionBlock for feature gating.
+
+Updated: Replaced the final torch.clamp with a Softplus activation to allow for strictly
+non-negative outputs while preserving gradient flow near zero.
 """
 
 import torch
@@ -106,6 +109,7 @@ class Model(nn.Module):
         self.dec1 = ResConvBlock(128, 64, (tile_size, tile_size), dropout_rate=0.1)
 
         self.final_conv = nn.Conv2d(64, out_channels, kernel_size=1)
+        self.final_activation = nn.Softplus()  # Replaces the clamp for non-negative predictions
 
     def forward(self, x):
         # Encoder forward pass
@@ -145,6 +149,6 @@ class Model(nn.Module):
         dec1 = self.dec1(up1)
 
         final = self.final_conv(dec1)
-        final = torch.clamp(final, min=0)
+        final = self.final_activation(final)  # Softplus ensures non-negative outputs
 
         return final

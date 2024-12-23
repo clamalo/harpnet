@@ -13,7 +13,6 @@ from src.ensemble import ensemble
 
 # Import constants so we don't replicate training controls here
 from src.constants import (
-    TORCH_DEVICE,
     RANDOM_SEED,
     DATA_START_MONTH,
     DATA_END_MONTH,
