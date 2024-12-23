@@ -2,10 +2,8 @@ import xarray as xr
 import numpy as np
 import pandas as pd
 import os
-import zipfile
 import gc
 import random
-import torch
 import logging
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
@@ -13,40 +11,61 @@ from typing import List, Tuple, Union
 from tqdm import tqdm
 
 from src.tiles import tile_coordinates
-from src.constants import RAW_DIR, PROCESSED_DIR, ZIP_DIR, HOUR_INCREMENT, RANDOM_SEED
+from src.constants import (
+    RAW_DIR,
+    PROCESSED_DIR,
+    HOUR_INCREMENT,
+    RANDOM_SEED,
+    TRAIN_TEST_RATIO,
+    DATA_START_MONTH,
+    DATA_END_MONTH,
+    NORMALIZATION_STATS_FILE,
+    TILES,
+    ZIP_SETTING
+)
 
-def xr_to_np(tiles: List[int], 
-             start_month: Tuple[int,int], 
-             end_month: Tuple[int,int], 
-             train_test_ratio: float=0.2, 
-             zip_setting: Union[str,bool]=False):
+def xr_to_np():
     """
     Process raw NetCDF data for multiple tiles and generate combined training and testing datasets.
+
     After final arrays are concatenated, compute global mean/std of training target precipitation and
     save them for normalization in subsequent steps.
 
-    Behavior on Missing Files:
-        1. If 'zip_setting' is 'load' but the combined zip file doesn't exist, this function will raise 
-           FileNotFoundError because loading from the non-existent file is not possible.
-        2. If monthly NetCDF files (e.g., year-month.nc) are missing, the function logs a warning and 
-           skips that month instead of throwing an error. This allows partial coverage in data processing.
+    If ZIP_SETTING == 'load', loads data from combined_dataset.npz and reconstructs the .npy files
+    so the rest of the pipeline can proceed.
 
-    Args:
-        tiles: List of tile indices to process.
-        start_month: (year, month) to begin data.
-        end_month: (year, month) to end data.
-        train_test_ratio: Ratio for test split.
-        zip_setting: 'load' to load from an existing combined zip, 'save' to zip at completion, 
-                     or False to do no zipping. If 'load' is specified and the zip file is missing, 
-                     FileNotFoundError is raised.
+    If ZIP_SETTING == 'save', saves final data into combined_dataset.npz (compressed), then removes
+    local .npy files.
+
+    If ZIP_SETTING == False, neither loads nor saves a compressed archive.
     """
+    # If user wants to load from npz, do it here and return
+    if ZIP_SETTING == 'load':
+        npz_path = PROCESSED_DIR / "combined_dataset.npz"
+        if not npz_path.exists():
+            raise FileNotFoundError(f"No compressed NPZ file found at {npz_path} to load from.")
+
+        logging.info(f"Loading data from {npz_path}...")
+        with np.load(npz_path, allow_pickle=True) as data:
+            np.save(PROCESSED_DIR / "combined_train_input.npy", data["train_input"])
+            np.save(PROCESSED_DIR / "combined_train_target.npy", data["train_target"])
+            np.save(PROCESSED_DIR / "combined_train_times.npy", data["train_times"])
+            np.save(PROCESSED_DIR / "combined_train_tile_ids.npy", data["train_tile_ids"])
+
+            np.save(PROCESSED_DIR / "combined_test_input.npy", data["test_input"])
+            np.save(PROCESSED_DIR / "combined_test_target.npy", data["test_target"])
+            np.save(PROCESSED_DIR / "combined_test_times.npy", data["test_times"])
+            np.save(PROCESSED_DIR / "combined_test_tile_ids.npy", data["test_tile_ids"])
+
+            np.save(PROCESSED_DIR / "combined_tile_elev.npy", data["tile_elev"])
+            np.save(NORMALIZATION_STATS_FILE, data["normalization_stats"])
+        logging.info("NPZ data successfully loaded into .npy files.")
+        return
 
     random.seed(RANDOM_SEED)
     np.random.seed(RANDOM_SEED)
 
-    combined_zip_path = ZIP_DIR / "combined_dataset.zip"
-
-    # Define output file paths for final combined arrays
+    # Prepare output file paths for final combined arrays
     train_input_path = PROCESSED_DIR / "combined_train_input.npy"
     train_target_path = PROCESSED_DIR / "combined_train_target.npy"
     train_times_path = PROCESSED_DIR / "combined_train_times.npy"
@@ -56,24 +75,15 @@ def xr_to_np(tiles: List[int],
     test_times_path = PROCESSED_DIR / "combined_test_times.npy"
     test_tile_ids_path = PROCESSED_DIR / "combined_test_tile_ids.npy"
     tile_elev_path = PROCESSED_DIR / "combined_tile_elev.npy"
-    normalization_stats_path = PROCESSED_DIR / "normalization_stats.npy"
+    normalization_stats_path = NORMALIZATION_STATS_FILE
 
-    # If loading from zip, just extract and return
-    if zip_setting == 'load':
-        if combined_zip_path.exists():
-            with zipfile.ZipFile(combined_zip_path, 'r') as zip_ref:
-                zip_ref.extractall(PROCESSED_DIR)
-            return
-        else:
-            raise FileNotFoundError(f"No zip file found at {combined_zip_path} to load from.")
+    tiles = TILES
+    start_date = datetime(DATA_START_MONTH[0], DATA_START_MONTH[1], 1)
+    end_date = datetime(DATA_END_MONTH[0], DATA_END_MONTH[1], 1)
 
-    # Ensure output directory exists
-    os.makedirs(PROCESSED_DIR, exist_ok=True)
-
-    # Prepare temporary directories for monthly chunks
+    # Temporary directory for monthly chunks
     monthly_dir = PROCESSED_DIR / "monthly_chunks"
     if monthly_dir.exists():
-        # Clean up old monthly chunks if any
         for f in monthly_dir.iterdir():
             f.unlink()
     else:
@@ -84,7 +94,7 @@ def xr_to_np(tiles: List[int],
     if 'X' in elevation_ds.dims and 'Y' in elevation_ds.dims:
         elevation_ds = elevation_ds.rename({'X': 'lon', 'Y': 'lat'})
 
-    # Compute elevation arrays once for all tiles
+    # Build elevation array for all tiles
     logging.info("Computing elevation per tile...")
     sample_tile = tiles[0]
     _, _, fine_latitudes_sample, fine_longitudes_sample = tile_coordinates(sample_tile)
@@ -97,13 +107,7 @@ def xr_to_np(tiles: List[int],
         elev_fine = elev_fine / 8848.9
         tile_elev_all[i, 0, :, :] = elev_fine
 
-    # Save elevation immediately
-    np.save(tile_elev_path, tile_elev_all)
-
-    start_date = datetime(start_month[0], start_month[1], 1)
-    end_date = datetime(end_month[0], end_month[1], 1)
-
-    # Count total months
+    # Advance month-by-month
     total_months = 0
     temp_month = start_date
     while temp_month <= end_date:
@@ -111,12 +115,10 @@ def xr_to_np(tiles: List[int],
         temp_month += relativedelta(months=1)
 
     pbar = tqdm(total=total_months * len(tiles), desc="Processing data month-by-month")
-
     month_counter = 0
     monthly_train_files = []
     monthly_test_files = []
 
-    # Process each month separately
     current_month = start_date
     while current_month <= end_date:
         year = current_month.year
@@ -130,9 +132,8 @@ def xr_to_np(tiles: List[int],
             continue
 
         month_ds = xr.open_dataset(file_path)
-
-        # Filter times if needed
         if HOUR_INCREMENT == 3:
+            import pandas as pd
             time_index = pd.DatetimeIndex(month_ds.time.values)
             filtered_times = time_index[time_index.hour.isin([0, 3, 6, 9, 12, 15, 18, 21])]
             month_ds = month_ds.sel(time=filtered_times)
@@ -145,13 +146,12 @@ def xr_to_np(tiles: List[int],
             current_month += relativedelta(months=1)
             continue
 
-        test_count = int(train_test_ratio * T)
+        test_count = int(TRAIN_TEST_RATIO * T)
         time_indices = np.arange(T)
         np.random.seed(RANDOM_SEED + month_counter)
         np.random.shuffle(time_indices)
         test_time_indices = time_indices[:test_count]
         train_time_indices = time_indices[test_count:]
-
         test_times_set = set(times[test_time_indices])
 
         month_train_input = []
@@ -250,7 +250,7 @@ def xr_to_np(tiles: List[int],
             total_samples += arr.shape[0]
 
         if total_samples == 0:
-            return np.empty((0,) + shape, dtype=dtype)
+            return np.empty((0,) + (shape if shape else (1,1,1)), dtype=dtype if dtype else 'float32')
 
         final_arr = np.empty((total_samples,) + shape, dtype=dtype)
 
@@ -300,6 +300,8 @@ def xr_to_np(tiles: List[int],
     np.save(test_times_path, final_test_times)
     np.save(test_tile_ids_path, final_test_tile_ids)
 
+    np.save(tile_elev_path, tile_elev_all)
+
     # Compute normalization stats from training targets
     if final_train_target.size > 0:
         train_targets_flat = final_train_target.flatten()
@@ -313,27 +315,35 @@ def xr_to_np(tiles: List[int],
 
     np.save(normalization_stats_path, np.array([mean_val, std_val], dtype=np.float32))
 
-    # Cleanup large arrays
-    del (final_train_input, final_train_target, final_train_times, final_train_tile_ids,
-         final_test_input, final_test_target, final_test_times, final_test_tile_ids)
-    gc.collect()
+    # ---- Reduce precision after building the final arrays and reload them for saving as npz ----
+    final_train_input = final_train_input.astype('float16')
+    final_train_target = final_train_target.astype('float16')
+    final_test_input = final_test_input.astype('float16')
+    final_test_target = final_test_target.astype('float16')
+    tile_elev_all = tile_elev_all.astype('float16')
 
-    # Optionally zip if zip_setting=='save'
-    if zip_setting == 'save':
-        logging.info("Zipping processed data...")
-        with zipfile.ZipFile(combined_zip_path, 'w', compression=zipfile.ZIP_STORED) as zipf:
-            zipf.write(train_input_path, "combined_train_input.npy")
-            zipf.write(train_target_path, "combined_train_target.npy")
-            zipf.write(train_times_path, "combined_train_times.npy")
-            zipf.write(train_tile_ids_path, "combined_train_tile_ids.npy")
-            zipf.write(test_input_path, "combined_test_input.npy")
-            zipf.write(test_target_path, "combined_test_target.npy")
-            zipf.write(test_times_path, "combined_test_times.npy")
-            zipf.write(test_tile_ids_path, "combined_test_tile_ids.npy")
-            zipf.write(tile_elev_path, "combined_tile_elev.npy")
-            zipf.write(normalization_stats_path, "normalization_stats.npy")
+    normalization_stats = np.array([mean_val, std_val], dtype='float16')
 
-        # Remove local npy files after zipping
+    # Optionally save data to a single compressed NPZ
+    if ZIP_SETTING == 'save':
+        npz_path = PROCESSED_DIR / "combined_dataset.npz"
+        logging.info(f"Saving to compressed NPZ: {npz_path}")
+        np.savez_compressed(
+            npz_path,
+            train_input=final_train_input,
+            train_target=final_train_target,
+            train_times=final_train_times,
+            train_tile_ids=final_train_tile_ids,
+            test_input=final_test_input,
+            test_target=final_test_target,
+            test_times=final_test_times,
+            test_tile_ids=final_test_tile_ids,
+            tile_elev=tile_elev_all,
+            normalization_stats=normalization_stats
+        )
+        logging.info("Data compressed and saved as NPZ. Removing local .npy files...")
+
+        # Remove local npy files (mirroring old zip logic)
         os.remove(train_input_path)
         os.remove(train_target_path)
         os.remove(train_times_path)
@@ -344,4 +354,9 @@ def xr_to_np(tiles: List[int],
         os.remove(test_tile_ids_path)
         os.remove(tile_elev_path)
         os.remove(normalization_stats_path)
-        logging.info("Zipped and removed local npy files.")
+        logging.info("Local .npy files removed.")
+
+
+    # Cleanup
+    elevation_ds.close()
+    gc.collect()

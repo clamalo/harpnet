@@ -47,6 +47,7 @@ class CombinedDataset(Dataset):
         return self.inputs.shape[0]
 
     def __getitem__(self, idx: int):
+        # Note: by the time we get here, everything is already float32 (see generate_dataloaders).
         input_data = torch.from_numpy(self.inputs[idx])   # (C,H,W)
         target_data = torch.from_numpy(self.targets[idx]) # (1,H,W)
         time_data = self.times[idx]
@@ -56,9 +57,15 @@ class CombinedDataset(Dataset):
         elev_data = torch.from_numpy(self.tile_elev[tile_idx]) # (1,Hf,Wf)
 
         # Interpolate to TILE_SIZE x TILE_SIZE
-        input_data = torch.nn.functional.interpolate(input_data.unsqueeze(0), size=(TILE_SIZE,TILE_SIZE), mode=PRE_MODEL_INTERPOLATION).squeeze(0)
-        elev_data = torch.nn.functional.interpolate(elev_data.unsqueeze(0), size=(TILE_SIZE,TILE_SIZE), mode=PRE_MODEL_INTERPOLATION).squeeze(0)
-        target_data = torch.nn.functional.interpolate(target_data.unsqueeze(0), size=(TILE_SIZE,TILE_SIZE), mode=PRE_MODEL_INTERPOLATION).squeeze(0)
+        input_data = torch.nn.functional.interpolate(
+            input_data.unsqueeze(0), size=(TILE_SIZE,TILE_SIZE), mode=PRE_MODEL_INTERPOLATION
+        ).squeeze(0)
+        elev_data = torch.nn.functional.interpolate(
+            elev_data.unsqueeze(0), size=(TILE_SIZE,TILE_SIZE), mode=PRE_MODEL_INTERPOLATION
+        ).squeeze(0)
+        target_data = torch.nn.functional.interpolate(
+            target_data.unsqueeze(0), size=(TILE_SIZE,TILE_SIZE), mode=PRE_MODEL_INTERPOLATION
+        ).squeeze(0)
 
         # Combine inputs with elevation
         input_data = torch.cat([input_data, elev_data], dim=0) # (2,H,W)
@@ -70,6 +77,14 @@ class CombinedDataset(Dataset):
         return input_data, elev_data, target_data, time_data, tile_data
 
 def load_normalization_stats():
+    """
+    Loads mean and std from the normalization_stats.npy file.
+    Raises FileNotFoundError if the file doesn't exist.
+    """
+    if not NORMALIZATION_STATS_FILE.exists():
+        raise FileNotFoundError(
+            f"Normalization stats file {NORMALIZATION_STATS_FILE} not found. Did you run xr_to_np?"
+        )
     norm_stats = np.load(NORMALIZATION_STATS_FILE)
     mean_val, std_val = float(norm_stats[0]), float(norm_stats[1])
     return mean_val, std_val
@@ -79,44 +94,66 @@ def generate_dataloaders(focus_tile: Optional[int] = None):
     Generate training and testing dataloaders based on preprocessed Numpy arrays.
     If focus_tile is provided, returns loaders filtered to that single tile.
     Otherwise, returns loaders for all tiles.
+    
+    This function expects that xr_to_np has already been called (in either save, load,
+    or raw .npy mode), so the following files exist in PROCESSED_DIR:
+      - combined_train_input.npy
+      - combined_train_target.npy
+      - combined_train_times.npy
+      - combined_train_tile_ids.npy
+      - combined_test_input.npy
+      - combined_test_target.npy
+      - combined_test_times.npy
+      - combined_test_tile_ids.npy
+      - combined_tile_elev.npy
+      - normalization_stats.npy
     """
+
+    # Check existence of main .npy files
+    train_input_path = PROCESSED_DIR / "combined_train_input.npy"
+    test_input_path = PROCESSED_DIR / "combined_test_input.npy"
+    if not train_input_path.exists() or not test_input_path.exists():
+        raise FileNotFoundError(
+            f"One of {train_input_path} or {test_input_path} not found. Did you run xr_to_np?"
+        )
 
     mean_val, std_val = load_normalization_stats()
 
-    train_input_path = PROCESSED_DIR / "combined_train_input.npy"
-    train_target_path = PROCESSED_DIR / "combined_train_target.npy"
-    train_times_path = PROCESSED_DIR / "combined_train_times.npy"
-    train_tile_ids_path = PROCESSED_DIR / "combined_train_tile_ids.npy"
+    # Load data from disk, cast to float32 so model conv layers (float32) won't complain
+    train_input = np.load(PROCESSED_DIR / "combined_train_input.npy").astype(np.float32)
+    train_target = np.load(PROCESSED_DIR / "combined_train_target.npy").astype(np.float32)
+    train_times = np.load(PROCESSED_DIR / "combined_train_times.npy")  # int64 is fine
+    train_tile_ids = np.load(PROCESSED_DIR / "combined_train_tile_ids.npy")  # int32 is fine
 
-    test_input_path = PROCESSED_DIR / "combined_test_input.npy"
-    test_target_path = PROCESSED_DIR / "combined_test_target.npy"
-    test_times_path = PROCESSED_DIR / "combined_test_times.npy"
-    test_tile_ids_path = PROCESSED_DIR / "combined_test_tile_ids.npy"
+    test_input = np.load(PROCESSED_DIR / "combined_test_input.npy").astype(np.float32)
+    test_target = np.load(PROCESSED_DIR / "combined_test_target.npy").astype(np.float32)
+    test_times = np.load(PROCESSED_DIR / "combined_test_times.npy")
+    test_tile_ids = np.load(PROCESSED_DIR / "combined_test_tile_ids.npy")
 
-    tile_elev_path = PROCESSED_DIR / "combined_tile_elev.npy"
+    tile_elev = np.load(PROCESSED_DIR / "combined_tile_elev.npy").astype(np.float32)  # store as float16, but cast back
 
-    train_input = np.load(train_input_path)
-    train_target = np.load(train_target_path)
-    train_times = np.load(train_times_path)
-    train_tile_ids = np.load(train_tile_ids_path)
-
-    test_input = np.load(test_input_path)
-    test_target = np.load(test_target_path)
-    test_times = np.load(test_times_path)
-    test_tile_ids = np.load(test_tile_ids_path)
-
-    tile_elev = np.load(tile_elev_path)  # (num_tiles,1,Hf,Wf)
-
+    # Build mapping of tile_id -> index in tile_elev
     unique_tile_ids = sorted(set(train_tile_ids) | set(test_tile_ids))
     tile_id_to_index = {t: i for i, t in enumerate(unique_tile_ids)}
 
-    train_dataset = CombinedDataset(train_input, train_target, train_times, train_tile_ids, tile_elev, tile_id_to_index, mean_val, std_val, focus_tile=focus_tile)
-    test_dataset = CombinedDataset(test_input, test_target, test_times, test_tile_ids, tile_elev, tile_id_to_index, mean_val, std_val, focus_tile=focus_tile)
+    # Create PyTorch Datasets
+    train_dataset = CombinedDataset(
+        train_input, train_target, train_times, train_tile_ids,
+        tile_elev, tile_id_to_index, mean_val, std_val, focus_tile=focus_tile
+    )
+    test_dataset = CombinedDataset(
+        test_input, test_target, test_times, test_tile_ids,
+        tile_elev, tile_id_to_index, mean_val, std_val, focus_tile=focus_tile
+    )
 
     loader_generator = torch.Generator()
     loader_generator.manual_seed(RANDOM_SEED)
 
-    train_dataloader = DataLoader(train_dataset, batch_size=32, shuffle=True, generator=loader_generator, num_workers=0)
-    test_dataloader = DataLoader(test_dataset, batch_size=32, shuffle=False, num_workers=0)
+    train_dataloader = DataLoader(
+        train_dataset, batch_size=32, shuffle=True, generator=loader_generator, num_workers=0
+    )
+    test_dataloader = DataLoader(
+        test_dataset, batch_size=32, shuffle=False, num_workers=0
+    )
 
     return train_dataloader, test_dataloader

@@ -3,7 +3,7 @@ Ensures required directories exist for data processing and output.
 """
 
 import os
-from src.constants import PROCESSED_DIR, ZIP_DIR, CHECKPOINTS_DIR, FIGURES_DIR
+from src.constants import PROCESSED_DIR, CHECKPOINTS_DIR, FIGURES_DIR
 
 def setup():
     """
@@ -11,6 +11,5 @@ def setup():
     Ensures a consistent file structure for the project.
     """
     os.makedirs(PROCESSED_DIR, exist_ok=True)
-    os.makedirs(ZIP_DIR, exist_ok=True)
     os.makedirs(CHECKPOINTS_DIR, exist_ok=True)
     os.makedirs(FIGURES_DIR, exist_ok=True)

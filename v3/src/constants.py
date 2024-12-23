@@ -13,7 +13,6 @@ RAW_DIR = Path("/Volumes/T9/monthly")
 PROCESSED_DIR = Path("/Users/clamalo/documents/harpnet/v3/tiles")
 # Normalization stats file (created after xr_to_np finishes)
 NORMALIZATION_STATS_FILE = PROCESSED_DIR / "normalization_stats.npy"
-ZIP_DIR = Path("/Users/clamalo/documents/harpnet/v3/zips")
 CHECKPOINTS_DIR = Path("/Users/clamalo/documents/harpnet/v3/checkpoints")
 FIGURES_DIR = Path("figures")
 
@@ -55,20 +54,19 @@ PADDING = 0.25
 
 # Controls for data/time range and training
 DATA_START_MONTH = (1979, 10)  # (year, month)
-DATA_END_MONTH = (1981, 9)     # (year, month)
+DATA_END_MONTH = (1989, 9)     # (year, month)
 TRAIN_TEST_RATIO = 0.2
 TRAIN_START_EPOCH = 0
 TRAIN_END_EPOCH = 5
 MAX_ENSEMBLE_SIZE = 8
-TILES = [8]
+TILES = list(range(0, 20))
 FOCUS_TILE = 8
 
-# Whether to save or load zipped data (options: 'save', 'load', or False)
-ZIP_SETTING = 'load'
+# Whether to save or load data as a compressed NPZ or do neither
+# Possible values: 'save', 'load', or False
+ZIP_SETTING = 'save'
 
 # ----------------------------------------------------------
 # Pre-model interpolation setting
 # ----------------------------------------------------------
-# This controls how low-resolution data is interpolated before being passed into the model.
-# Examples: "nearest", "bilinear", "bicubic", etc.
 PRE_MODEL_INTERPOLATION = "nearest"

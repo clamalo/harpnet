@@ -43,17 +43,11 @@ if __name__ == "__main__":
     setup()
 
     # Convert/load data if needed
-    xr_to_np(
-        TILES,
-        DATA_START_MONTH,
-        DATA_END_MONTH,
-        TRAIN_TEST_RATIO,
-        zip_setting=ZIP_SETTING
-    )
+    xr_to_np()
 
-    # If we chose to 'save', data is zipped and removed, so we skip training
+    # If we chose to 'save', data is compressed and removed, so we skip training
     if ZIP_SETTING == 'save':
-        logging.info("Data preprocessed, zipped, and removed. No training performed.")
+        logging.info("Data preprocessed, compressed into NPZ, and removed. No training performed.")
         exit(0)
 
     # Generate DataLoaders
@@ -74,5 +68,5 @@ if __name__ == "__main__":
         DATA_START_MONTH,
         DATA_END_MONTH,
         TRAIN_TEST_RATIO,
-        max_ensemble_size=MAX_ENSEMBLE_SIZE
+        max_ENSEMBLE_size=MAX_ENSEMBLE_SIZE
     )
