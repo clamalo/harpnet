@@ -3,6 +3,8 @@ Ensemble logic now leverages test_model from train_test.py for evaluation.
 All evaluation is done by calling test_model defined in train_test.py.
 
 This removes redundancy and ensures that all training/evaluation code is centralized in train_test.py.
+
+Updated to use the new hybrid loss (MSE + MAE) from train_test.py.
 """
 
 import os
@@ -15,7 +17,7 @@ from src.generate_dataloaders import generate_dataloaders
 from src.constants import CHECKPOINTS_DIR, TORCH_DEVICE, MODEL_NAME
 import importlib
 import torch.nn as nn
-from src.train_test import test_model  # Use the central test function
+from src.train_test import test_model, get_criterion  # <--- Import the new criterion here
 
 # Dynamic import of model based on MODEL_NAME from constants
 model_module = importlib.import_module(f"src.models.{MODEL_NAME}")
@@ -68,9 +70,10 @@ def add_state_dict_to_cumulative(cumulative: Dict[str, torch.Tensor], new_state:
 def evaluate_model(model: ModelClass, test_dataloader, device: str) -> float:
     """
     Evaluate the model using test_model from train_test.py for unified metrics.
+    Uses the hybrid loss.
     Returns normalized test_loss for ensemble logic and prints metrics.
     """
-    criterion = nn.MSELoss()
+    criterion = get_criterion()  # Use the new hybrid loss
     metrics = test_model(model, test_dataloader, criterion, focus_tile=None)
 
     logging.info("Ensemble Evaluation:")
@@ -217,7 +220,8 @@ def ensemble(tiles: List[int],
 def run_ensemble_on_directory(directory_path: str, test_dataloader, device: str, output_path: str) -> str:
     """
     Runs the ensemble logic on all checkpoints found in the specified directory,
-    uses test_model from train_test.py for evaluation, and saves the best.
+    uses test_model from train_test.py for evaluation (hybrid loss),
+    and saves the best.
     """
     model = ModelClass().to(device)
 
@@ -254,8 +258,9 @@ def run_ensemble_on_directory(directory_path: str, test_dataloader, device: str,
     cumulative_state_dict = initialize_cumulative_state_dict(first['state_dict'], device)
     add_state_dict_to_cumulative(cumulative_state_dict, first['state_dict'])
 
+    criterion = get_criterion()
     model.load_state_dict(first['state_dict'], strict=False)
-    single_metrics = test_model(model, test_dataloader, nn.MSELoss(), focus_tile=None)
+    single_metrics = test_model(model, test_dataloader, criterion, focus_tile=None)
     single_mean_loss = single_metrics["mean_test_loss"]
 
     best_mean_loss = single_mean_loss
@@ -276,7 +281,7 @@ def run_ensemble_on_directory(directory_path: str, test_dataloader, device: str,
             gc.collect()
             continue
 
-        ensemble_metrics = test_model(model, test_dataloader, nn.MSELoss(), focus_tile=None)
+        ensemble_metrics = test_model(model, test_dataloader, criterion, focus_tile=None)
         ensemble_mean_loss = ensemble_metrics["mean_test_loss"]
         if ensemble_mean_loss < best_mean_loss:
             best_mean_loss = ensemble_mean_loss

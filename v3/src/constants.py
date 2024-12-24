@@ -83,3 +83,10 @@ SAVE_PRECISION = "float16"
 # If True, PyTorch will use fully deterministic operations (which can be slower).
 # If False, it will allow some non-deterministic ops but run faster.
 DETERMINISTIC = True
+
+# ----------------------------------------------------------
+# NEW: Hybrid loss ratio
+# ----------------------------------------------------------
+# Fraction of the hybrid loss that should come from MSE.
+# The rest (1 - MSE_HYBRID_LOSS) will come from MAE.
+MSE_HYBRID_LOSS = 1

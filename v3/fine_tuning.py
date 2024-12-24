@@ -1,6 +1,8 @@
 """
 Fine-tuning now relies on functions from train_test.py for training and evaluation.
 This removes redundancy in training and testing code.
+
+Updated to use the new hybrid loss function from train_test.py.
 """
 
 import os
@@ -10,11 +12,11 @@ import torch
 import logging
 from pathlib import Path
 
-from src.constants import (CHECKPOINTS_DIR, TORCH_DEVICE, RANDOM_SEED, MODEL_NAME, DETERMINISTIC)  # <-- NEW IMPORT
+from src.constants import (CHECKPOINTS_DIR, TORCH_DEVICE, RANDOM_SEED, MODEL_NAME, DETERMINISTIC)
 import importlib
 from src.generate_dataloaders import generate_dataloaders
 from src.ensemble import run_ensemble_on_directory
-from src.train_test import train_one_epoch, test_model
+from src.train_test import train_one_epoch, test_model, get_criterion  # <--- Use the new criterion
 
 model_module = importlib.import_module(f"src.models.{MODEL_NAME}")
 ModelClass = model_module.Model
@@ -35,7 +37,8 @@ def fine_tune_single_tile(tile: int,
 
     model = ModelClass().to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
-    criterion = torch.nn.MSELoss()
+    # Use the new hybrid loss
+    criterion = get_criterion()
 
     if not initial_checkpoint.exists():
         raise FileNotFoundError(f"Initial checkpoint {initial_checkpoint} not found.")
@@ -59,10 +62,10 @@ def fine_tune_single_tile(tile: int,
         unnorm_focus_tile_corr = metrics["unnorm_focus_tile_corr"]
         unnorm_focus_tile_bilinear_corr = metrics["unnorm_focus_tile_bilinear_corr"]
 
-        logging.info(f'Epoch {epoch}: Train loss (normalized MSE) = {train_loss:.6f}')
-        logging.info(f'  Test (normalized MSE): {mean_test_loss:.6f}, Bilinear: {mean_bilinear_loss:.6f}')
+        logging.info(f'Epoch {epoch}: Train loss (normalized Hybrid) = {train_loss:.6f}')
+        logging.info(f'  Test (normalized Hybrid): {mean_test_loss:.6f}, Bilinear: {mean_bilinear_loss:.6f}')
         if focus_tile_test_loss is not None:
-            logging.info(f'  Focus Tile {tile} (normalized MSE): {focus_tile_test_loss:.6f}, Bilinear: {focus_tile_bilinear_loss:.6f}')
+            logging.info(f'  Focus Tile {tile} (normalized Hybrid): {focus_tile_test_loss:.6f}, Bilinear: {focus_tile_bilinear_loss:.6f}')
             logging.info(f'  Focus Tile {tile} Unnorm MSE: {unnorm_focus_tile_mse:.6f}, Bilinear: {unnorm_focus_tile_bilinear_mse:.6f}')
             logging.info(f'  Focus Tile {tile} Unnorm MAE: {unnorm_focus_tile_mae:.6f}, Bilinear: {unnorm_focus_tile_bilinear_mae:.6f}')
             logging.info(f'  Focus Tile {tile} Unnorm Corr: {unnorm_focus_tile_corr:.4f}, Bilinear: {unnorm_focus_tile_bilinear_corr:.4f}')

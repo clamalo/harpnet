@@ -5,6 +5,8 @@ Includes functions for one epoch of training and testing, and a full train-test 
 Now updated so that normalization stats are loaded lazily, i.e., only when test_model()
 actually needs them. This prevents issues where the file normalization_stats.npy might
 not exist until after data processing is completed.
+
+Additionally, we now support a hybrid loss of MSE and MAE, controlled by MSE_HYBRID_LOSS in constants.
 """
 
 import torch
@@ -21,7 +23,8 @@ from src.constants import (
     RANDOM_SEED,
     MODEL_NAME,
     NORMALIZATION_STATS_FILE,
-    TILE_SIZE
+    TILE_SIZE,
+    MSE_HYBRID_LOSS  # <--- Import the new hybrid ratio
 )
 from src.generate_dataloaders import generate_dataloaders
 import importlib
@@ -41,6 +44,31 @@ def _lazy_load_stats():
     return mean_val, std_val
 
 
+class HybridLoss(nn.Module):
+    """
+    Combines MSE and MAE according to MSE_HYBRID_LOSS.
+    If MSE_HYBRID_LOSS = 1.0, it's pure MSE.
+    If MSE_HYBRID_LOSS = 0.0, it's pure MAE.
+    """
+    def __init__(self, mse_portion: float = 1.0):
+        super(HybridLoss, self).__init__()
+        self.mse_loss = nn.MSELoss()
+        self.mae_loss = nn.L1Loss()
+        self.mse_portion = mse_portion
+
+    def forward(self, preds, targets):
+        loss_mse = self.mse_loss(preds, targets)
+        loss_mae = self.mae_loss(preds, targets)
+        return self.mse_portion * loss_mse + (1.0 - self.mse_portion) * loss_mae
+
+
+def get_criterion():
+    """
+    Returns a HybridLoss with the MSE portion determined by MSE_HYBRID_LOSS in constants.py
+    """
+    return HybridLoss(mse_portion=MSE_HYBRID_LOSS)
+
+
 def train_one_epoch(model: nn.Module, 
                     train_dataloader, 
                     optimizer: torch.optim.Optimizer, 
@@ -52,7 +80,7 @@ def train_one_epoch(model: nn.Module,
         model: The model to train.
         train_dataloader: DataLoader for training data (normalized).
         optimizer: Torch optimizer.
-        criterion: Loss function (MSE in normalized space).
+        criterion: Hybrid loss function in normalized space.
 
     Returns:
         Average training loss over the epoch (in normalized space).
@@ -67,7 +95,7 @@ def train_one_epoch(model: nn.Module,
 
         optimizer.zero_grad()
         outputs = model(inputs)
-        loss = criterion(outputs, targets)  # Normalized MSE loss
+        loss = criterion(outputs, targets)  # Hybrid MSE/MAE
         loss.backward()
         optimizer.step()
 
@@ -86,7 +114,7 @@ def test_model(model: nn.Module,
     Args:
         model: The trained model (expects normalized inputs).
         test_dataloader: DataLoader for testing data (normalized).
-        criterion: Typically MSELoss in normalized space.
+        criterion: Hybrid loss (or any other) in normalized space.
         focus_tile: Optional tile ID to compute metrics for that specific tile as well.
 
     Returns:
@@ -117,7 +145,7 @@ def test_model(model: nn.Module,
             targets = targets.to(TORCH_DEVICE)
             outputs = model(inputs)  # normalized predictions
 
-            # MSE in normalized space
+            # Hybrid loss in normalized space
             loss = criterion(outputs, targets)
 
             # Bilinear baseline in normalized space (nearest from cropped input)
@@ -270,7 +298,9 @@ def train_test(train_dataloader,
 
     model = ModelClass().to(TORCH_DEVICE)
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
-    criterion = nn.MSELoss()  # Normalized MSE
+
+    # Use the hybrid criterion
+    criterion = get_criterion()
 
     # If resuming, load previous checkpoint
     if start_epoch != 0:
