@@ -59,12 +59,12 @@ TRAIN_TEST_RATIO = 0.2
 TRAIN_START_EPOCH = 0
 TRAIN_END_EPOCH = 5
 MAX_ENSEMBLE_SIZE = 8
-TILES = list(range(5, 10))
+TILES = list(range(0, 20))
 FOCUS_TILE = 8
 
 # Whether to save or load data as a compressed NPZ or do neither
 # Possible values: 'save', 'load', or False
-ZIP_SETTING = 'save'
+ZIP_SETTING = 'load'
 
 # ----------------------------------------------------------
 # Pre-model interpolation setting
@@ -76,3 +76,10 @@ PRE_MODEL_INTERPOLATION = "nearest"
 # ----------------------------------------------------------
 # Can be either "float32" or "float16". Controls how data are stored on disk.
 SAVE_PRECISION = "float16"
+
+# ----------------------------------------------------------
+# NEW: Deterministic
+# ----------------------------------------------------------
+# If True, PyTorch will use fully deterministic operations (which can be slower).
+# If False, it will allow some non-deterministic ops but run faster.
+DETERMINISTIC = True

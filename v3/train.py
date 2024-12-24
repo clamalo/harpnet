@@ -23,6 +23,7 @@ from src.constants import (
     TILES,
     FOCUS_TILE,
     ZIP_SETTING,
+    DETERMINISTIC,  # <-- NEW IMPORT
 )
 
 # Set seeds once at the start for reproducibility
@@ -32,10 +33,17 @@ torch.manual_seed(RANDOM_SEED)
 if torch.cuda.is_available():
     torch.cuda.manual_seed_all(RANDOM_SEED)
 
-# Ensure deterministic behavior for reproducible results
-torch.backends.cudnn.deterministic = True
-torch.backends.cudnn.benchmark = False
-torch.use_deterministic_algorithms(True)
+# Conditionally set deterministic behavior
+if DETERMINISTIC:
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+    torch.use_deterministic_algorithms(True)
+else:
+    torch.backends.cudnn.deterministic = False
+    torch.backends.cudnn.benchmark = True
+    # The following call might throw a warning in some older PyTorch versions,
+    # but in newer ones it disables deterministic algorithms
+    torch.use_deterministic_algorithms(False)
 
 
 if __name__ == "__main__":
@@ -68,5 +76,5 @@ if __name__ == "__main__":
         DATA_START_MONTH,
         DATA_END_MONTH,
         TRAIN_TEST_RATIO,
-        max_ENSEMBLE_size=MAX_ENSEMBLE_SIZE
+        max_ensemble_size=MAX_ENSEMBLE_SIZE
     )
