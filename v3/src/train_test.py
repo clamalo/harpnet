@@ -1,12 +1,6 @@
 """
-Training and testing routines for the model.
-Includes functions for one epoch of training and testing, and a full train-test loop.
-
-Now updated so that normalization stats are loaded lazily, i.e., only when test_model()
-actually needs them. This prevents issues where the file normalization_stats.npy might
-not exist until after data processing is completed.
-
-Additionally, we now support a hybrid loss of MSE and MAE, controlled by MSE_HYBRID_LOSS in constants.
+Handles training and testing of the model, including support for hybrid loss (MSE + MAE).
+Also provides utility methods for single-epoch training and model evaluation.
 """
 
 import torch
@@ -24,31 +18,29 @@ from src.constants import (
     MODEL_NAME,
     NORMALIZATION_STATS_FILE,
     TILE_SIZE,
-    MSE_HYBRID_LOSS  # <--- Import the new hybrid ratio
+    MSE_HYBRID_LOSS
 )
 from src.generate_dataloaders import generate_dataloaders
 import importlib
 from tabulate import tabulate
 
-# Dynamically import model based on MODEL_NAME
+# --- DYNAMIC MODEL IMPORT ---
 model_module = importlib.import_module(f"src.models.{MODEL_NAME}")
 ModelClass = model_module.Model
 
 def _lazy_load_stats():
     """
-    Loads normalization stats only when this function is called.
-    This prevents FileNotFoundError if the file is not yet generated when 'train_test.py' is imported.
+    Loads mean and std for precipitation normalization from disk.
+    Raises an error if the file is missing.
     """
-    norm_stats = np.load(NORMALIZATION_STATS_FILE)  # Raises an error if file not found
+    norm_stats = np.load(NORMALIZATION_STATS_FILE)
     mean_val, std_val = float(norm_stats[0]), float(norm_stats[1])
     return mean_val, std_val
 
-
 class HybridLoss(nn.Module):
     """
-    Combines MSE and MAE according to MSE_HYBRID_LOSS.
-    If MSE_HYBRID_LOSS = 1.0, it's pure MSE.
-    If MSE_HYBRID_LOSS = 0.0, it's pure MAE.
+    Combines MSE and MAE in a single loss function. 
+    The ratio is controlled by MSE_HYBRID_LOSS (1.0 => pure MSE, 0.0 => pure MAE).
     """
     def __init__(self, mse_portion: float = 1.0):
         super(HybridLoss, self).__init__()
@@ -61,29 +53,19 @@ class HybridLoss(nn.Module):
         loss_mae = self.mae_loss(preds, targets)
         return self.mse_portion * loss_mse + (1.0 - self.mse_portion) * loss_mae
 
-
 def get_criterion():
     """
-    Returns a HybridLoss with the MSE portion determined by MSE_HYBRID_LOSS in constants.py
+    Returns the hybrid loss with the specified MSE portion from constants.
     """
     return HybridLoss(mse_portion=MSE_HYBRID_LOSS)
-
 
 def train_one_epoch(model: nn.Module, 
                     train_dataloader, 
                     optimizer: torch.optim.Optimizer, 
                     criterion: nn.Module) -> float:
     """
-    Train the model for one epoch (using normalized data).
-
-    Args:
-        model: The model to train.
-        train_dataloader: DataLoader for training data (normalized).
-        optimizer: Torch optimizer.
-        criterion: Hybrid loss function in normalized space.
-
-    Returns:
-        Average training loss over the epoch (in normalized space).
+    Executes a single epoch of training using the specified criterion (normalized MSE/MAE).
+    Returns the average training loss for that epoch.
     """
     model.train()
     train_losses = []
@@ -95,7 +77,7 @@ def train_one_epoch(model: nn.Module,
 
         optimizer.zero_grad()
         outputs = model(inputs)
-        loss = criterion(outputs, targets)  # Hybrid MSE/MAE
+        loss = criterion(outputs, targets)
         loss.backward()
         optimizer.step()
 
@@ -103,24 +85,15 @@ def train_one_epoch(model: nn.Module,
 
     return sum(train_losses) / len(train_losses) if train_losses else float('inf')
 
-
 def test_model(model: nn.Module, 
                test_dataloader, 
                criterion: nn.Module, 
                focus_tile: Optional[int] = None):
     """
-    Test the model on the test dataset in normalized space, but also compute metrics in unnormalized space.
-
-    Args:
-        model: The trained model (expects normalized inputs).
-        test_dataloader: DataLoader for testing data (normalized).
-        criterion: Hybrid loss (or any other) in normalized space.
-        focus_tile: Optional tile ID to compute metrics for that specific tile as well.
-
-    Returns:
-        A dictionary containing all normalized and unnormalized metrics.
+    Evaluates the model on test data using the hybrid loss. 
+    Also computes unnormalized metrics (MSE, MAE, correlation).
+    If focus_tile is specified, separate metrics are computed for that tile.
     """
-    # Load mean/std stats at the time of testing
     MEAN_VAL, STD_VAL = _lazy_load_stats()
 
     model.eval()
@@ -129,7 +102,6 @@ def test_model(model: nn.Module,
     focus_tile_losses = []
     focus_tile_bilinear_losses = []
 
-    # For additional unnormalized metrics
     all_preds_norm = []
     all_targets_norm = []
     all_bilinear_norm = []
@@ -143,12 +115,11 @@ def test_model(model: nn.Module,
             inputs, elev_data, targets, times, tile_ids = batch
             inputs = inputs.to(TORCH_DEVICE)
             targets = targets.to(TORCH_DEVICE)
-            outputs = model(inputs)  # normalized predictions
+            outputs = model(inputs)
 
-            # Hybrid loss in normalized space
             loss = criterion(outputs, targets)
 
-            # Bilinear baseline in normalized space (nearest from cropped input)
+            # Bilinear baseline
             cropped_inputs = inputs[:, 0:1, 1:-1, 1:-1]
             interpolated_inputs = torch.nn.functional.interpolate(
                 cropped_inputs, size=(TILE_SIZE, TILE_SIZE), mode='bilinear'
@@ -158,11 +129,11 @@ def test_model(model: nn.Module,
             test_losses.append(loss.item())
             bilinear_test_losses.append(bilinear_loss.item())
 
-            # Store normalized predictions for unnormalizing later
             all_preds_norm.append(outputs.cpu().numpy())
             all_targets_norm.append(targets.cpu().numpy())
             all_bilinear_norm.append(interpolated_inputs.cpu().numpy())
 
+            # Metrics on a specific tile
             if focus_tile is not None:
                 mask = (tile_ids == focus_tile)
                 if mask.any():
@@ -190,7 +161,7 @@ def test_model(model: nn.Module,
         focus_tile_test_loss = None
         focus_tile_bilinear_loss = None
 
-    # Unnormalize for additional metrics
+    # --- UNNORMALIZE FOR ADDITIONAL METRICS ---
     all_preds_norm = np.concatenate(all_preds_norm, axis=0)
     all_targets_norm = np.concatenate(all_targets_norm, axis=0)
     all_bilinear_norm = np.concatenate(all_bilinear_norm, axis=0)
@@ -274,20 +245,16 @@ def test_model(model: nn.Module,
         "unnorm_focus_tile_bilinear_corr": unnorm_focus_tile_bilinear_corr
     }
 
-
 def train_test(train_dataloader, 
                test_dataloader, 
                start_epoch: int = 0, 
                end_epoch: int = 20, 
                focus_tile: Optional[int] = None):
     """
-    Full training/testing routine for a given model architecture.
-    Saves checkpoints at each epoch.
-
-    After each epoch, metrics are displayed in a nicely formatted table for easier analysis.
+    Full routine to train and evaluate the model across multiple epochs.
+    Saves checkpoints after each epoch, logging both normalized and unnormalized metrics.
     """
-
-    # Set random seeds for reproducibility
+    # --- REPRODUCIBILITY SETUP ---
     random.seed(RANDOM_SEED)
     np.random.seed(RANDOM_SEED)
     torch.manual_seed(RANDOM_SEED)
@@ -298,11 +265,9 @@ def train_test(train_dataloader,
 
     model = ModelClass().to(TORCH_DEVICE)
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
-
-    # Use the hybrid criterion
     criterion = get_criterion()
 
-    # If resuming, load previous checkpoint
+    # --- LOAD FROM CHECKPOINT IF RESUMING ---
     if start_epoch != 0:
         checkpoint_path = os.path.join(CHECKPOINTS_DIR, f'{start_epoch-1}_model.pt')
         if os.path.exists(checkpoint_path):
@@ -310,10 +275,10 @@ def train_test(train_dataloader,
             model.load_state_dict(checkpoint['model_state_dict'])
             optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
 
+    # --- TRAINING LOOP ---
     for epoch in range(start_epoch, end_epoch):
         logging.info(f"\nEpoch {epoch} starting...")
         train_loss = train_one_epoch(model, train_dataloader, optimizer, criterion)
-
         metrics = test_model(model, test_dataloader, criterion, focus_tile)
 
         mean_test_loss = metrics["mean_test_loss"]
@@ -344,6 +309,7 @@ def train_test(train_dataloader,
         table_str = tabulate(data, headers=headers, tablefmt="pretty")
         logging.info("\n" + table_str)
 
+        # --- SAVE CHECKPOINT ---
         torch.save({
             'model_state_dict': model.state_dict(),
             'optimizer_state_dict': optimizer.state_dict(),

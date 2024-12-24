@@ -1,8 +1,7 @@
 """
-Fine-tuning now relies on functions from train_test.py for training and evaluation.
-This removes redundancy in training and testing code.
-
-Updated to use the new hybrid loss function from train_test.py.
+Provides a fine-tuning script for specific tiles, extending from a global best model.
+Employs the hybrid loss and training functions defined in train_test.py,
+and uses ensemble logic to find the best tile-specific model.
 """
 
 import os
@@ -16,19 +15,24 @@ from src.constants import (CHECKPOINTS_DIR, TORCH_DEVICE, RANDOM_SEED, MODEL_NAM
 import importlib
 from src.generate_dataloaders import generate_dataloaders
 from src.ensemble import run_ensemble_on_directory
-from src.train_test import train_one_epoch, test_model, get_criterion  # <--- Use the new criterion
+from src.train_test import train_one_epoch, test_model, get_criterion
 
+# --- DYNAMIC MODEL IMPORT ---
 model_module = importlib.import_module(f"src.models.{MODEL_NAME}")
 ModelClass = model_module.Model
 
-# User-adjustable parameters
-TILES_TO_FINE_TUNE = [10]  # List of tile indices to fine-tune
+# --- USER-ADJUSTABLE PARAMETERS ---
+TILES_TO_FINE_TUNE = [10]
 FINE_TUNE_EPOCHS = 5
 INITIAL_CHECKPOINT = CHECKPOINTS_DIR / 'best' / 'best_model.pt'
 
 def fine_tune_single_tile(tile: int,
                           fine_tune_epochs: int,
                           initial_checkpoint: Path):
+    """
+    Fine-tunes the global best model on a specific tile for the specified number of epochs,
+    then runs an ensemble over the newly created checkpoints to find the tile's best model.
+    """
     device = TORCH_DEVICE
     tile_ckpt_dir = CHECKPOINTS_DIR / str(tile)
     os.makedirs(tile_ckpt_dir, exist_ok=True)
@@ -37,9 +41,9 @@ def fine_tune_single_tile(tile: int,
 
     model = ModelClass().to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
-    # Use the new hybrid loss
     criterion = get_criterion()
 
+    # --- LOAD GLOBAL BEST MODEL AS STARTING POINT ---
     if not initial_checkpoint.exists():
         raise FileNotFoundError(f"Initial checkpoint {initial_checkpoint} not found.")
     checkpoint = torch.load(initial_checkpoint, map_location=device)
@@ -70,6 +74,7 @@ def fine_tune_single_tile(tile: int,
             logging.info(f'  Focus Tile {tile} Unnorm MAE: {unnorm_focus_tile_mae:.6f}, Bilinear: {unnorm_focus_tile_bilinear_mae:.6f}')
             logging.info(f'  Focus Tile {tile} Unnorm Corr: {unnorm_focus_tile_corr:.4f}, Bilinear: {unnorm_focus_tile_bilinear_corr:.4f}')
 
+        # --- SAVE CHECKPOINT ---
         torch.save({
             'model_state_dict': model.state_dict(),
             'optimizer_state_dict': optimizer.state_dict(),
@@ -78,25 +83,25 @@ def fine_tune_single_tile(tile: int,
             'bilinear_test_loss': mean_bilinear_loss
         }, tile_ckpt_dir / f'{epoch}_model.pt')
 
+    # --- RUN ENSEMBLE ON TILE-SPECIFIC CHECKPOINTS ---
     best_output_path = CHECKPOINTS_DIR / 'best' / f"{tile}_best.pt"
     run_ensemble_on_directory(str(tile_ckpt_dir), test_dataloader, device, str(best_output_path))
     logging.info(f"Best fine-tuned model for tile {tile} saved at {best_output_path}")
 
-
 if __name__ == "__main__":
+    # --- SEED & DETERMINISTIC BEHAVIOR ---
     random.seed(RANDOM_SEED)
     np.random.seed(RANDOM_SEED)
     torch.manual_seed(RANDOM_SEED)
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(RANDOM_SEED)
 
-    # Conditionally set deterministic behavior
     if DETERMINISTIC:
         torch.backends.cudnn.deterministic = True
         torch.backends.cudnn.benchmark = False
         torch.use_deterministic_algorithms(True)
 
-    # Fine-tune each tile in the list one by one
+    # --- FINE-TUNE EACH TILE IN TILES_TO_FINE_TUNE ---
     for tile in TILES_TO_FINE_TUNE:
         fine_tune_single_tile(
             tile=tile,

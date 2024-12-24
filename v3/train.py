@@ -1,3 +1,9 @@
+"""
+Main training script for the HARPNET project. 
+Sets up the environment, performs data preprocessing, and trains the model. 
+Also runs an ensemble of saved checkpoints at the end.
+"""
+
 import random
 import numpy as np
 import torch
@@ -11,7 +17,7 @@ from src.generate_dataloaders import generate_dataloaders
 from src.train_test import train_test
 from src.ensemble import ensemble
 
-# Import constants so we don't replicate training controls here
+# Import constants for controlling the training process
 from src.constants import (
     RANDOM_SEED,
     DATA_START_MONTH,
@@ -23,7 +29,7 @@ from src.constants import (
     TILES,
     FOCUS_TILE,
     ZIP_SETTING,
-    DETERMINISTIC,  # <-- NEW IMPORT
+    DETERMINISTIC
 )
 
 # Set seeds once at the start for reproducibility
@@ -39,23 +45,22 @@ if DETERMINISTIC:
     torch.backends.cudnn.benchmark = False
     torch.use_deterministic_algorithms(True)
 
-
 if __name__ == "__main__":
-    # Setup environment
+    # --- CREATE REQUIRED DIRECTORIES ---
     setup()
 
-    # Convert/load data if needed
+    # --- CONVERT/LOAD DATA IF NECESSARY ---
     xr_to_np()
 
-    # If we chose to 'save', data is compressed and removed, so we skip training
+    # If ZIP_SETTING was 'save', data has been compressed/removed, so skip training
     if ZIP_SETTING == 'save':
         logging.info("Data preprocessed, compressed into NPZ, and removed. No training performed.")
         exit(0)
 
-    # Generate DataLoaders
+    # --- BUILD DATALOADERS ---
     train_dataloader, test_dataloader = generate_dataloaders()
 
-    # Train and test the model
+    # --- TRAIN AND EVALUATE ---
     train_test(
         train_dataloader,
         test_dataloader,
@@ -64,7 +69,7 @@ if __name__ == "__main__":
         focus_tile=FOCUS_TILE
     )
 
-    # Create an ensemble
+    # --- RUN ENSEMBLE ---
     ensemble(
         TILES,
         DATA_START_MONTH,

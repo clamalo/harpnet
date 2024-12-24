@@ -1,10 +1,6 @@
 """
-Ensemble logic now leverages test_model from train_test.py for evaluation.
-All evaluation is done by calling test_model defined in train_test.py.
-
-This removes redundancy and ensures that all training/evaluation code is centralized in train_test.py.
-
-Updated to use the new hybrid loss (MSE + MAE) from train_test.py.
+Implements ensemble logic by averaging model weights from multiple checkpoints.
+Leverages train_test.py for evaluation using a unified loss/metric pipeline.
 """
 
 import os
@@ -17,17 +13,19 @@ from src.generate_dataloaders import generate_dataloaders
 from src.constants import CHECKPOINTS_DIR, TORCH_DEVICE, MODEL_NAME
 import importlib
 import torch.nn as nn
-from src.train_test import test_model, get_criterion  # <--- Import the new criterion here
+from src.train_test import test_model, get_criterion
 
-# Dynamic import of model based on MODEL_NAME from constants
+# Dynamically import model based on MODEL_NAME from constants
 model_module = importlib.import_module(f"src.models.{MODEL_NAME}")
 ModelClass = model_module.Model
 
 def load_checkpoint_test_loss(checkpoint_path: str, device: str) -> Tuple[float, Dict[str, torch.Tensor], float]:
+    """
+    Loads checkpoint data and extracts the normalized test loss, bilinear test loss, and model state dict.
+    """
     checkpoint = torch.load(checkpoint_path, map_location=device)
     bilinear_test_loss = checkpoint['bilinear_test_loss']
 
-    # Extract test_loss robustly
     if 'test_loss' in checkpoint:
         test_loss = checkpoint['test_loss']
     elif 'test_losses' in checkpoint:
@@ -39,7 +37,7 @@ def load_checkpoint_test_loss(checkpoint_path: str, device: str) -> Tuple[float,
             if test_loss is None:
                 raise KeyError(f"'mse_loss' not found in 'test_losses' in checkpoint {checkpoint_path}.")
         else:
-            raise TypeError(f"Unexpected type for 'test_losses' in checkpoint {checkpoint_path}: {type(test_loss)}")
+            raise TypeError(f"Unexpected type for 'test_losses' in checkpoint {checkpoint_path}.")
     else:
         raise KeyError(f"'test_loss' key not found in checkpoint {checkpoint_path}.")
 
@@ -56,6 +54,9 @@ def load_checkpoint_test_loss(checkpoint_path: str, device: str) -> Tuple[float,
     return test_loss, state_dict, bilinear_test_loss
 
 def initialize_cumulative_state_dict(state_dict: Dict[str, torch.Tensor], device: str) -> Dict[str, torch.Tensor]:
+    """
+    Creates a cumulative dict of zeros with the same shape as the provided state dict.
+    """
     cumulative = {}
     for key, value in state_dict.items():
         if isinstance(value, torch.Tensor):
@@ -63,23 +64,22 @@ def initialize_cumulative_state_dict(state_dict: Dict[str, torch.Tensor], device
     return cumulative
 
 def add_state_dict_to_cumulative(cumulative: Dict[str, torch.Tensor], new_state: Dict[str, torch.Tensor]) -> None:
+    """
+    Adds weights from new_state to the running total in cumulative.
+    """
     for key in cumulative.keys():
         if key in new_state and isinstance(new_state[key], torch.Tensor):
             cumulative[key] += new_state[key].float()
 
 def evaluate_model(model: ModelClass, test_dataloader, device: str) -> float:
     """
-    Evaluate the model using test_model from train_test.py for unified metrics.
-    Uses the hybrid loss.
-    Returns normalized test_loss for ensemble logic and prints metrics.
+    Evaluates ensemble model using test_model from train_test.py and returns normalized loss.
     """
-    criterion = get_criterion()  # Use the new hybrid loss
+    criterion = get_criterion()
     metrics = test_model(model, test_dataloader, criterion, focus_tile=None)
-
     logging.info("Ensemble Evaluation:")
     logging.info(f"  Normalized MSE: {metrics['mean_test_loss']:.6f}")
     logging.info(f"  Unnorm MSE: {metrics['unnorm_test_mse']:.6f}, Unnorm MAE: {metrics['unnorm_test_mae']:.6f}, Unnorm Corr: {metrics['unnorm_test_corr']:.4f}")
-
     return metrics["mean_test_loss"]
 
 def ensemble(tiles: List[int], 
@@ -87,9 +87,12 @@ def ensemble(tiles: List[int],
              end_month: Tuple[int,int], 
              train_test_ratio: float, 
              max_ensemble_size: Optional[int] = None) -> None:
+    """
+    Performs an ensemble of multiple checkpoints. Averages state dicts from the best checkpoints 
+    (lowest normalized test loss) in ascending order of test loss, evaluating after each addition.
+    """
     device = TORCH_DEVICE
     logging.info(f"Using device: {device}")
-
     logging.info("Generating data loaders for all tiles combined...")
     train_dataloader, test_dataloader = generate_dataloaders()
     logging.info(f"Number of test batches: {len(test_dataloader)}")
@@ -108,7 +111,7 @@ def ensemble(tiles: List[int],
     checkpoints = []
     logging.info(f"Found {len(checkpoint_files)} checkpoint file(s).")
 
-    # Load and record test losses (normalized)
+    # --- LOAD & RECORD TEST LOSSES ---
     for file_name in checkpoint_files:
         checkpoint_path = os.path.join(CHECKPOINTS_DIR, file_name)
         try:
@@ -126,7 +129,7 @@ def ensemble(tiles: List[int],
     if not checkpoints:
         raise ValueError("No valid checkpoints with test_loss found.")
 
-    # Sort by normalized test_loss ascending
+    # --- SORT CHECKPOINTS ---
     sorted_checkpoints = sorted(checkpoints, key=lambda x: x['test_loss'])
     logging.info("\nCheckpoints sorted by test_loss (ascending):")
     for ckpt in sorted_checkpoints:
@@ -142,13 +145,12 @@ def ensemble(tiles: List[int],
         max_ensemble_size = total_models
         logging.info(f"No maximum ensemble size specified. Using all {max_ensemble_size} available checkpoints.")
 
-    # Start averaging from the best checkpoint
+    # --- START WITH BEST CHECKPOINT ---
     first_checkpoint = sorted_checkpoints[0]
     test_loss, state_dict, bilinear_test_loss = load_checkpoint_test_loss(first_checkpoint['checkpoint_path'], device)
     cumulative_state_dict = initialize_cumulative_state_dict(state_dict, device)
     add_state_dict_to_cumulative(cumulative_state_dict, state_dict)
 
-    # Evaluate the best single model alone
     logging.info(f"\nEvaluating ensemble with 1 model (checkpoint: {first_checkpoint['file_name']}):")
     model.load_state_dict(state_dict)
     del state_dict
@@ -160,7 +162,7 @@ def ensemble(tiles: List[int],
     best_ensemble_state_dict = {k: v.clone() for k, v in model.state_dict().items()}
     best_bilinear_test_loss = bilinear_test_loss
 
-    # Incrementally add models to the ensemble
+    # --- INCREMENTALLY ADD MODELS ---
     for N in range(2, max_ensemble_size + 1):
         logging.info(f"\nEvaluating ensemble with {N} model(s):")
         next_checkpoint = sorted_checkpoints[N-1]
@@ -171,7 +173,6 @@ def ensemble(tiles: List[int],
             logging.warning(f"Failed to load state_dict from '{next_checkpoint['file_name']}': {e}")
             continue
 
-        # Average the weights
         averaged_state_dict = {key: (val / N) for key, val in cumulative_state_dict.items()}
 
         try:
@@ -183,7 +184,6 @@ def ensemble(tiles: List[int],
             gc.collect()
             continue
 
-        # Evaluate the ensemble using test_model
         mean_loss = evaluate_model(model, test_dataloader, device)
         if mean_loss < best_mean_loss:
             best_mean_loss = mean_loss
@@ -195,7 +195,7 @@ def ensemble(tiles: List[int],
         del state_dict_n
         gc.collect()
 
-    # Save the best ensemble state if found
+    # --- SAVE BEST ENSEMBLE ---
     if best_ensemble_state_dict is not None:
         model.load_state_dict(best_ensemble_state_dict, strict=False)
         logging.info(f"\nOptimal ensemble size: {best_num_models} model(s) with Normalized MSE = {best_mean_loss:.6f}")
@@ -207,7 +207,7 @@ def ensemble(tiles: List[int],
         try:
             torch.save({
                 'model_state_dict': best_ensemble_state_dict,
-                'test_loss': best_mean_loss,            # Normalized test loss
+                'test_loss': best_mean_loss,
                 'bilinear_test_loss': best_bilinear_test_loss
             }, best_model_path)
             logging.info(f"Best ensemble model saved to: {best_model_path}")
@@ -216,15 +216,12 @@ def ensemble(tiles: List[int],
     else:
         logging.warning("\nNo valid ensemble found.")
 
-
 def run_ensemble_on_directory(directory_path: str, test_dataloader, device: str, output_path: str) -> str:
     """
-    Runs the ensemble logic on all checkpoints found in the specified directory,
-    uses test_model from train_test.py for evaluation (hybrid loss),
-    and saves the best.
+    Averages checkpoints in a specific directory, returning the best ensemble model path.
+    Useful for fine-tuning or tile-specific ensembles.
     """
     model = ModelClass().to(device)
-
     checkpoint_files = [
         f for f in os.listdir(directory_path)
         if os.path.isfile(os.path.join(directory_path, f)) and f.endswith('_model.pt')
@@ -253,7 +250,7 @@ def run_ensemble_on_directory(directory_path: str, test_dataloader, device: str,
 
     sorted_checkpoints = sorted(checkpoints, key=lambda x: x['test_loss'])
 
-    # Start from the best single checkpoint
+    # --- START FROM BEST CHECKPOINT ---
     first = sorted_checkpoints[0]
     cumulative_state_dict = initialize_cumulative_state_dict(first['state_dict'], device)
     add_state_dict_to_cumulative(cumulative_state_dict, first['state_dict'])
@@ -268,7 +265,7 @@ def run_ensemble_on_directory(directory_path: str, test_dataloader, device: str,
     best_ensemble_state_dict = {k: v.clone() for k,v in model.state_dict().items()}
     best_bilinear = first['bilinear_test_loss']
 
-    # Try ensembles of increasing size
+    # --- TRY ENSEMBLES OF INCREASING SIZE ---
     for N in range(2, len(sorted_checkpoints)+1):
         next_ckpt = sorted_checkpoints[N-1]
         add_state_dict_to_cumulative(cumulative_state_dict, next_ckpt['state_dict'])
