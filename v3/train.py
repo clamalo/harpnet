@@ -30,7 +30,8 @@ from src.constants import (
     FOCUS_TILE,
     ZIP_SETTING,
     DETERMINISTIC,
-    CHECKPOINTS_DIR
+    CHECKPOINTS_DIR,
+    TORCH_DEVICE
 )
 
 # Set seeds once at the start for reproducibility
@@ -73,7 +74,7 @@ if __name__ == "__main__":
     # --- RUN ENSEMBLE ---
     best_ensemble_path = ensemble_checkpoints(
         test_dataloader=test_dataloader,
-        device=torch.device(torch.cuda.current_device()) if torch.cuda.is_available() else "cpu",
+        device=TORCH_DEVICE,
         directory_path=str(CHECKPOINTS_DIR),
         output_path=str(CHECKPOINTS_DIR / "best" / "best_model.pt"),
         max_ensemble_size=MAX_ENSEMBLE_SIZE
