@@ -7,7 +7,7 @@ import random
 import logging
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
-from typing import List, Tuple, Union
+from typing import Optional
 from tqdm import tqdm
 
 from src.tiles import tile_coordinates
@@ -16,30 +16,54 @@ from src.constants import (
     PROCESSED_DIR,
     HOUR_INCREMENT,
     RANDOM_SEED,
-    TRAIN_TEST_RATIO,
     DATA_START_MONTH,
     DATA_END_MONTH,
     NORMALIZATION_STATS_FILE,
     TILES,
-    ZIP_SETTING
+    ZIP_SETTING,
+    SAVE_PRECISION
 )
 
 def xr_to_np():
     """
-    Process raw NetCDF data for multiple tiles and generate combined training and testing datasets.
+    Perform data extraction from NetCDF files to NumPy arrays in a memory-safe way, 
+    using a temporal split (80% train, 20% test).
 
-    After final arrays are concatenated, compute global mean/std of training target precipitation and
-    save them for normalization in subsequent steps.
+    - We do two passes:
+       1) Count total samples in train vs. test.
+       2) Actually load data into memory-mapped arrays, then compute mean/std.
+    - If ZIP_SETTING == 'save', we compress the final memory-mapped arrays into a single .npz.
+    - SAVE_PRECISION in constants.py can be "float16" or "float32" to control how data are stored.
 
-    If ZIP_SETTING == 'load', loads data from combined_dataset.npz and reconstructs the .npy files
-    so the rest of the pipeline can proceed.
-
-    If ZIP_SETTING == 'save', saves final data into combined_dataset.npz (compressed), then removes
-    local .npy files.
-
-    If ZIP_SETTING == False, neither loads nor saves a compressed archive.
+    Updated to compute mean & std in a fast, vectorized manner.
     """
-    # If user wants to load from npz, do it here and return
+
+    # ------------------------------------------------------------------------------
+    # 0) Setup & basic definitions
+    # ------------------------------------------------------------------------------
+    random.seed(RANDOM_SEED)
+    np.random.seed(RANDOM_SEED)
+
+    # Check that SAVE_PRECISION is valid
+    ALLOWED_PRECISIONS = ("float16", "float32")
+    if SAVE_PRECISION not in ALLOWED_PRECISIONS:
+        raise ValueError(f"SAVE_PRECISION must be one of {ALLOWED_PRECISIONS}, but got '{SAVE_PRECISION}'.")
+
+    # Output files for final data
+    train_input_path = PROCESSED_DIR / "combined_train_input.npy"
+    train_target_path = PROCESSED_DIR / "combined_train_target.npy"
+    train_times_path = PROCESSED_DIR / "combined_train_times.npy"
+    train_tile_ids_path = PROCESSED_DIR / "combined_train_tile_ids.npy"
+
+    test_input_path = PROCESSED_DIR / "combined_test_input.npy"
+    test_target_path = PROCESSED_DIR / "combined_test_target.npy"
+    test_times_path = PROCESSED_DIR / "combined_test_times.npy"
+    test_tile_ids_path = PROCESSED_DIR / "combined_test_tile_ids.npy"
+
+    tile_elev_path = PROCESSED_DIR / "combined_tile_elev.npy"
+    normalization_stats_path = NORMALIZATION_STATS_FILE
+
+    # If user wants to 'load' from compressed NPZ, do that and return
     if ZIP_SETTING == 'load':
         npz_path = PROCESSED_DIR / "combined_dataset.npz"
         if not npz_path.exists():
@@ -47,316 +71,313 @@ def xr_to_np():
 
         logging.info(f"Loading data from {npz_path}...")
         with np.load(npz_path, allow_pickle=True) as data:
-            np.save(PROCESSED_DIR / "combined_train_input.npy", data["train_input"])
-            np.save(PROCESSED_DIR / "combined_train_target.npy", data["train_target"])
-            np.save(PROCESSED_DIR / "combined_train_times.npy", data["train_times"])
-            np.save(PROCESSED_DIR / "combined_train_tile_ids.npy", data["train_tile_ids"])
+            np.save(train_input_path, data["train_input"])
+            np.save(train_target_path, data["train_target"])
+            np.save(train_times_path, data["train_times"])
+            np.save(train_tile_ids_path, data["train_tile_ids"])
 
-            np.save(PROCESSED_DIR / "combined_test_input.npy", data["test_input"])
-            np.save(PROCESSED_DIR / "combined_test_target.npy", data["test_target"])
-            np.save(PROCESSED_DIR / "combined_test_times.npy", data["test_times"])
-            np.save(PROCESSED_DIR / "combined_test_tile_ids.npy", data["test_tile_ids"])
+            np.save(test_input_path, data["test_input"])
+            np.save(test_target_path, data["test_target"])
+            np.save(test_times_path, data["test_times"])
+            np.save(test_tile_ids_path, data["test_tile_ids"])
 
-            np.save(PROCESSED_DIR / "combined_tile_elev.npy", data["tile_elev"])
-            np.save(NORMALIZATION_STATS_FILE, data["normalization_stats"])
-        logging.info("NPZ data successfully loaded into .npy files.")
+            np.save(tile_elev_path, data["tile_elev"])
+            np.save(normalization_stats_path, data["normalization_stats"])
+        logging.info("NPZ data successfully loaded into .npy files. Exiting.")
         return
 
-    random.seed(RANDOM_SEED)
-    np.random.seed(RANDOM_SEED)
+    os.makedirs(PROCESSED_DIR, exist_ok=True)
 
-    # Prepare output file paths for final combined arrays
-    train_input_path = PROCESSED_DIR / "combined_train_input.npy"
-    train_target_path = PROCESSED_DIR / "combined_train_target.npy"
-    train_times_path = PROCESSED_DIR / "combined_train_times.npy"
-    train_tile_ids_path = PROCESSED_DIR / "combined_train_tile_ids.npy"
-    test_input_path = PROCESSED_DIR / "combined_test_input.npy"
-    test_target_path = PROCESSED_DIR / "combined_test_target.npy"
-    test_times_path = PROCESSED_DIR / "combined_test_times.npy"
-    test_tile_ids_path = PROCESSED_DIR / "combined_test_tile_ids.npy"
-    tile_elev_path = PROCESSED_DIR / "combined_tile_elev.npy"
-    normalization_stats_path = NORMALIZATION_STATS_FILE
-
-    tiles = TILES
     start_date = datetime(DATA_START_MONTH[0], DATA_START_MONTH[1], 1)
     end_date = datetime(DATA_END_MONTH[0], DATA_END_MONTH[1], 1)
 
-    # Temporary directory for monthly chunks
-    monthly_dir = PROCESSED_DIR / "monthly_chunks"
-    if monthly_dir.exists():
-        for f in monthly_dir.iterdir():
-            f.unlink()
-    else:
-        monthly_dir.mkdir()
-
-    # Open elevation dataset once
+    # 1) Elevation array for all tiles
     elevation_ds = xr.open_dataset("/Users/clamalo/downloads/elevation.nc")
     if 'X' in elevation_ds.dims and 'Y' in elevation_ds.dims:
         elevation_ds = elevation_ds.rename({'X': 'lon', 'Y': 'lat'})
 
-    # Build elevation array for all tiles
     logging.info("Computing elevation per tile...")
-    sample_tile = tiles[0]
-    _, _, fine_latitudes_sample, fine_longitudes_sample = tile_coordinates(sample_tile)
-    Hf = len(fine_latitudes_sample)
-    Wf = len(fine_longitudes_sample)
-    tile_elev_all = np.zeros((len(tiles), 1, Hf, Wf), dtype='float32')
-    for i, t in enumerate(tiles):
-        _, _, fine_latitudes, fine_longitudes = tile_coordinates(t)
-        elev_fine = elevation_ds.interp(lat=fine_latitudes, lon=fine_longitudes).topo.fillna(0.0).values.astype('float32')
-        elev_fine = elev_fine / 8848.9
+    sample_tile = TILES[0]
+    _, _, fine_lat_sample, fine_lon_sample = tile_coordinates(sample_tile)
+    Hf = len(fine_lat_sample)
+    Wf = len(fine_lon_sample)
+
+    # Create tile_elev_all with user-chosen precision
+    tile_elev_all = np.zeros((len(TILES), 1, Hf, Wf), dtype=SAVE_PRECISION)
+    for i, t in enumerate(TILES):
+        _, _, fine_lats, fine_lons = tile_coordinates(t)
+        elev_fine = elevation_ds.interp(lat=fine_lats, lon=fine_lons).topo.fillna(0.0).values
+        # Convert to the user precision
+        elev_fine = (elev_fine / 8848.9).astype(SAVE_PRECISION)
         tile_elev_all[i, 0, :, :] = elev_fine
 
-    # Advance month-by-month
+    np.save(tile_elev_path, tile_elev_all)
+
+    # 2) Count total months in the date range
     total_months = 0
     temp_month = start_date
     while temp_month <= end_date:
         total_months += 1
         temp_month += relativedelta(months=1)
 
-    pbar = tqdm(total=total_months * len(tiles), desc="Processing data month-by-month")
-    month_counter = 0
-    monthly_train_files = []
-    monthly_test_files = []
+    # 80%/20% temporal split
+    train_end_idx = int(0.8 * total_months)
 
+    # 3) First pass: count how many total train samples vs. test samples
+    train_count = 0
+    test_count = 0
+
+    month_idx = 0
     current_month = start_date
     while current_month <= end_date:
-        year = current_month.year
-        month = current_month.month
+        year, month = current_month.year, current_month.month
+        file_path = RAW_DIR / f'{year}-{month:02d}.nc'
+        if file_path.exists():
+            with xr.open_dataset(file_path) as ds:
+                if HOUR_INCREMENT == 3:
+                    time_index = pd.DatetimeIndex(ds.time.values)
+                    selected_hours = time_index[time_index.hour.isin([0, 3, 6, 9, 12, 15, 18, 21])]
+                    ds = ds.sel(time=selected_hours)
+                T = len(ds.time)
+                samples_this_month = T * len(TILES)
+            if month_idx < train_end_idx:
+                train_count += samples_this_month
+            else:
+                test_count += samples_this_month
+
+        current_month += relativedelta(months=1)
+        month_idx += 1
+
+    logging.info(f"Train samples: {train_count}  |  Test samples: {test_count}")
+
+    if train_count == 0 and test_count == 0:
+        logging.warning("No data found in any months. Exiting xr_to_np early.")
+        elevation_ds.close()
+        return
+
+    # 4) Allocate memory-mapped arrays with user precision
+    train_input_map = np.memmap(train_input_path, mode='w+', dtype=SAVE_PRECISION, shape=(train_count, 1, 1, 1))
+    train_target_map = np.memmap(train_target_path, mode='w+', dtype=SAVE_PRECISION, shape=(train_count, 1, 1, 1))
+    train_times_map = np.memmap(train_times_path, mode='w+', dtype='int64', shape=(train_count,))
+    train_tileids_map = np.memmap(train_tile_ids_path, mode='w+', dtype='int32', shape=(train_count,))
+
+    test_input_map = np.memmap(test_input_path, mode='w+', dtype=SAVE_PRECISION, shape=(test_count, 1, 1, 1))
+    test_target_map = np.memmap(test_target_path, mode='w+', dtype=SAVE_PRECISION, shape=(test_count, 1, 1, 1))
+    test_times_map = np.memmap(test_times_path, mode='w+', dtype='int64', shape=(test_count,))
+    test_tileids_map = np.memmap(test_tile_ids_path, mode='w+', dtype='int32', shape=(test_count,))
+
+    def get_coarse_shape_for_one_tile(ds: xr.Dataset, tile: int):
+        clat, clon, _, _ = tile_coordinates(tile)
+        c_ds = ds.interp(lat=clat, lon=clon)
+        c_tp = c_ds.tp.values
+        return c_tp.shape[1], c_tp.shape[2]
+
+    def get_fine_shape_for_one_tile(ds: xr.Dataset, tile: int):
+        _, _, flat, flon = tile_coordinates(tile)
+        f_ds = ds.interp(lat=flat, lon=flon)
+        f_tp = f_ds.tp.values
+        return f_tp.shape[1], f_tp.shape[2]
+
+    # Try to find shapes by scanning the first valid month & tile
+    found_shape = False
+    cH, cW = 0, 0
+    fH, fW = 0, 0
+
+    m_idx = 0
+    cmonth = start_date
+    while cmonth <= end_date and not found_shape:
+        fpath = RAW_DIR / f"{cmonth.year}-{cmonth.month:02d}.nc"
+        if fpath.exists():
+            with xr.open_dataset(fpath) as ds_shape:
+                if HOUR_INCREMENT == 3:
+                    tdx = pd.DatetimeIndex(ds_shape.time.values)
+                    selected_hrs = tdx[tdx.hour.isin([0,3,6,9,12,15,18,21])]
+                    ds_shape = ds_shape.sel(time=selected_hrs)
+                if len(ds_shape.time) > 0:
+                    for tile_ in TILES:
+                        cH, cW = get_coarse_shape_for_one_tile(ds_shape, tile_)
+                        fH, fW = get_fine_shape_for_one_tile(ds_shape, tile_)
+                        found_shape = True
+                        break
+        cmonth += relativedelta(months=1)
+        m_idx += 1
+
+    if not found_shape:
+        logging.warning("No data found for any valid tile. Exiting.")
+        elevation_ds.close()
+        return
+
+    # Now re-create memmaps with correct shapes
+    train_input_map = np.memmap(train_input_path, mode='w+', dtype=SAVE_PRECISION, shape=(train_count, 1, cH, cW))
+    train_target_map = np.memmap(train_target_path, mode='w+', dtype=SAVE_PRECISION, shape=(train_count, 1, fH, fW))
+    test_input_map  = np.memmap(test_input_path,  mode='w+', dtype=SAVE_PRECISION, shape=(test_count, 1, cH, cW))
+    test_target_map = np.memmap(test_target_path, mode='w+', dtype=SAVE_PRECISION, shape=(test_count, 1, fH, fW))
+
+    train_times_map = np.memmap(train_times_path, mode='w+', dtype='int64', shape=(train_count,))
+    train_tileids_map = np.memmap(train_tile_ids_path, mode='w+', dtype='int32', shape=(train_count,))
+    test_times_map  = np.memmap(test_times_path,  mode='w+', dtype='int64', shape=(test_count,))
+    test_tileids_map= np.memmap(test_tile_ids_path, mode='w+', dtype='int32', shape=(test_count,))
+
+    # 5) Second pass: fill arrays
+    train_write_index = 0
+    test_write_index = 0
+
+    month_idx = 0
+    current_month = start_date
+    pbar = tqdm(total=total_months * len(TILES), desc="Processing data (2nd pass)")
+
+    while current_month <= end_date:
+        year, month = current_month.year, current_month.month
         file_path = RAW_DIR / f'{year}-{month:02d}.nc'
         if not file_path.exists():
-            logging.warning(f"Monthly data file not found: {file_path}. Skipping month {year}-{month:02d}.")
-            for _ in tiles:
+            for _ in TILES:
                 pbar.update(1)
             current_month += relativedelta(months=1)
+            month_idx += 1
             continue
 
-        month_ds = xr.open_dataset(file_path)
-        if HOUR_INCREMENT == 3:
-            import pandas as pd
-            time_index = pd.DatetimeIndex(month_ds.time.values)
-            filtered_times = time_index[time_index.hour.isin([0, 3, 6, 9, 12, 15, 18, 21])]
-            month_ds = month_ds.sel(time=filtered_times)
+        with xr.open_dataset(file_path) as ds_month:
+            if HOUR_INCREMENT == 3:
+                tindex = pd.DatetimeIndex(ds_month.time.values)
+                sel_hours = tindex[tindex.hour.isin([0,3,6,9,12,15,18,21])]
+                ds_month = ds_month.sel(time=sel_hours)
+            times = ds_month.time.values
+            T = len(times)
+            if T == 0:
+                for _ in TILES:
+                    pbar.update(1)
+                current_month += relativedelta(months=1)
+                month_idx += 1
+                continue
 
-        times = month_ds.time.values
-        T = len(times)
-        if T == 0:
-            for _ in tiles:
+            times_64 = times.astype("datetime64[s]").astype(np.int64)
+            is_train_month = (month_idx < train_end_idx)
+
+            for tile_ in TILES:
+                clat, clon, flat, flon = tile_coordinates(tile_)
+                c_ds = ds_month.interp(lat=clat, lon=clon)
+                c_tp = c_ds.tp.values.astype(SAVE_PRECISION)  # (T, cH, cW)
+                c_tp = c_tp[:, np.newaxis, :, :]
+
+                f_ds = ds_month.interp(lat=flat, lon=flon)
+                f_tp = f_ds.tp.values.astype(SAVE_PRECISION)  # (T, fH, fW)
+                f_tp = f_tp[:, np.newaxis, :, :]
+
+                tile_ids_arr = np.full(shape=(T,), fill_value=tile_, dtype=np.int32)
+
+                if is_train_month:
+                    end_ = train_write_index + T
+                    train_input_map[train_write_index:end_, :, :, :] = c_tp
+                    train_target_map[train_write_index:end_, :, :, :] = f_tp
+                    train_times_map[train_write_index:end_:] = times_64
+                    train_tileids_map[train_write_index:end_:] = tile_ids_arr
+                    train_write_index = end_
+                else:
+                    end_ = test_write_index + T
+                    test_input_map[test_write_index:end_, :, :, :] = c_tp
+                    test_target_map[test_write_index:end_, :, :, :] = f_tp
+                    test_times_map[test_write_index:end_:] = times_64
+                    test_tileids_map[test_write_index:end_:] = tile_ids_arr
+                    test_write_index = end_
+
                 pbar.update(1)
-            current_month += relativedelta(months=1)
-            continue
 
-        test_count = int(TRAIN_TEST_RATIO * T)
-        time_indices = np.arange(T)
-        np.random.seed(RANDOM_SEED + month_counter)
-        np.random.shuffle(time_indices)
-        test_time_indices = time_indices[:test_count]
-        train_time_indices = time_indices[test_count:]
-        test_times_set = set(times[test_time_indices])
-
-        month_train_input = []
-        month_train_target = []
-        month_train_times = []
-        month_train_tile_ids = []
-
-        month_test_input = []
-        month_test_target = []
-        month_test_times = []
-        month_test_tile_ids = []
-
-        for tile in tiles:
-            coarse_latitudes, coarse_longitudes, fine_latitudes, fine_longitudes = tile_coordinates(tile)
-            coarse_ds = month_ds.interp(lat=coarse_latitudes, lon=coarse_longitudes)
-            fine_ds = month_ds.interp(lat=fine_latitudes, lon=fine_longitudes)
-
-            coarse_tp = coarse_ds.tp.values.astype('float32')
-            fine_tp = fine_ds.tp.values.astype('float32')
-
-            if len(coarse_tp.shape) == 3:
-                coarse_tp = coarse_tp[:, np.newaxis, :, :]
-            if len(fine_tp.shape) == 3:
-                fine_tp = fine_tp[:, np.newaxis, :, :]
-
-            time64 = times.astype('datetime64[s]').astype(np.int64)
-            time_as_datetime = times.astype('datetime64[ns]')
-
-            test_mask = np.array([t in test_times_set for t in time_as_datetime])
-            train_mask = ~test_mask
-
-            # Train samples
-            month_train_input.append(coarse_tp[train_mask])
-            month_train_target.append(fine_tp[train_mask])
-            month_train_times.append(time64[train_mask])
-            month_train_tile_ids.append(np.full(train_mask.sum(), tile, dtype=np.int32))
-
-            # Test samples
-            month_test_input.append(coarse_tp[test_mask])
-            month_test_target.append(fine_tp[test_mask])
-            month_test_times.append(time64[test_mask])
-            month_test_tile_ids.append(np.full(test_mask.sum(), tile, dtype=np.int32))
-
-            pbar.update(1)
-
-        # Concatenate for the month
-        if month_train_input:
-            train_input_all = np.concatenate(month_train_input, axis=0)
-            train_target_all = np.concatenate(month_train_target, axis=0)
-            train_times_all = np.concatenate(month_train_times, axis=0)
-            train_tile_ids_all = np.concatenate(month_train_tile_ids, axis=0)
-
-            test_input_all = np.concatenate(month_test_input, axis=0)
-            test_target_all = np.concatenate(month_test_target, axis=0)
-            test_times_all = np.concatenate(month_test_times, axis=0)
-            test_tile_ids_all = np.concatenate(month_test_tile_ids, axis=0)
-
-            month_train_file_prefix = monthly_dir / f"{year}_{month:02d}_train"
-            month_test_file_prefix = monthly_dir / f"{year}_{month:02d}_test"
-
-            np.save(str(month_train_file_prefix) + "_input.npy", train_input_all)
-            np.save(str(month_train_file_prefix) + "_target.npy", train_target_all)
-            np.save(str(month_train_file_prefix) + "_times.npy", train_times_all)
-            np.save(str(month_train_file_prefix) + "_tile_ids.npy", train_tile_ids_all)
-
-            np.save(str(month_test_file_prefix) + "_input.npy", test_input_all)
-            np.save(str(month_test_file_prefix) + "_target.npy", test_target_all)
-            np.save(str(month_test_file_prefix) + "_times.npy", test_times_all)
-            np.save(str(month_test_file_prefix) + "_tile_ids.npy", test_tile_ids_all)
-
-            monthly_train_files.append(str(month_train_file_prefix))
-            monthly_test_files.append(str(month_test_file_prefix))
-
-            del (train_input_all, train_target_all, train_times_all, train_tile_ids_all,
-                 test_input_all, test_target_all, test_times_all, test_tile_ids_all,
-                 month_train_input, month_train_target, month_train_times, month_train_tile_ids,
-                 month_test_input, month_test_target, month_test_times, month_test_tile_ids)
-            gc.collect()
-
-        month_counter += 1
         current_month += relativedelta(months=1)
+        month_idx += 1
 
     pbar.close()
+    elevation_ds.close()
 
-    logging.info("Combining monthly chunks into final arrays...")
+    # 6) Compute normalization stats from the *training target* in a fast, vectorized manner
+    train_input_map.flush()
+    train_target_map.flush()
+    train_times_map.flush()
+    train_tileids_map.flush()
+    test_input_map.flush()
+    test_target_map.flush()
+    test_times_map.flush()
+    test_tileids_map.flush()
 
-    def concatenate_npy_files(file_prefixes, suffix):
-        total_samples = 0
-        shape = None
-        dtype = None
-        for fp in file_prefixes:
-            arr = np.load(fp + suffix)
-            if shape is None:
-                shape = arr.shape[1:]
-                dtype = arr.dtype
-            total_samples += arr.shape[0]
+    if train_write_index > 0:  # i.e. train_count > 0
+        logging.info("Computing mean/std from training target in streaming mode (fast vector approach)...")
+        # We'll reopen memmap in read-only, but convert slices to float64 for stable sums
+        train_target_map_ro = np.memmap(train_target_path, mode='r', dtype=SAVE_PRECISION,
+                                        shape=(train_write_index, 1, fH, fW))
 
-        if total_samples == 0:
-            return np.empty((0,) + (shape if shape else (1,1,1)), dtype=dtype if dtype else 'float32')
+        sum_ = 0.0
+        sum_sq_ = 0.0
+        total_pixels = 0
+        batch_size_for_stats = 50_000
 
-        final_arr = np.empty((total_samples,) + shape, dtype=dtype)
+        for start_idx in range(0, train_write_index, batch_size_for_stats):
+            end_idx = min(start_idx + batch_size_for_stats, train_write_index)
+            data_slice = train_target_map_ro[start_idx:end_idx].astype(np.float64, copy=False).reshape(-1)
 
-        start = 0
-        with tqdm(total=len(file_prefixes), desc=f"Merging {suffix} files", unit="file") as merge_pbar:
-            for fp in file_prefixes:
-                arr = np.load(fp + suffix)
-                length = arr.shape[0]
-                final_arr[start:start+length] = arr
-                start += length
-                merge_pbar.update(1)
+            sum_ += float(data_slice.sum())
+            sum_sq_ += float((data_slice * data_slice).sum())
+            total_pixels += data_slice.size
 
-        return final_arr
-
-    # Train sets
-    if monthly_train_files:
-        final_train_input = concatenate_npy_files(monthly_train_files, "_input.npy")
-        final_train_target = concatenate_npy_files(monthly_train_files, "_target.npy")
-        final_train_times = concatenate_npy_files(monthly_train_files, "_times.npy")
-        final_train_tile_ids = concatenate_npy_files(monthly_train_files, "_tile_ids.npy")
-    else:
-        final_train_input = np.empty((0,1,1,1), dtype=np.float32)
-        final_train_target = np.empty((0,1,1,1), dtype=np.float32)
-        final_train_times = np.empty((0,), dtype=np.int64)
-        final_train_tile_ids = np.empty((0,), dtype=np.int32)
-
-    # Test sets
-    if monthly_test_files:
-        final_test_input = concatenate_npy_files(monthly_test_files, "_input.npy")
-        final_test_target = concatenate_npy_files(monthly_test_files, "_target.npy")
-        final_test_times = concatenate_npy_files(monthly_test_files, "_times.npy")
-        final_test_tile_ids = concatenate_npy_files(monthly_test_files, "_tile_ids.npy")
-    else:
-        final_test_input = np.empty((0,1,1,1), dtype=np.float32)
-        final_test_target = np.empty((0,1,1,1), dtype=np.float32)
-        final_test_times = np.empty((0,), dtype=np.int64)
-        final_test_tile_ids = np.empty((0,), dtype=np.int32)
-
-    # Save final arrays
-    np.save(train_input_path, final_train_input)
-    np.save(train_target_path, final_train_target)
-    np.save(train_times_path, final_train_times)
-    np.save(train_tile_ids_path, final_train_tile_ids)
-
-    np.save(test_input_path, final_test_input)
-    np.save(test_target_path, final_test_target)
-    np.save(test_times_path, final_test_times)
-    np.save(test_tile_ids_path, final_test_tile_ids)
-
-    np.save(tile_elev_path, tile_elev_all)
-
-    # Compute normalization stats from training targets
-    if final_train_target.size > 0:
-        train_targets_flat = final_train_target.flatten()
-        mean_val = float(train_targets_flat.mean())
-        std_val = float(train_targets_flat.std())
-        if std_val < 1e-8:
+        if total_pixels < 2:
+            mean_val = sum_ / max(total_pixels, 1)
             std_val = 1e-8
+        else:
+            mean_val = sum_ / total_pixels
+            var_ = (sum_sq_ / total_pixels) - (mean_val ** 2)
+            std_val = float(np.sqrt(max(var_, 1e-8)))
     else:
+        logging.warning("No training samples found => Using mean=0, std=1")
         mean_val = 0.0
         std_val = 1.0
 
-    np.save(normalization_stats_path, np.array([mean_val, std_val], dtype=np.float32))
+    # Save normalization stats in the user-specified precision
+    np.save(normalization_stats_path, np.array([mean_val, std_val], dtype=SAVE_PRECISION))
+    logging.info(f"Normalization stats saved (dtype={SAVE_PRECISION}): mean={mean_val:.5f}, std={std_val:.5f}")
 
-    # ---- Reduce precision after building the final arrays and reload them for saving as npz ----
-    final_train_input = final_train_input.astype('float16')
-    final_train_target = final_train_target.astype('float16')
-    final_test_input = final_test_input.astype('float16')
-    final_test_target = final_test_target.astype('float16')
-    tile_elev_all = tile_elev_all.astype('float16')
-
-    normalization_stats = np.array([mean_val, std_val], dtype='float16')
-
-    # Optionally save data to a single compressed NPZ
+    # 7) Optionally save to single .npz
     if ZIP_SETTING == 'save':
         npz_path = PROCESSED_DIR / "combined_dataset.npz"
         logging.info(f"Saving to compressed NPZ: {npz_path}")
+
+        # Re-open memmaps in read-only
+        tr_in = np.memmap(train_input_path, mode='r', dtype=SAVE_PRECISION, shape=(train_write_index, 1, cH, cW))
+        tr_tg = np.memmap(train_target_path, mode='r', dtype=SAVE_PRECISION, shape=(train_write_index, 1, fH, fW))
+        tr_tm = np.memmap(train_times_path, mode='r', dtype='int64', shape=(train_write_index,))
+        tr_tid= np.memmap(train_tile_ids_path, mode='r', dtype='int32', shape=(train_write_index,))
+
+        te_in = np.memmap(test_input_path, mode='r', dtype=SAVE_PRECISION, shape=(test_write_index, 1, cH, cW))
+        te_tg = np.memmap(test_target_path, mode='r', dtype=SAVE_PRECISION, shape=(test_write_index, 1, fH, fW))
+        te_tm = np.memmap(test_times_path, mode='r', dtype='int64', shape=(test_write_index,))
+        te_tid= np.memmap(test_tile_ids_path, mode='r', dtype='int32', shape=(test_write_index,))
+
+        tile_elev = np.load(tile_elev_path)  # shape=(len(TILES),1,Hf,Wf) already in SAVE_PRECISION
+        # Also store mean/std in that same precision
+        norm_stats = np.array([mean_val, std_val], dtype=SAVE_PRECISION)
+
         np.savez_compressed(
             npz_path,
-            train_input=final_train_input,
-            train_target=final_train_target,
-            train_times=final_train_times,
-            train_tile_ids=final_train_tile_ids,
-            test_input=final_test_input,
-            test_target=final_test_target,
-            test_times=final_test_times,
-            test_tile_ids=final_test_tile_ids,
-            tile_elev=tile_elev_all,
-            normalization_stats=normalization_stats
+            train_input=tr_in,
+            train_target=tr_tg,
+            train_times=tr_tm,
+            train_tile_ids=tr_tid,
+            test_input=te_in,
+            test_target=te_tg,
+            test_times=te_tm,
+            test_tile_ids=te_tid,
+            tile_elev=tile_elev,
+            normalization_stats=norm_stats
         )
-        logging.info("Data compressed and saved as NPZ. Removing local .npy files...")
 
-        # Remove local npy files (mirroring old zip logic)
-        os.remove(train_input_path)
-        os.remove(train_target_path)
-        os.remove(train_times_path)
-        os.remove(train_tile_ids_path)
-        os.remove(test_input_path)
-        os.remove(test_target_path)
-        os.remove(test_times_path)
-        os.remove(test_tile_ids_path)
-        os.remove(tile_elev_path)
-        os.remove(normalization_stats_path)
+        logging.info("Data compressed and saved as NPZ. Removing local .npy files...")
+        # Remove local .npy
+        for f in [
+            train_input_path, train_target_path, train_times_path, train_tile_ids_path,
+            test_input_path, test_target_path, test_times_path, test_tile_ids_path,
+            tile_elev_path, normalization_stats_path
+        ]:
+            if f.exists():
+                os.remove(f)
+
         logging.info("Local .npy files removed.")
 
-
-    # Cleanup
-    elevation_ds.close()
     gc.collect()
+    logging.info("xr_to_np completed successfully.")
