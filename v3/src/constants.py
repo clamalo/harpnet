@@ -63,7 +63,7 @@ MAX_ENSEMBLE_SIZE = 8          # Maximum number of checkpoints in ensemble
 TILES = list(range(15, 16))     # List of tile indices to process
 FOCUS_TILE = 8                 # Tile index to focus metrics on (optional)
 
-ZIP_SETTING = 'save'  # Controls whether to load or save compressed data: 'save'|'load'|False
+ZIP_SETTING = 'load'  # Controls whether to load or save compressed data: 'save'|'load'|False
 PRE_MODEL_INTERPOLATION = "nearest"  # Interpolation mode for up/downsampling
 
 # ----------------------------------------------------------

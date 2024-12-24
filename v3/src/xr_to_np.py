@@ -91,23 +91,36 @@ def xr_to_np():
         temp_month += relativedelta(months=1)
     train_end_idx = int(0.8 * total_months)
 
-    # --- OPEN ELEVATION & PREPARE TILE-ELEV ARRAY ---
-    elevation_ds = xr.open_dataset("/Users/clamalo/downloads/elevation.nc")
-    if 'X' in elevation_ds.dims and 'Y' in elevation_ds.dims:
-        elevation_ds = elevation_ds.rename({'X': 'lon', 'Y': 'lat'})
-    logging.info("Computing elevation per tile...")
+    # For logging: Gather a full list of months, then split into train vs. test
+    month_list = []
+    temp_month_for_list = start_date
+    while temp_month_for_list <= end_date:
+        month_list.append(temp_month_for_list)
+        temp_month_for_list += relativedelta(months=1)
 
-    sample_tile = TILES[0]
-    _, _, fine_lat_sample, fine_lon_sample = tile_coordinates(sample_tile)
-    Hf = len(fine_lat_sample)
-    Wf = len(fine_lon_sample)
-    tile_elev_all = np.zeros((len(TILES), 1, Hf, Wf), dtype=SAVE_PRECISION)
-    for i, t in enumerate(TILES):
-        _, _, fine_lats, fine_lons = tile_coordinates(t)
-        elev_fine = elevation_ds.interp(lat=fine_lats, lon=fine_lons).topo.fillna(0.0).values
-        elev_fine = (elev_fine / 8848.9).astype(SAVE_PRECISION)
-        tile_elev_all[i, 0, :, :] = elev_fine
-    np.save(tile_elev_path, tile_elev_all)
+    train_months = month_list[:train_end_idx]
+    test_months = month_list[train_end_idx:]
+
+    # Print the first/last month and the count in each set
+    if len(train_months) > 0:
+        tm_first = train_months[0]
+        tm_last = train_months[-1]
+        logging.info(
+            f"Train months: {tm_first.year}-{tm_first.month:02d} to {tm_last.year}-{tm_last.month:02d} "
+            f"({len(train_months)} months)"
+        )
+    else:
+        logging.info("Train months: None (0 months)")
+
+    if len(test_months) > 0:
+        tm_first = test_months[0]
+        tm_last = test_months[-1]
+        logging.info(
+            f"Test months: {tm_first.year}-{tm_first.month:02d} to {tm_last.year}-{tm_last.month:02d} "
+            f"({len(test_months)} months)"
+        )
+    else:
+        logging.info("Test months: None (0 months)")
 
     # --- FIRST PASS: COUNT TRAIN/TEST SAMPLES ---
     train_count = 0
@@ -130,13 +143,13 @@ def xr_to_np():
             else:
                 test_count += samples_this_month
 
+        # Fix: use relativedelta here, not relativedata
         current_month += relativedelta(months=1)
         month_idx += 1
 
     logging.info(f"Train samples: {train_count}  |  Test samples: {test_count}")
     if train_count == 0 and test_count == 0:
         logging.warning("No data found in any months. Exiting xr_to_np early.")
-        elevation_ds.close()
         return
 
     # --- ALLOCATE MEMMAP ARRAYS (INITIAL, MAY RESHAPE) ---
@@ -186,7 +199,6 @@ def xr_to_np():
 
     if not found_shape:
         logging.warning("No data found for any valid tile. Exiting.")
-        elevation_ds.close()
         return
 
     # --- RE-CREATE MEMMAPS WITH ACTUAL SHAPES ---
@@ -267,7 +279,6 @@ def xr_to_np():
         month_idx += 1
 
     pbar.close()
-    elevation_ds.close()
 
     # --- COMPUTE NORMALIZATION STATS FROM TRAINING TARGET ---
     train_input_map.flush()
@@ -311,6 +322,25 @@ def xr_to_np():
     # --- SAVE NORMALIZATION STATS ---
     np.save(normalization_stats_path, np.array([mean_val, std_val], dtype=SAVE_PRECISION))
     logging.info(f"Normalization stats saved (dtype={SAVE_PRECISION}): mean={mean_val:.5f}, std={std_val:.5f}")
+
+    # --- OPEN ELEVATION & PREPARE TILE-ELEV ARRAY ---
+    logging.info("Computing elevation per tile...")
+    elevation_ds = xr.open_dataset("/Users/clamalo/downloads/elevation.nc")
+    if 'X' in elevation_ds.dims and 'Y' in elevation_ds.dims:
+        elevation_ds = elevation_ds.rename({'X': 'lon', 'Y': 'lat'})
+
+    sample_tile = TILES[0]
+    _, _, fine_lat_sample, fine_lon_sample = tile_coordinates(sample_tile)
+    Hf = len(fine_lat_sample)
+    Wf = len(fine_lon_sample)
+    tile_elev_all = np.zeros((len(TILES), 1, Hf, Wf), dtype=SAVE_PRECISION)
+    for i, t in enumerate(TILES):
+        _, _, fine_lats, fine_lons = tile_coordinates(t)
+        elev_fine = elevation_ds.interp(lat=fine_lats, lon=fine_lons).topo.fillna(0.0).values
+        elev_fine = (elev_fine / 8848.9).astype(SAVE_PRECISION)
+        tile_elev_all[i, 0, :, :] = elev_fine
+    elevation_ds.close()
+    np.save(tile_elev_path, tile_elev_all)
 
     # --- OPTIONAL .NPZ COMPRESSION ---
     if ZIP_SETTING == 'save':
