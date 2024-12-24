@@ -14,7 +14,7 @@ from pathlib import Path
 from src.constants import (CHECKPOINTS_DIR, TORCH_DEVICE, RANDOM_SEED, MODEL_NAME, DETERMINISTIC)
 import importlib
 from src.generate_dataloaders import generate_dataloaders
-from src.ensemble import run_ensemble_on_directory
+from src.ensemble import ensemble_checkpoints
 from src.train_test import train_one_epoch, test_model, get_criterion
 
 # --- DYNAMIC MODEL IMPORT ---
@@ -85,7 +85,13 @@ def fine_tune_single_tile(tile: int,
 
     # --- RUN ENSEMBLE ON TILE-SPECIFIC CHECKPOINTS ---
     best_output_path = CHECKPOINTS_DIR / 'best' / f"{tile}_best.pt"
-    run_ensemble_on_directory(str(tile_ckpt_dir), test_dataloader, device, str(best_output_path))
+    ensemble_checkpoints(
+        test_dataloader=test_dataloader,
+        device=device,
+        directory_path=str(tile_ckpt_dir),
+        output_path=str(best_output_path),
+        max_ensemble_size=None
+    )
     logging.info(f"Best fine-tuned model for tile {tile} saved at {best_output_path}")
 
 if __name__ == "__main__":

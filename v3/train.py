@@ -15,7 +15,7 @@ from src.setup import setup
 from src.xr_to_np import xr_to_np
 from src.generate_dataloaders import generate_dataloaders
 from src.train_test import train_test
-from src.ensemble import ensemble
+from src.ensemble import ensemble_checkpoints
 
 # Import constants for controlling the training process
 from src.constants import (
@@ -29,7 +29,8 @@ from src.constants import (
     TILES,
     FOCUS_TILE,
     ZIP_SETTING,
-    DETERMINISTIC
+    DETERMINISTIC,
+    CHECKPOINTS_DIR
 )
 
 # Set seeds once at the start for reproducibility
@@ -70,10 +71,11 @@ if __name__ == "__main__":
     )
 
     # --- RUN ENSEMBLE ---
-    ensemble(
-        TILES,
-        DATA_START_MONTH,
-        DATA_END_MONTH,
-        TRAIN_TEST_RATIO,
+    best_ensemble_path = ensemble_checkpoints(
+        test_dataloader=test_dataloader,
+        device=torch.device(torch.cuda.current_device()) if torch.cuda.is_available() else "cpu",
+        directory_path=str(CHECKPOINTS_DIR),
+        output_path=str(CHECKPOINTS_DIR / "best" / "best_model.pt"),
         max_ensemble_size=MAX_ENSEMBLE_SIZE
     )
+    logging.info(f"Best ensemble model saved to: {best_ensemble_path}")

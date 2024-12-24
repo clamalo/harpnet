@@ -9,11 +9,12 @@ import torch
 import numpy as np
 import logging
 from typing import List, Optional, Tuple, Dict
-from src.generate_dataloaders import generate_dataloaders
-from src.constants import CHECKPOINTS_DIR, TORCH_DEVICE, MODEL_NAME
 import importlib
 import torch.nn as nn
+
+from src.constants import CHECKPOINTS_DIR, TORCH_DEVICE, MODEL_NAME
 from src.train_test import test_model, get_criterion
+from src.generate_dataloaders import generate_dataloaders
 
 # Dynamically import model based on MODEL_NAME from constants
 model_module = importlib.import_module(f"src.models.{MODEL_NAME}")
@@ -46,6 +47,7 @@ def load_checkpoint_test_loss(checkpoint_path: str, device: str) -> Tuple[float,
     elif 'model_state_dict' in checkpoint:
         state_dict = checkpoint['model_state_dict']
     else:
+        # Some older checkpoints might have the model's state dict at the top level
         state_dict = checkpoint
 
     if test_loss is None:
@@ -82,154 +84,35 @@ def evaluate_model(model: ModelClass, test_dataloader, device: str) -> float:
     logging.info(f"  Unnorm MSE: {metrics['unnorm_test_mse']:.6f}, Unnorm MAE: {metrics['unnorm_test_mae']:.6f}, Unnorm Corr: {metrics['unnorm_test_corr']:.4f}")
     return metrics["mean_test_loss"]
 
-def ensemble(tiles: List[int], 
-             start_month: Tuple[int,int], 
-             end_month: Tuple[int,int], 
-             train_test_ratio: float, 
-             max_ensemble_size: Optional[int] = None) -> None:
+def ensemble_checkpoints(
+    test_dataloader,
+    device: str,
+    directory_path: str,
+    output_path: Optional[str] = None,
+    max_ensemble_size: Optional[int] = None
+) -> str:
     """
-    Performs an ensemble of multiple checkpoints. Averages state dicts from the best checkpoints 
-    (lowest normalized test loss) in ascending order of test loss, evaluating after each addition.
+    Performs an ensemble of checkpoints found in 'directory_path'. Averages their state dicts
+    based on ascending order of normalized test loss, evaluating after each addition. The best 
+    averaged state dict (lowest test loss) is saved to 'output_path' if provided, or 
+    directory_path/best/best_model.pt by default.
+
+    Returns:
+        str: The file path to the best ensemble model.
     """
-    device = TORCH_DEVICE
-    logging.info(f"Using device: {device}")
-    logging.info("Generating data loaders for all tiles combined...")
-    train_dataloader, test_dataloader = generate_dataloaders()
-    logging.info(f"Number of test batches: {len(test_dataloader)}")
-
-    logging.info("Initializing the model...")
-    model = ModelClass().to(device)
-
-    checkpoint_files = [
-        f for f in os.listdir(CHECKPOINTS_DIR)
-        if os.path.isfile(os.path.join(CHECKPOINTS_DIR, f)) and f.endswith('_model.pt')
-    ]
-
-    if not checkpoint_files:
-        raise FileNotFoundError(f"No checkpoint files found in directory: {CHECKPOINTS_DIR}")
-
-    checkpoints = []
-    logging.info(f"Found {len(checkpoint_files)} checkpoint file(s).")
-
-    # --- LOAD & RECORD TEST LOSSES ---
-    for file_name in checkpoint_files:
-        checkpoint_path = os.path.join(CHECKPOINTS_DIR, file_name)
-        try:
-            test_loss, _, bilinear_test_loss = load_checkpoint_test_loss(checkpoint_path, device)
-            checkpoints.append({
-                'file_name': file_name,
-                'test_loss': test_loss,
-                'checkpoint_path': checkpoint_path,
-                'bilinear_test_loss': bilinear_test_loss
-            })
-            logging.info(f"Loaded checkpoint '{file_name}' with normalized test_loss: {test_loss}")
-        except (KeyError, TypeError, ValueError) as e:
-            logging.warning(f"Skipping checkpoint '{file_name}': {e}")
-
-    if not checkpoints:
-        raise ValueError("No valid checkpoints with test_loss found.")
-
-    # --- SORT CHECKPOINTS ---
-    sorted_checkpoints = sorted(checkpoints, key=lambda x: x['test_loss'])
-    logging.info("\nCheckpoints sorted by test_loss (ascending):")
-    for ckpt in sorted_checkpoints:
-        logging.info(f"  {ckpt['file_name']}: Normalized Test Loss = {ckpt['test_loss']}")
-
-    total_models = len(sorted_checkpoints)
-    logging.info(f"\nTotal valid checkpoints to consider: {total_models}")
-
-    if max_ensemble_size is not None:
-        max_ensemble_size = min(max_ensemble_size, total_models)
-        logging.info(f"Maximum ensemble size set to: {max_ensemble_size}")
-    else:
-        max_ensemble_size = total_models
-        logging.info(f"No maximum ensemble size specified. Using all {max_ensemble_size} available checkpoints.")
-
-    # --- START WITH BEST CHECKPOINT ---
-    first_checkpoint = sorted_checkpoints[0]
-    test_loss, state_dict, bilinear_test_loss = load_checkpoint_test_loss(first_checkpoint['checkpoint_path'], device)
-    cumulative_state_dict = initialize_cumulative_state_dict(state_dict, device)
-    add_state_dict_to_cumulative(cumulative_state_dict, state_dict)
-
-    logging.info(f"\nEvaluating ensemble with 1 model (checkpoint: {first_checkpoint['file_name']}):")
-    model.load_state_dict(state_dict)
-    del state_dict
-    gc.collect()
-    mean_loss = evaluate_model(model, test_dataloader, device)
-
-    best_mean_loss = mean_loss
-    best_num_models = 1
-    best_ensemble_state_dict = {k: v.clone() for k, v in model.state_dict().items()}
-    best_bilinear_test_loss = bilinear_test_loss
-
-    # --- INCREMENTALLY ADD MODELS ---
-    for N in range(2, max_ensemble_size + 1):
-        logging.info(f"\nEvaluating ensemble with {N} model(s):")
-        next_checkpoint = sorted_checkpoints[N-1]
-        try:
-            test_loss_n, state_dict_n, bilinear_test_loss_n = load_checkpoint_test_loss(next_checkpoint['checkpoint_path'], device)
-            add_state_dict_to_cumulative(cumulative_state_dict, state_dict_n)
-        except Exception as e:
-            logging.warning(f"Failed to load state_dict from '{next_checkpoint['file_name']}': {e}")
-            continue
-
-        averaged_state_dict = {key: (val / N) for key, val in cumulative_state_dict.items()}
-
-        try:
-            model.load_state_dict(averaged_state_dict, strict=False)
-        except Exception as e:
-            logging.warning(f"Failed to load averaged state_dict into the model for ensemble size {N}: {e}")
-            del averaged_state_dict
-            del state_dict_n
-            gc.collect()
-            continue
-
-        mean_loss = evaluate_model(model, test_dataloader, device)
-        if mean_loss < best_mean_loss:
-            best_mean_loss = mean_loss
-            best_num_models = N
-            best_ensemble_state_dict = {key: val.clone() for key, val in averaged_state_dict.items()}
-            best_bilinear_test_loss = bilinear_test_loss_n
-
-        del averaged_state_dict
-        del state_dict_n
-        gc.collect()
-
-    # --- SAVE BEST ENSEMBLE ---
-    if best_ensemble_state_dict is not None:
-        model.load_state_dict(best_ensemble_state_dict, strict=False)
-        logging.info(f"\nOptimal ensemble size: {best_num_models} model(s) with Normalized MSE = {best_mean_loss:.6f}")
-
-        best_dir = os.path.join(CHECKPOINTS_DIR, 'best')
-        os.makedirs(best_dir, exist_ok=True)
-
-        best_model_path = os.path.join(best_dir, "best_model.pt")
-        try:
-            torch.save({
-                'model_state_dict': best_ensemble_state_dict,
-                'test_loss': best_mean_loss,
-                'bilinear_test_loss': best_bilinear_test_loss
-            }, best_model_path)
-            logging.info(f"Best ensemble model saved to: {best_model_path}")
-        except Exception as e:
-            logging.error(f"Failed to save the best ensemble model: {e}")
-    else:
-        logging.warning("\nNo valid ensemble found.")
-
-def run_ensemble_on_directory(directory_path: str, test_dataloader, device: str, output_path: str) -> str:
-    """
-    Averages checkpoints in a specific directory, returning the best ensemble model path.
-    Useful for fine-tuning or tile-specific ensembles.
-    """
-    model = ModelClass().to(device)
+    # -------------------------------------------------------------------------
+    # Gather checkpoint files from the specified directory
+    # -------------------------------------------------------------------------
     checkpoint_files = [
         f for f in os.listdir(directory_path)
         if os.path.isfile(os.path.join(directory_path, f)) and f.endswith('_model.pt')
     ]
-
     if not checkpoint_files:
         raise FileNotFoundError(f"No checkpoint files found in directory: {directory_path}")
 
+    # -------------------------------------------------------------------------
+    # Load test losses for each checkpoint
+    # -------------------------------------------------------------------------
     checkpoints = []
     for file_name in checkpoint_files:
         checkpoint_path = os.path.join(directory_path, file_name)
@@ -242,60 +125,104 @@ def run_ensemble_on_directory(directory_path: str, test_dataloader, device: str,
                 'bilinear_test_loss': bilinear_test_loss,
                 'state_dict': state_dict
             })
-        except Exception as e:
+            logging.info(f"Loaded checkpoint '{file_name}' with normalized test_loss: {test_loss}")
+        except (KeyError, TypeError, ValueError) as e:
             logging.warning(f"Skipping checkpoint '{file_name}': {e}")
 
     if not checkpoints:
         raise ValueError("No valid checkpoints with test_loss found in the specified directory.")
 
+    # -------------------------------------------------------------------------
+    # Sort by ascending test_loss
+    # -------------------------------------------------------------------------
     sorted_checkpoints = sorted(checkpoints, key=lambda x: x['test_loss'])
+    logging.info("\nCheckpoints sorted by test_loss (ascending):")
+    for ckpt in sorted_checkpoints:
+        logging.info(f"  {ckpt['file_name']}: Normalized Test Loss = {ckpt['test_loss']}")
 
-    # --- START FROM BEST CHECKPOINT ---
-    first = sorted_checkpoints[0]
-    cumulative_state_dict = initialize_cumulative_state_dict(first['state_dict'], device)
-    add_state_dict_to_cumulative(cumulative_state_dict, first['state_dict'])
+    total_models = len(sorted_checkpoints)
+    if max_ensemble_size is not None:
+        max_ensemble_size = min(max_ensemble_size, total_models)
+        logging.info(f"Maximum ensemble size set to: {max_ensemble_size}")
+    else:
+        max_ensemble_size = total_models
+        logging.info(f"No maximum ensemble size specified. Using all {max_ensemble_size} available checkpoints.")
 
-    criterion = get_criterion()
-    model.load_state_dict(first['state_dict'], strict=False)
-    single_metrics = test_model(model, test_dataloader, criterion, focus_tile=None)
-    single_mean_loss = single_metrics["mean_test_loss"]
+    # -------------------------------------------------------------------------
+    # Initialize
+    # -------------------------------------------------------------------------
+    model = ModelClass().to(device)
+    first_ckpt = sorted_checkpoints[0]
+    cumulative_state_dict = initialize_cumulative_state_dict(first_ckpt['state_dict'], device)
+    add_state_dict_to_cumulative(cumulative_state_dict, first_ckpt['state_dict'])
 
-    best_mean_loss = single_mean_loss
+    # Load and evaluate first checkpoint
+    logging.info(f"\nEvaluating ensemble with 1 model (checkpoint: {first_ckpt['file_name']}):")
+    model.load_state_dict(first_ckpt['state_dict'], strict=False)
+    del first_ckpt['state_dict']
+    gc.collect()
+
+    best_mean_loss = evaluate_model(model, test_dataloader, device)
     best_num_models = 1
-    best_ensemble_state_dict = {k: v.clone() for k,v in model.state_dict().items()}
-    best_bilinear = first['bilinear_test_loss']
+    best_ensemble_state_dict = {k: v.clone() for k, v in model.state_dict().items()}
+    best_bilinear_test_loss = sorted_checkpoints[0]['bilinear_test_loss']
 
-    # --- TRY ENSEMBLES OF INCREASING SIZE ---
-    for N in range(2, len(sorted_checkpoints)+1):
-        next_ckpt = sorted_checkpoints[N-1]
-        add_state_dict_to_cumulative(cumulative_state_dict, next_ckpt['state_dict'])
-        averaged_state_dict = {k: (v/N) for k,v in cumulative_state_dict.items()}
+    # -------------------------------------------------------------------------
+    # Iteratively add checkpoints
+    # -------------------------------------------------------------------------
+    for N in range(2, max_ensemble_size + 1):
+        next_ckpt = sorted_checkpoints[N - 1]
+        logging.info(f"\nEvaluating ensemble with {N} model(s): {next_ckpt['file_name']}")
+        try:
+            add_state_dict_to_cumulative(cumulative_state_dict, next_ckpt['state_dict'])
+            averaged_state_dict = {k: (v / N) for k, v in cumulative_state_dict.items()}
+        except Exception as e:
+            logging.warning(f"Skipping adding checkpoint '{next_ckpt['file_name']}': {e}")
+            continue
+
         try:
             model.load_state_dict(averaged_state_dict, strict=False)
         except Exception as e:
-            logging.warning(f"Failed to load averaged state_dict for N={N}: {e}")
+            logging.warning(f"Failed to load averaged state_dict for ensemble size {N}: {e}")
             del averaged_state_dict
+            del next_ckpt['state_dict']
             gc.collect()
             continue
 
-        ensemble_metrics = test_model(model, test_dataloader, criterion, focus_tile=None)
-        ensemble_mean_loss = ensemble_metrics["mean_test_loss"]
-        if ensemble_mean_loss < best_mean_loss:
-            best_mean_loss = ensemble_mean_loss
+        mean_loss = evaluate_model(model, test_dataloader, device)
+        if mean_loss < best_mean_loss:
+            best_mean_loss = mean_loss
             best_num_models = N
-            best_ensemble_state_dict = {key: val.clone() for key,val in model.state_dict().items()}
-            best_bilinear = next_ckpt['bilinear_test_loss']
+            best_ensemble_state_dict = {key: val.clone() for key, val in model.state_dict().items()}
+            best_bilinear_test_loss = next_ckpt['bilinear_test_loss']
 
         del averaged_state_dict
+        del next_ckpt['state_dict']
         gc.collect()
 
-    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    # -------------------------------------------------------------------------
+    # Save best ensemble
+    # -------------------------------------------------------------------------
+    if output_path is None:
+        # Default to directory_path/best/best_model.pt
+        best_dir = os.path.join(directory_path, 'best')
+        os.makedirs(best_dir, exist_ok=True)
+        output_path = os.path.join(best_dir, "best_model.pt")
+    else:
+        # Ensure parent directories exist
+        os.makedirs(os.path.dirname(output_path), exist_ok=True)
 
-    torch.save({
-        'model_state_dict': best_ensemble_state_dict,
-        'test_loss': best_mean_loss,
-        'bilinear_test_loss': best_bilinear
-    }, output_path)
+    model.load_state_dict(best_ensemble_state_dict, strict=False)
+    logging.info(f"\nOptimal ensemble size: {best_num_models} model(s) with Normalized MSE = {best_mean_loss:.6f}")
 
-    logging.info(f"Best ensemble for {directory_path} found with {best_num_models} model(s), normalized MSE={best_mean_loss:.6f}.")
+    try:
+        torch.save({
+            'model_state_dict': best_ensemble_state_dict,
+            'test_loss': best_mean_loss,
+            'bilinear_test_loss': best_bilinear_test_loss
+        }, output_path)
+        logging.info(f"Best ensemble model saved to: {output_path}")
+    except Exception as e:
+        logging.error(f"Failed to save the best ensemble model: {e}")
+
     return output_path

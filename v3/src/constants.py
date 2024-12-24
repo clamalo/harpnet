@@ -50,12 +50,12 @@ FINE_RESOLUTION = 0.125  # Fine spatial resolution in degrees
 PADDING = 0.25  # Extra padding (in degrees) around each tile for coarse data
 
 DATA_START_MONTH = (1979, 10)  # Start year/month for dataset
-DATA_END_MONTH = (1989, 9)     # End year/month for dataset
+DATA_END_MONTH = (1980, 9)     # End year/month for dataset
 TRAIN_TEST_RATIO = 0.2         # Fraction of data used for testing
 TRAIN_START_EPOCH = 0          # Epoch at which training starts (useful for resume)
 TRAIN_END_EPOCH = 5            # Epoch at which training ends
 MAX_ENSEMBLE_SIZE = 8          # Maximum number of checkpoints in ensemble
-TILES = list(range(0, 20))     # List of tile indices to process
+TILES = list(range(15, 16))     # List of tile indices to process
 FOCUS_TILE = 8                 # Tile index to focus metrics on (optional)
 
 ZIP_SETTING = 'load'  # Controls whether to load or save compressed data: 'save'|'load'|False
