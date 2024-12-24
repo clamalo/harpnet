@@ -92,10 +92,6 @@ if __name__ == "__main__":
         torch.backends.cudnn.deterministic = True
         torch.backends.cudnn.benchmark = False
         torch.use_deterministic_algorithms(True)
-    else:
-        torch.backends.cudnn.deterministic = False
-        torch.backends.cudnn.benchmark = True
-        torch.use_deterministic_algorithms(False)
 
     # Fine-tune each tile in the list one by one
     for tile in TILES_TO_FINE_TUNE:
