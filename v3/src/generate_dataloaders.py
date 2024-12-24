@@ -7,7 +7,7 @@ import numpy as np
 import torch
 from torch.utils.data import DataLoader, Dataset
 from pathlib import Path
-from src.constants import PROCESSED_DIR, RANDOM_SEED, NORMALIZATION_STATS_FILE, TILE_SIZE, PRE_MODEL_INTERPOLATION
+from src.constants import PROCESSED_DIR, RANDOM_SEED, NORMALIZATION_STATS_FILE, TILE_SIZE, PRE_MODEL_INTERPOLATION, BATCH_SIZE
 from typing import List, Tuple, Optional
 
 class CombinedDataset(Dataset):
@@ -148,14 +148,14 @@ def generate_dataloaders(focus_tile: Optional[int] = None):
 
     train_dataloader = DataLoader(
         train_dataset,
-        batch_size=32,
+        batch_size=BATCH_SIZE,  # controlled from constants.py
         shuffle=True,
         generator=loader_generator,
         num_workers=0
     )
     test_dataloader = DataLoader(
         test_dataset,
-        batch_size=32,
+        batch_size=BATCH_SIZE,  # controlled from constants.py
         shuffle=False,
         num_workers=0
     )

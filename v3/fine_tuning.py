@@ -22,7 +22,7 @@ model_module = importlib.import_module(f"src.models.{MODEL_NAME}")
 ModelClass = model_module.Model
 
 # --- USER-ADJUSTABLE PARAMETERS ---
-TILES_TO_FINE_TUNE = [10]
+TILES_TO_FINE_TUNE = [15]
 FINE_TUNE_EPOCHS = 5
 INITIAL_CHECKPOINT = CHECKPOINTS_DIR / 'best' / 'best_model.pt'
 

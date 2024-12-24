@@ -27,8 +27,8 @@ from src.constants import (
 import importlib
 
 # --- USER CONTROLLED VARIABLES ---
-start_date = (2019, 2, 13)
-end_date = (2019, 2, 18)
+start_date = (2021, 2, 13)
+end_date = (2021, 2, 18)
 global_best_checkpoint_path = CHECKPOINTS_DIR / "best" / "best_model.pt"
 plot_coarse = False  # If True, plots coarse input fields
 
