@@ -29,7 +29,7 @@ TORCH_DEVICE = (
 # Model hyperparameters
 # ----------------------------------------------------------
 MODEL_NAME = "unetwithattention"  # Which model file to load (dynamic import)
-UNET_DEPTH = 1  # Depth of U-Net architecture
+UNET_DEPTH = 3  # Depth of U-Net architecture
 MODEL_INPUT_CHANNELS = 2  # Number of input channels to the model
 MODEL_OUTPUT_CHANNELS = 1  # Number of output channels from the model
 
@@ -60,7 +60,7 @@ TRAIN_TEST_RATIO = 0.2         # Fraction of data used for testing
 TRAIN_START_EPOCH = 0          # Epoch at which training starts (useful for resume)
 TRAIN_END_EPOCH = 10            # Epoch at which training ends
 MAX_ENSEMBLE_SIZE = 8          # Maximum number of checkpoints in ensemble
-TILES = list(range(15, 16))     # List of tile indices to process
+TILES = list(range(0, 20))     # List of tile indices to process
 FOCUS_TILE = 8                 # Tile index to focus metrics on (optional)
 
 ZIP_SETTING = 'load'  # Controls whether to load or save compressed data: 'save'|'load'|False
@@ -79,4 +79,4 @@ DETERMINISTIC = False  # If True, enforce fully deterministic operations at a po
 # ----------------------------------------------------------
 # NEW: Hybrid loss ratio
 # ----------------------------------------------------------
-MSE_HYBRID_LOSS = 0.5  # Fraction of hybrid loss contributed by MSE; (1 - fraction) is contributed by MAE
+MSE_HYBRID_LOSS = 0.75  # Fraction of hybrid loss contributed by MSE; (1 - fraction) is contributed by MAE
