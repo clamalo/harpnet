@@ -28,8 +28,10 @@ def fine_tune_tiles(tile_ids, base_checkpoint_path, fine_tuning_epochs=FINE_TUNE
          c) Train the model for 'fine_tuning_epochs'.
             - Save a checkpoint "fine_tune_{epoch}_model.pt" for each epoch
               with 'train_loss' and 'test_loss' in the state dict.
-         d) Run ensemble on that subdirectory, which merges all these new checkpoints,
-            selecting the best. We'll rename the resulting "best_model.pt" to "<tile_id>_best.pt"
+         d) Run ensemble on that subdirectory, which merges all these new checkpoints
+            by calling ensemble(focus_tile=tile_id). This ensures we evaluate only on
+            that tile and read checkpoints from "CHECKPOINTS_DIR / <tile_id>".
+         e) We'll rename the resulting "best_model.pt" to "<tile_id>_best.pt"
             and put it in the "CHECKPOINTS_DIR / best" directory.
 
     Args:
@@ -107,9 +109,9 @@ def fine_tune_tiles(tile_ids, base_checkpoint_path, fine_tuning_epochs=FINE_TUNE
             print(f"Tile {tile_id}, Epoch {epoch+1}/{fine_tuning_epochs} - "
                   f"Train Loss: {train_loss:.4f}, Test Loss: {test_loss:.4f}")
 
-        # After we've created fine-tune checkpoints, run ensemble on them
+        # After we've created fine-tune checkpoints, run ensemble specifically for tile_id
         print(f"\nEnsembling checkpoints for tile {tile_id} ...")
-        ensemble(tile_subdir)
+        ensemble(focus_tile=tile_id)
 
         # The ensemble function saves its best model to tile_subdir / 'best' / 'best_model.pt'
         best_model_subdir = tile_subdir / "best" / "best_model.pt"
@@ -127,12 +129,3 @@ def fine_tune_tiles(tile_ids, base_checkpoint_path, fine_tuning_epochs=FINE_TUNE
         print(f"Tile {tile_id} best ensemble checkpoint saved to {best_dest_path}")
 
     print("\nFine-tuning complete for all specified tiles!")
-
-
-if __name__ == "__main__":
-    # Example usage
-    fine_tune_tiles(
-        tile_ids=[8, 15],
-        base_checkpoint_path=CHECKPOINTS_DIR / 'best' / 'best_model.pt',
-        fine_tuning_epochs=5
-    )

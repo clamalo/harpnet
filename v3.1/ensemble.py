@@ -6,37 +6,56 @@ import torch
 from config import (
     MODEL_NAME,
     DEVICE,
-    MAX_ENSEMBLE_SIZE
+    MAX_ENSEMBLE_SIZE,
+    CHECKPOINTS_DIR
 )
 from train_test import test
 from generate_dataloaders import generate_dataloaders
 
 
-def ensemble(directory_to_ensemble):
+def ensemble(directory_to_ensemble=None, focus_tile=None):
     """
     Find the optimal combination of model checkpoints by iteratively merging
-    their weights and evaluating on the test set, searching inside
-    'directory_to_ensemble' for checkpoint files.
+    their weights and evaluating on the test set. By default (when both
+    'directory_to_ensemble' and 'focus_tile' are None), this function searches
+    in CHECKPOINTS_DIR and evaluates on the entire test set.
+
+    If 'focus_tile' is specified, it searches in CHECKPOINTS_DIR / <focus_tile>
+    and evaluates only on that tile (by passing tile_id=focus_tile to
+    generate_dataloaders).
 
     Steps:
-    1) Collect all checkpoint files in 'directory_to_ensemble'. Each file should be of
-       the form '{epoch}_model.pt', containing a 'test_loss' entry in the state dict.
+    1) Collect all checkpoint files in 'directory_to_ensemble'. Each file should be 
+       of the form '{epoch}_model.pt', containing a 'test_loss' entry in the state dict.
     2) Sort checkpoints by ascending test_loss (the best single-model checkpoints first).
     3) For i in range(1, min(len(checkpoints), MAX_ENSEMBLE_SIZE) + 1):
          - Merge the top i checkpoints by averaging their weights at a parameter level.
-         - Evaluate that merged model on the test set.
+         - Evaluate that merged model on the test set (for the entire domain or a single tile).
          - Keep track of whichever model (single or merged) yields the lowest test loss.
     4) Save the best merged weights to directory_to_ensemble / 'best' / 'best_model.pt'.
 
-    The function re-uses the 'test' routine from train_test.py, and it automatically
-    constructs the test dataloader by calling generate_dataloaders().
+    The function reuses the 'test' routine from train_test.py. It calls
+    generate_dataloaders() with tile_id=None if focus_tile is not provided,
+    or tile_id=focus_tile if it is. The 'merge' operation is done at the
+    parameter level by simply averaging each parameter tensor.
 
-    Note: The merging is done incrementally from the top-1 up to the top-i, thus it
-          always merges the top i distinct checkpoints in sorted order.
+    Args:
+        directory_to_ensemble (str or Path, optional):
+            The directory to search for checkpoint files. If not provided,
+            uses CHECKPOINTS_DIR. If 'focus_tile' is also provided, that
+            takes precedence.
+        focus_tile (int, optional):
+            If provided, the ensemble function will search in
+            CHECKPOINTS_DIR / <focus_tile> and evaluate only on that tile.
     """
-    # -----------------------------
-    # 0) Convert directory and set device
-    # -----------------------------
+    # ------------------------------------------------
+    # 0) Determine ensemble directory and device
+    # ------------------------------------------------
+    if focus_tile is not None:
+        directory_to_ensemble = CHECKPOINTS_DIR / str(focus_tile)
+    elif directory_to_ensemble is None:
+        directory_to_ensemble = CHECKPOINTS_DIR
+
     directory_to_ensemble = Path(directory_to_ensemble)
 
     if DEVICE.lower() == 'cuda':
@@ -51,10 +70,11 @@ def ensemble(directory_to_ensemble):
         device = torch.device('cpu')
 
     print(f"Ensemble: using device: {device}")
+    print(f"Ensemble directory: {directory_to_ensemble}")
 
-    # -----------------------------
+    # ------------------------------------------------
     # 1) Gather & sort checkpoints by test_loss
-    # -----------------------------
+    # ------------------------------------------------
     checkpoint_files = list(directory_to_ensemble.glob("*.pt"))
     if not checkpoint_files:
         raise FileNotFoundError(f"No checkpoint files found in {directory_to_ensemble}")
@@ -80,12 +100,17 @@ def ensemble(directory_to_ensemble):
     top_ckpts = ckpts_with_loss[:min(len(ckpts_with_loss), MAX_ENSEMBLE_SIZE)]
     print(f"Will try ensembles up to size {len(top_ckpts)} based on test_loss ranking.")
 
-    # -----------------------------
+    # ------------------------------------------------
     # 2) Create test dataloader
-    # -----------------------------
-    _, test_loader = generate_dataloaders()
+    # ------------------------------------------------
+    if focus_tile is not None:
+        _, test_loader = generate_dataloaders(tile_id=focus_tile)
+        print(f"Evaluating ensemble performance ONLY on tile {focus_tile}.")
+    else:
+        _, test_loader = generate_dataloaders()
+        print("Evaluating ensemble performance on the entire test set.")
 
-    # We'll need a model class and loss function
+    # Dynamically load the model
     model_module = importlib.import_module(MODEL_NAME)
     ModelClass = model_module.Model
     criterion = torch.nn.MSELoss()
@@ -118,9 +143,9 @@ def ensemble(directory_to_ensemble):
         model_tmp.load_state_dict(state_dict_sums)
         return model_tmp
 
-    # -----------------------------
+    # ------------------------------------------------
     # 3) Incrementally merge top i checkpoints and track best
-    # -----------------------------
+    # ------------------------------------------------
     best_loss = math.inf
     best_state_dict = None
     best_combo_size = 0
@@ -136,9 +161,9 @@ def ensemble(directory_to_ensemble):
             best_combo_size = i
             best_state_dict = merged_model.state_dict()
 
-    # -----------------------------
+    # ------------------------------------------------
     # 4) Save best merged model
-    # -----------------------------
+    # ------------------------------------------------
     best_dir = directory_to_ensemble / "best"
     best_dir.mkdir(exist_ok=True)
 
