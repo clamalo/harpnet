@@ -1,4 +1,4 @@
-from config import RAW_DIR, PROCESSED_DIR
+from config import *
 
 def setup():
     """
@@ -6,4 +6,5 @@ def setup():
     """
     RAW_DIR.mkdir(parents=True, exist_ok=True)
     PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
-    print(f"Directories ensured:\n  RAW_DIR: {RAW_DIR}\n  PROCESSED_DIR: {PROCESSED_DIR}")
+    CHECKPOINTS_DIR.mkdir(parents=True, exist_ok=True)
+    FIGURES_DIR.mkdir(parents=True, exist_ok=True)

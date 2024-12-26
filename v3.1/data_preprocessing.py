@@ -8,7 +8,8 @@ from config import (
     START_MONTH, END_MONTH, TRAIN_SPLIT,
     SECONDARY_TILES, TRAINING_TILES,
     SAVE_PRECISION,
-    INCLUDE_ZEROS
+    INCLUDE_ZEROS,
+    ELEVATION_FILE
 )
 from tiles import get_tile_dict, tile_coordinates
 
@@ -122,7 +123,7 @@ def preprocess_data() -> None:
     Preprocess raw monthly NetCDF files into training and testing datasets,
     using a two-pass memory-mapped approach suitable for large-scale data,
     including hourly resolution. The final output is a single .npz file 
-    containing both the train and test sets.
+    containing both the train and test sets, plus the tile-based elevation data.
 
     Workflow Steps:
     
@@ -162,20 +163,17 @@ def preprocess_data() -> None:
        according to TRAIN_SPLIT. This may be a fractional split or a date-based split.
     
     7. Convert the input/target arrays to the floating-point precision specified 
-       by SAVE_PRECISION (either float16 or float32), then save both train and 
-       test splits in a single .npz file named combined_data.npz in PROCESSED_DIR.
+       by SAVE_PRECISION (either float16 or float32).
     
-    8. Remove the temporary .dat memmap files to clean up disk usage.
-
-    Important Notes:
-    - Time is stored as [year, month, day, hour].
-    - If you prefer splitting data at finer granularity (day/hour), you would 
-      need to enhance _split_data_by_date. Currently, only (year, month) is used 
-      for date-based splits.
-    - INCLUDE_ZEROS toggles whether rows of data (hours) where the coarse input 
-      array is entirely zero should be kept. Setting INCLUDE_ZEROS to False can 
-      significantly reduce the dataset size in many rainfall/snowfall cases 
-      where zero-precip hours occur frequently.
+    8. Load elevation data from ELEVATION_FILE once. For each tile, create
+       a fine-resolution elevation grid (same size as the target grid),
+       and store it in a single array, tile_elevations, with shape 
+       (num_tiles, fLat, fLon). Also store tile_ids in a 1D array.
+    
+    9. Save both train and test splits, plus tile_elevations and tile_ids, 
+       in a single .npz file named combined_data.npz in PROCESSED_DIR.
+    
+    10. Remove the temporary .dat memmap files to clean up disk usage.
     """
 
     # 1) Gather tile IDs to process
@@ -345,7 +343,32 @@ def preprocess_data() -> None:
 
     print("Train samples:", len(train_input), "Test samples:", len(test_input))
 
-    # 6) Save single .npz with train and test data
+    # 8) Load elevation data once, and create tile_elevations for each tile_id
+    #    at the fine resolution.
+    ds_elev = xr.open_dataset(ELEVATION_FILE)
+    # If needed, rename dimensions from (Y, X) to (lat, lon).
+    # This might vary depending on how the file is formatted; adjust if necessary:
+    if 'Y' in ds_elev.dims and 'X' in ds_elev.dims:
+        ds_elev = ds_elev.rename({'Y': 'lat', 'X': 'lon'})
+
+    full_tile_dict = get_tile_dict()  # For all tiles, not just TRAINING_TILES
+    # But we only need those in TRAINING_TILES. We'll store them in the same order as tile_ids
+    unique_tile_ids = sorted(tile_ids)
+    num_tiles = len(unique_tile_ids)
+    tile_elevations = np.zeros((num_tiles, fLat, fLon), dtype=np.float32)
+
+    for i, tid in enumerate(unique_tile_ids):
+        _, _, lat_fine, lon_fine = tile_coordinates(tid)
+        elev_vals = ds_elev.topo.interp(lat=lat_fine, lon=lon_fine, method='nearest').values/8848.9
+        elev_vals = np.nan_to_num(elev_vals, nan=0.0)
+        tile_elevations[i] = elev_vals.astype(np.float32)
+
+    ds_elev.close()
+
+    # We'll store tile_ids as a separate array
+    tile_ids_arr = np.array(unique_tile_ids, dtype=np.int32)
+
+    # 9) Save single .npz with train/test data plus tile elevation data
     out_combined_path = PROCESSED_DIR / "combined_data.npz"
     np.savez_compressed(
         out_combined_path,
@@ -356,12 +379,14 @@ def preprocess_data() -> None:
         test_input=test_input,
         test_target=test_target,
         test_time=test_time,
-        test_tile=test_tile
+        test_tile=test_tile,
+        tile_elevations=tile_elevations,
+        tile_ids=tile_ids_arr
     )
 
-    print(f"\nSaved all data (train and test) to: {out_combined_path}")
+    print(f"\nSaved all data (train/test/elevation) to: {out_combined_path}")
 
-    # 7) Remove temporary memmap files
+    # 10) Remove temporary memmap files
     for p in [input_mm_path, target_mm_path, time_mm_path, tile_mm_path]:
         if p.exists():
             os.remove(p)
