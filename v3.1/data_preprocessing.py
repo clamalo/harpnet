@@ -159,21 +159,29 @@ def preprocess_data() -> None:
        of each memory-mapped array into an in-memory array. This effectively 
        discards any unused space in the memmap if we skipped zero-value hours.
     
-    6. Use _split_data_by_date to split the final arrays into train/test 
+    6. Normalization Step: 
+       - We keep the precipitation in millimeters (mm).
+       - Apply a log(1 + x) transform to the data.
+       - Compute dataset-wide mean and std for the log-transformed data 
+         (both coarse inputs and fine targets).
+       - Use these to normalize the entire dataset in log space.
+    
+    7. Use _split_data_by_date to split the final arrays into train/test 
        according to TRAIN_SPLIT. This may be a fractional split or a date-based split.
     
-    7. Convert the input/target arrays to the floating-point precision specified 
+    8. Convert the input/target arrays to the floating-point precision specified 
        by SAVE_PRECISION (either float16 or float32).
     
-    8. Load elevation data from ELEVATION_FILE once. For each tile, create
+    9. Load elevation data from ELEVATION_FILE once. For each tile, create
        a fine-resolution elevation grid (same size as the target grid),
        and store it in a single array, tile_elevations, with shape 
        (num_tiles, fLat, fLon). Also store tile_ids in a 1D array.
     
-    9. Save both train and test splits, plus tile_elevations and tile_ids, 
-       in a single .npz file named combined_data.npz in PROCESSED_DIR.
+    10. Save both train and test splits, plus tile_elevations, tile_ids, and 
+        the precipitation normalization stats (mean, std), in a single .npz file 
+        named combined_data.npz in PROCESSED_DIR.
     
-    10. Remove the temporary .dat memmap files to clean up disk usage.
+    11. Remove the temporary .dat memmap files to clean up disk usage.
     """
 
     # 1) Gather tile IDs to process
@@ -284,8 +292,8 @@ def preprocess_data() -> None:
             coarse_ds = ds.tp.interp(lat=lat_coarse, lon=lon_coarse, method="linear")
             fine_ds = ds.tp.interp(lat=lat_fine, lon=lon_fine, method="linear")
 
-            c_vals = coarse_ds.values  # shape (T, cLat, cLon)
-            f_vals = fine_ds.values    # shape (T, fLat, fLon)
+            c_vals = coarse_ds.values  # shape (T, cLat, cLon) in mm
+            f_vals = fine_ds.values    # shape (T, fLat, fLon) in mm
 
             # Write each time step individually so we can check zeros if needed.
             for i in range(T_len):
@@ -320,22 +328,42 @@ def preprocess_data() -> None:
 
     print(f"\nTotal samples after processing (skipped zeros if INCLUDE_ZEROS=False): {idx}")
 
-    # 5) Convert memmaps to arrays, train/test split
+    # 5) Convert memmaps to arrays
     input_arr = np.array(input_mm[:idx])
     target_arr = np.array(target_mm[:idx])
     time_arr = np.array(time_mm[:idx])
     tile_arr = np.array(tile_mm[:idx])
 
+    # ---------------------------
+    # 6) Normalization step (log1p in mm)
+    # ---------------------------
+    # log(1 + x)
+    input_arr_log = np.log1p(input_arr)
+    target_arr_log = np.log1p(target_arr)
+
+    # Compute dataset-wide mean and std across *both* log-transformed input and target
+    all_precip_log = np.concatenate([input_arr_log.ravel(), target_arr_log.ravel()])
+    precip_mean = np.mean(all_precip_log)
+    precip_std = np.std(all_precip_log)
+
+    if precip_std == 0:
+        raise ValueError("Computed precipitation std is 0 after log transform. Cannot normalize.")
+
+    # Normalize in log space
+    input_arr_norm = (input_arr_log - precip_mean) / precip_std
+    target_arr_norm = (target_arr_log - precip_mean) / precip_std
+
+    # 7) Split into train/test
     data_dict = _split_data_by_date(
         date_array=time_arr,
-        data_arrays=[input_arr, target_arr, time_arr, tile_arr],
+        data_arrays=[input_arr_norm, target_arr_norm, time_arr, tile_arr],
         train_split=TRAIN_SPLIT
     )
 
     train_input, train_target, train_time, train_tile = data_dict['train']
     test_input,  test_target,  test_time,  test_tile  = data_dict['test']
 
-    # Cast input/target arrays to SAVE_PRECISION
+    # 8) Cast input/target arrays to SAVE_PRECISION
     train_input = train_input.astype(SAVE_PRECISION)
     train_target = train_target.astype(SAVE_PRECISION)
     test_input = test_input.astype(SAVE_PRECISION)
@@ -343,32 +371,28 @@ def preprocess_data() -> None:
 
     print("Train samples:", len(train_input), "Test samples:", len(test_input))
 
-    # 8) Load elevation data once, and create tile_elevations for each tile_id
+    # 9) Load elevation data once, and create tile_elevations for each tile_id
     #    at the fine resolution.
     ds_elev = xr.open_dataset(ELEVATION_FILE)
     # If needed, rename dimensions from (Y, X) to (lat, lon).
-    # This might vary depending on how the file is formatted; adjust if necessary:
     if 'Y' in ds_elev.dims and 'X' in ds_elev.dims:
         ds_elev = ds_elev.rename({'Y': 'lat', 'X': 'lon'})
 
-    full_tile_dict = get_tile_dict()  # For all tiles, not just TRAINING_TILES
-    # But we only need those in TRAINING_TILES. We'll store them in the same order as tile_ids
     unique_tile_ids = sorted(tile_ids)
     num_tiles = len(unique_tile_ids)
     tile_elevations = np.zeros((num_tiles, fLat, fLon), dtype=np.float32)
 
     for i, tid in enumerate(unique_tile_ids):
         _, _, lat_fine, lon_fine = tile_coordinates(tid)
-        elev_vals = ds_elev.topo.interp(lat=lat_fine, lon=lon_fine, method='nearest').values/8848.9
+        elev_vals = ds_elev.topo.interp(lat=lat_fine, lon=lon_fine, method='nearest').values / 8848.9
         elev_vals = np.nan_to_num(elev_vals, nan=0.0)
         tile_elevations[i] = elev_vals.astype(np.float32)
 
     ds_elev.close()
-
-    # We'll store tile_ids as a separate array
     tile_ids_arr = np.array(unique_tile_ids, dtype=np.int32)
 
-    # 9) Save single .npz with train/test data plus tile elevation data
+    # 10) Save single .npz with train/test data plus tile elevation data
+    #     AND precipitation normalization stats (mean, std) for log scale
     out_combined_path = PROCESSED_DIR / "combined_data.npz"
     np.savez_compressed(
         out_combined_path,
@@ -381,12 +405,14 @@ def preprocess_data() -> None:
         test_time=test_time,
         test_tile=test_tile,
         tile_elevations=tile_elevations,
-        tile_ids=tile_ids_arr
+        tile_ids=tile_ids_arr,
+        precip_mean=precip_mean,  # <-- Mean of log(1 + precip in mm)
+        precip_std=precip_std     # <-- Std of log(1 + precip in mm)
     )
 
-    print(f"\nSaved all data (train/test/elevation) to: {out_combined_path}")
+    print(f"\nSaved all data (train/test/elevation) + normalization stats to: {out_combined_path}")
 
-    # 10) Remove temporary memmap files
+    # 11) Remove temporary memmap files
     for p in [input_mm_path, target_mm_path, time_mm_path, tile_mm_path]:
         if p.exists():
             os.remove(p)

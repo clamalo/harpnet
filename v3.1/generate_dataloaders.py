@@ -1,13 +1,12 @@
 import numpy as np
 import torch
 from torch.utils.data import Dataset, DataLoader
-import torch.nn.functional as F  # <--- ADDED for on-the-fly interpolation
+import torch.nn.functional as F
 
 from config import (
     PROCESSED_DIR,
     BATCH_SIZE
 )
-from tiles import get_tile_dict, tile_coordinates
 
 
 class PrecipDataset(Dataset):
@@ -84,20 +83,16 @@ class PrecipDataset(Dataset):
             elev = np.zeros_like(target)
 
         # Upsample coarse_precip -> fLat, fLon
-        # shape: (1, 1, cLat, cLon)
         coarse_precip_t = torch.from_numpy(coarse_precip).unsqueeze(0).unsqueeze(0)
-        # bilinear interpolation to match shape of elev/target
-        # elev.shape = (fLat, fLon)
         fLat, fLon = elev.shape
         upsampled_precip_t = F.interpolate(
             coarse_precip_t, size=(fLat, fLon),
             mode='bilinear', align_corners=False
         )
-        # (1, 1, fLat, fLon) -> (fLat, fLon) in numpy
         upsampled_precip = upsampled_precip_t.squeeze().numpy()
 
         # Stack [precip, elevation]
-        combined_input = np.stack([upsampled_precip, elev], axis=0)  # shape: (2, fLat, fLon)
+        combined_input = np.stack([upsampled_precip, elev], axis=0)
 
         sample = {
             'input':  combined_input,  # (2, fLat, fLon)
@@ -112,15 +107,21 @@ class PrecipDataset(Dataset):
         return sample
 
 
-def generate_dataloaders():
+def generate_dataloaders(tile_id=None):
     """
     Generate and return training/testing DataLoaders for precipitation data plus elevation.
 
+    If tile_id is None, this function returns DataLoaders for the entire dataset
+    (the original train/test split). If tile_id is specified, it filters the dataset
+    so only samples matching that tile_id are included in the returned train/test sets.
+
     1) Loads the .npz file created by data_preprocessing.
-    2) Constructs two PrecipDataset instances (train + test).
-    3) Each sample in the dataset has a shape (2, fLat, fLon) for the input, 
-       and (fLat, fLon) for the target.
+    2) (Optional) Filters to a single tile if tile_id is specified.
+    3) Constructs two PrecipDataset instances (train + test).
     4) Wraps them in PyTorch DataLoaders.
+
+    Args:
+        tile_id (int or None): The tile ID to filter for. If None, use all.
 
     Returns:
         (train_loader, test_loader)
@@ -144,7 +145,24 @@ def generate_dataloaders():
     test_tile = data['test_tile']
 
     tile_elevations = data.get('tile_elevations', None)  # shape (num_tiles, fLat, fLon)
-    tile_ids = data.get('tile_ids', None)                # shape (num_tiles,)
+    tile_ids = data.get('tile_ids', None)
+
+    data.close()
+
+    # Optionally filter by tile_id
+    if tile_id is not None:
+        train_mask = (train_tile == tile_id)
+        test_mask = (test_tile == tile_id)
+
+        train_input = train_input[train_mask]
+        train_target = train_target[train_mask]
+        train_time = train_time[train_mask]
+        train_tile = train_tile[train_mask]
+
+        test_input = test_input[test_mask]
+        test_target = test_target[test_mask]
+        test_time = test_time[test_mask]
+        test_tile = test_tile[test_mask]
 
     # Create Datasets
     train_dataset = PrecipDataset(
@@ -167,7 +185,7 @@ def generate_dataloaders():
     g = torch.Generator()
     g.manual_seed(42)
 
-    # Wrap datasets in DataLoaders
+    # DataLoaders
     train_loader = DataLoader(
         train_dataset,
         batch_size=BATCH_SIZE,
@@ -182,9 +200,3 @@ def generate_dataloaders():
     )
 
     return train_loader, test_loader
-
-
-if __name__ == "__main__":
-    train_loader, test_loader = generate_dataloaders()
-    print(f"Training DataLoader: {len(train_loader)} batches")
-    print(f"Testing DataLoader: {len(test_loader)} batches")

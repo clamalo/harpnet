@@ -103,7 +103,7 @@ def train_test(train_dataloader, test_dataloader):
         test_loss = test(test_dataloader, model, criterion, device)
 
         # Save checkpoint
-        checkpoint_path = CHECKPOINTS_DIR / f"epoch_{epoch}_model.pt"
+        checkpoint_path = CHECKPOINTS_DIR / f"{epoch}_model.pt"
         torch.save({
             'epoch': epoch,
             'model_state_dict': model.state_dict(),

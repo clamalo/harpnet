@@ -7,6 +7,8 @@ from setup import setup
 from data_preprocessing import preprocess_data
 from generate_dataloaders import generate_dataloaders
 from train_test import train_test
+from ensemble import ensemble
+from fine_tuning import fine_tune_tiles
 
 
 def set_seed(seed: int = 42):
@@ -27,8 +29,13 @@ set_seed(42)
 
 setup()
 
-preprocess_data()
+if not LOAD:
+    preprocess_data()
 
 train_loader, test_loader = generate_dataloaders()
 
 train_test(train_loader, test_loader)
+
+ensemble(CHECKPOINTS_DIR)
+
+fine_tune_tiles(TRAINING_TILES, CHECKPOINTS_DIR / 'best' / 'best_model.pt', FINE_TUNE_EPOCHS)

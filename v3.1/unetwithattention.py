@@ -155,4 +155,4 @@ class Model(nn.Module):
 
         # --- FINAL SOFTPLUS ---
         final = self.final_conv(dec_out)
-        return self.final_activation(final)
+        return final
