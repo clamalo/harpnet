@@ -134,6 +134,10 @@ def run_inference(
         # If tile-specific checkpoint exists, load that
         tile_specific_ckpt = tile_best_dir / f"{tid}_best.pt"
         tile_model = ModelClass().to(device)
+        
+        # Print total number of parameters
+        total_params = sum(p.numel() for p in tile_model.parameters())
+        print(f"Model has {total_params:,} parameters")
 
         if tile_specific_ckpt.exists():
             print(f"Found fine-tuned weights for tile {tid} at {tile_specific_ckpt}")
