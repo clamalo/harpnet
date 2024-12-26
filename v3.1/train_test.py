@@ -95,7 +95,7 @@ def train_test(train_dataloader, test_dataloader):
 
     # Define optimizer and loss function
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
-    criterion = nn.MSELoss()
+    criterion = nn.SmoothL1Loss()
 
     # Run training & testing loops
     for epoch in range(0, NUM_EPOCHS):

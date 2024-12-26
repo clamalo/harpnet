@@ -113,7 +113,7 @@ def ensemble(directory_to_ensemble=None, focus_tile=None):
     # Dynamically load the model
     model_module = importlib.import_module(MODEL_NAME)
     ModelClass = model_module.Model
-    criterion = torch.nn.MSELoss()
+    criterion = torch.nn.SmoothL1Loss()
 
     # Helper function to average multiple checkpoints
     def average_checkpoints(paths):

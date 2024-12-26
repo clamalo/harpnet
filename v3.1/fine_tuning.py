@@ -89,7 +89,7 @@ def fine_tune_tiles(tile_ids, base_checkpoint_path, fine_tuning_epochs=FINE_TUNE
 
         # Define optimizer & loss
         optimizer = torch.optim.Adam(model.parameters(), lr=1e-5)
-        criterion = torch.nn.MSELoss()
+        criterion = torch.nn.SmoothL1Loss()
 
         # Fine-tuning loop
         for epoch in range(fine_tuning_epochs):
