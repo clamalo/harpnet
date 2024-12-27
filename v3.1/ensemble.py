@@ -58,18 +58,7 @@ def ensemble(directory_to_ensemble=None, focus_tile=None):
 
     directory_to_ensemble = Path(directory_to_ensemble)
 
-    if DEVICE.lower() == 'cuda':
-        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    elif DEVICE.lower() == 'mps':
-        if hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
-            device = torch.device('mps')
-        else:
-            print("Warning: MPS requested but not available. Falling back to CPU.")
-            device = torch.device('cpu')
-    else:
-        device = torch.device('cpu')
-
-    print(f"Ensemble: using device: {device}")
+    print(f"Ensemble: using device: {DEVICE}")
     print(f"Ensemble directory: {directory_to_ensemble}")
 
     # ------------------------------------------------
@@ -82,7 +71,7 @@ def ensemble(directory_to_ensemble=None, focus_tile=None):
     ckpts_with_loss = []
     for ckpt_file in checkpoint_files:
         try:
-            ckpt_data = torch.load(ckpt_file, map_location=device)
+            ckpt_data = torch.load(ckpt_file, map_location=DEVICE)
             test_loss = ckpt_data.get('test_loss', math.inf)
             ckpts_with_loss.append((ckpt_file, test_loss))
         except Exception as e:
@@ -124,12 +113,12 @@ def ensemble(directory_to_ensemble=None, focus_tile=None):
         if not paths:
             raise ValueError("No checkpoint paths provided for averaging.")
 
-        model_tmp = ModelClass().to(device)
+        model_tmp = ModelClass().to(DEVICE)
         state_dict_sums = None
         n = len(paths)
 
         for p in paths:
-            cp = torch.load(p, map_location=device)
+            cp = torch.load(p, map_location=DEVICE)
             cp_st = cp['model_state_dict']
             if state_dict_sums is None:
                 state_dict_sums = {key: val.clone() for key, val in cp_st.items()}
@@ -153,7 +142,7 @@ def ensemble(directory_to_ensemble=None, focus_tile=None):
     for i in range(1, len(top_ckpts) + 1):
         paths_to_merge = [ckpt_file for (ckpt_file, _) in top_ckpts[:i]]
         merged_model = average_checkpoints(paths_to_merge)
-        test_loss_val = test(test_loader, merged_model, criterion, device)
+        test_loss_val = test(test_loader, merged_model, criterion)
         print(f"Ensemble of top {i} model(s) => test_loss={test_loss_val:.6f}")
 
         if test_loss_val < best_loss:
