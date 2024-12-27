@@ -14,14 +14,17 @@ class PrecipDataset(Dataset):
     A custom PyTorch Dataset for the precipitation data arrays produced by data_preprocessing.py.
 
     Each sample contains:
-        - 'input'  (combined: precipitation + elevation) of shape (2, fLat, fLon),
-        - 'target' (fine-resolution grid of shape (fLat, fLon)),
-        - 'time'   ([year, month, day, hour]),
-        - 'tile'   (tile ID).
+        - 'input':  (2, fLat, fLon), which is [upsampled_coarse_precip, fine_elevation].
+        - 'coarse_input': (cLat, cLon) - the original coarse-resolution precipitation array
+          (no padding removed here, but no upsampling).
+        - 'target': (fLat, fLon) - the high-resolution ground truth.
+        - 'time':   (4,)  [year, month, day, hour].
+        - 'tile':   (int) the tile ID.
 
-    We store precipitation in coarse resolution (cLat, cLon) and upsample it to (fLat, fLon)
-    on-the-fly. Meanwhile, elevation is already stored at (fLat, fLon). This way,
-    `input` has shape (2, fLat, fLon) = [upsampled_coarse_precip, fine_elevation].
+    The upsampling to fine resolution (for the model's first channel) is done on-the-fly.
+    Meanwhile, we now explicitly return the coarse array so that we can later
+    perform a correct bilinear interpolation baseline that reflects the tile's
+    true bounding box, without confusion from any padding.
     """
 
     def __init__(self, inputs, targets, times, tiles,
@@ -30,10 +33,12 @@ class PrecipDataset(Dataset):
         """
         Args:
             inputs (np.ndarray):  Coarse-resolution data array of shape (N, cLat, cLon).
+                                  This is log(1+precip) normalized if configured by preprocessing.
             targets (np.ndarray): Fine-resolution data array of shape (N, fLat, fLon).
+                                  Also log(1+precip) normalized if configured by preprocessing.
             times (np.ndarray):   (N, 4), [year, month, day, hour].
             tiles (np.ndarray):   (N,).
-            tile_elevations (np.ndarray): (num_tiles, fLat, fLon).
+            tile_elevations (np.ndarray): (num_tiles, fLat, fLon). Elevation for each tile ID.
             tile_ids (np.ndarray): 1D array of shape (num_tiles,) matching tile IDs to the
                                    index in tile_elevations.
             transform (callable, optional): optional transform for augmentation.
@@ -44,7 +49,7 @@ class PrecipDataset(Dataset):
         self.tiles = tiles
         self.transform = transform
 
-        # Build a lookup dict for tile ID -> index
+        # Build a lookup dict for tile ID -> index into tile_elevations
         self.tile_elevations = tile_elevations
         self.tile_id_to_index = {}
         if tile_elevations is not None and tile_ids is not None:
@@ -58,36 +63,37 @@ class PrecipDataset(Dataset):
         """
         Returns a dict:
             {
-              'input':  (2, fLat, fLon),
-              'target': (fLat, fLon),
-              'time':   (4,),
-              'tile':   <tile_id>
+              'input':        (2, fLat, fLon),
+              'coarse_input': (cLat, cLon),
+              'target':       (fLat, fLon),
+              'time':         (4,),
+              'tile':         <tile_id>
             }
         """
         # (cLat, cLon) coarse precipitation
-        coarse_precip = self.inputs[idx]
+        coarse_precip = self.inputs[idx]  # [already normalized log-space]
 
         # (fLat, fLon) fine-resolution target
         target = self.targets[idx]
 
-        # Elevation for this tile (fLat, fLon)
+        # Identify tile & retrieve its fine-res elevation
         tile_id = self.tiles[idx]
         elev = None
         if self.tile_elevations is not None:
             tile_idx = self.tile_id_to_index.get(tile_id, None)
             if tile_idx is not None:
                 elev = self.tile_elevations[tile_idx]  # shape (fLat, fLon)
-
-        # If we didn't find an elevation slice, default to zeros
         if elev is None:
             elev = np.zeros_like(target)
 
-        # Upsample coarse_precip -> fLat, fLon
+        # Upsample coarse_precip -> (fLat, fLon) for the model's input channel
         coarse_precip_t = torch.from_numpy(coarse_precip).unsqueeze(0).unsqueeze(0)
         fLat, fLon = elev.shape
         upsampled_precip_t = F.interpolate(
-            coarse_precip_t, size=(fLat, fLon),
-            mode='bilinear', align_corners=False
+            coarse_precip_t,
+            size=(fLat, fLon),
+            mode='bilinear',
+            align_corners=False
         )
         upsampled_precip = upsampled_precip_t.squeeze().numpy()
 
@@ -95,10 +101,11 @@ class PrecipDataset(Dataset):
         combined_input = np.stack([upsampled_precip, elev], axis=0)
 
         sample = {
-            'input':  combined_input,  # (2, fLat, fLon)
-            'target': target,          # (fLat, fLon)
-            'time':   self.times[idx], # (4,)
-            'tile':   tile_id
+            'input':        combined_input,   # (2, fLat, fLon)
+            'coarse_input': coarse_precip,    # (cLat, cLon)
+            'target':       target,           # (fLat, fLon)
+            'time':         self.times[idx],  # (4,)
+            'tile':         tile_id
         }
 
         if self.transform:
@@ -115,16 +122,15 @@ def generate_dataloaders(tile_id=None):
     (the original train/test split). If tile_id is specified, it filters the dataset
     so only samples matching that tile_id are included in the returned train/test sets.
 
-    1) Loads the .npz file created by data_preprocessing.
-    2) (Optional) Filters to a single tile if tile_id is specified.
-    3) Constructs two PrecipDataset instances (train + test).
-    4) Wraps them in PyTorch DataLoaders.
-
-    Args:
-        tile_id (int or None): The tile ID to filter for. If None, use all.
-
     Returns:
         (train_loader, test_loader)
+
+    Each sample from these loaders will now contain:
+        - 'input':        (2, fLat, fLon)  [upsampled coarse precip + fine elev]
+        - 'coarse_input': (cLat, cLon)     [coarse data without upsampling]
+        - 'target':       (fLat, fLon)
+        - 'time':         (4,)
+        - 'tile':         tile_id
     """
     data_path = PROCESSED_DIR / "combined_data.npz"
     if not data_path.exists():
@@ -144,9 +150,8 @@ def generate_dataloaders(tile_id=None):
     test_time = data['test_time']
     test_tile = data['test_tile']
 
-    tile_elevations = data.get('tile_elevations', None)  # shape (num_tiles, fLat, fLon)
+    tile_elevations = data.get('tile_elevations', None)  # (num_tiles, fLat, fLon)
     tile_ids = data.get('tile_ids', None)
-
     data.close()
 
     # Optionally filter by tile_id
