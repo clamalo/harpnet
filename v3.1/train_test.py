@@ -12,7 +12,7 @@ from tqdm import tqdm
 import torch.nn.functional as F
 
 
-def train(train_dataloader, model, optimizer, criterion, device):
+def train(train_dataloader, model, optimizer, criterion):
     """
     Train for one epoch. Data shape:
       'input':  (B, 2, fLat, fLon)
@@ -26,9 +26,9 @@ def train(train_dataloader, model, optimizer, criterion, device):
 
     for batch in data_iter:
         # (B, 2, fLat, fLon)
-        inputs = batch['input'].float().to(device)
+        inputs = batch['input'].float().to(DEVICE)
         # (B, fLat, fLon)
-        targets = batch['target'].float().to(device)
+        targets = batch['target'].float().to(DEVICE)
         # Model expects (B, 2, fLat, fLon) -> (B, 1, fLat, fLon) output
         # No need to interpolate, already sized to (fLat, fLon).
 
@@ -46,7 +46,7 @@ def train(train_dataloader, model, optimizer, criterion, device):
     return avg_loss
 
 
-def test(test_dataloader, model, criterion, device):
+def test(test_dataloader, model, criterion):
     """
     Evaluate for one epoch. Data shape is the same as train().
     """
@@ -58,8 +58,8 @@ def test(test_dataloader, model, criterion, device):
 
     with torch.no_grad():
         for batch in data_iter:
-            inputs = batch['input'].float().to(device)    # (B, 2, fLat, fLon)
-            targets = batch['target'].float().to(device)  # (B, fLat, fLon)
+            inputs = batch['input'].float().to(DEVICE)    # (B, 2, fLat, fLon)
+            targets = batch['target'].float().to(DEVICE)  # (B, fLat, fLon)
 
             outputs = model(inputs)                       # (B, 1, fLat, fLon)
             loss = criterion(outputs, targets.unsqueeze(1))
@@ -74,24 +74,13 @@ def train_test(train_dataloader, test_dataloader):
     """
     Full train/test loop for NUM_EPOCHS.
     """
-    # Decide on device
-    if DEVICE.lower() == 'cuda':
-        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    elif DEVICE.lower() == 'mps':
-        if hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
-            device = torch.device('mps')
-        else:
-            print("Warning: MPS requested but not available. Falling back to CPU.")
-            device = torch.device('cpu')
-    else:
-        device = torch.device('cpu')
 
-    print(f"Using device: {device}")
+    print(f"Using device: {DEVICE}")
 
     # Dynamically load the model
     model_module = importlib.import_module(f"{MODEL_NAME}")
     ModelClass = model_module.Model
-    model = ModelClass().to(device)
+    model = ModelClass().to(DEVICE)
 
     # Define optimizer and loss function
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
@@ -99,8 +88,8 @@ def train_test(train_dataloader, test_dataloader):
 
     # Run training & testing loops
     for epoch in range(0, NUM_EPOCHS):
-        train_loss = train(train_dataloader, model, optimizer, criterion, device)
-        test_loss = test(test_dataloader, model, criterion, device)
+        train_loss = train(train_dataloader, model, optimizer, criterion)
+        test_loss = test(test_dataloader, model, criterion)
 
         # Save checkpoint
         checkpoint_path = CHECKPOINTS_DIR / f"{epoch}_model.pt"

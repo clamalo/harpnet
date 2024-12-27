@@ -444,7 +444,7 @@ if __name__ == "__main__":
     # Example usage:
     example_checkpoint = "/Users/clamalo/documents/harpnet/v3.1/checkpoints/best/best_model.pt"
     run_inference(
-        start_day=(2019, 2, 15),
-        end_day=(2019, 2, 18),
+        start_day=(2021, 2, 15),
+        end_day=(2021, 2, 18),
         checkpoint_path=example_checkpoint
     )

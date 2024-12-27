@@ -22,9 +22,9 @@ SECONDARY_MIN_LON, SECONDARY_MAX_LON = -123.0, -106.0
 # -------------------------------------------------------------------
 # TILE SETTINGS
 # -------------------------------------------------------------------
-TILE_SIZE = 32
+TILE_SIZE = 64
 COARSE_RESOLUTION = 0.25
-FINE_RESOLUTION = 0.125
+FINE_RESOLUTION = 0.0625
 PADDING = 0.25
 
 # -------------------------------------------------------------------
@@ -33,7 +33,7 @@ PADDING = 0.25
 DEVICE = ('mps' if torch.backends.mps.is_available() else 'cuda' if torch.cuda.is_available() else 'cpu')
 TRAINING_PROGRESS_BAR = True
 SAVE_PRECISION = 'float16'
-LOAD = True
+LOAD = False
 
 # -------------------------------------------------------------------
 # TRAINING DATA SETTINGS
