@@ -20,7 +20,8 @@ from config import (
     FIGURES_DIR,
     PROCESSED_DIR,
     INCLUDE_ZEROS,
-    CHECKPOINTS_DIR
+    CHECKPOINTS_DIR,
+    FINE_RESOLUTION
 )
 from tiles import (
     get_tile_dict,
@@ -190,8 +191,8 @@ def run_inference(
     max_lon_domain = max(all_lons_max)
 
     # Fine resolution is 0.125, so build a global lat/lon array
-    lat_global = np.arange(min_lat_domain, max_lat_domain, 0.125)
-    lon_global = np.arange(min_lon_domain, max_lon_domain, 0.125)
+    lat_global = np.arange(min_lat_domain, max_lat_domain, FINE_RESOLUTION)
+    lon_global = np.arange(min_lon_domain, max_lon_domain, FINE_RESOLUTION)
     nLat = len(lat_global)
     nLon = len(lon_global)
 
@@ -444,7 +445,7 @@ if __name__ == "__main__":
     # Example usage:
     example_checkpoint = "/Users/clamalo/documents/harpnet/v3.1/checkpoints/best/best_model.pt"
     run_inference(
-        start_day=(2021, 2, 15),
-        end_day=(2021, 2, 18),
+        start_day=(2019, 1, 15),
+        end_day=(2019, 1, 19),
         checkpoint_path=example_checkpoint
     )

@@ -33,25 +33,25 @@ PADDING = 0.25
 DEVICE = ('mps' if torch.backends.mps.is_available() else 'cuda' if torch.cuda.is_available() else 'cpu')
 TRAINING_PROGRESS_BAR = True
 SAVE_PRECISION = 'float16'
-LOAD = True
+LOAD = False
 
 # -------------------------------------------------------------------
 # TRAINING DATA SETTINGS
 # -------------------------------------------------------------------
 START_MONTH = (1979, 10)
-END_MONTH = (1984, 9)
-TRAIN_SPLIT = (1983, 10)   # Could also be a float in [0, 1] if desired
-TRAINING_TILES = list(range(0, 20))
+END_MONTH = (1989, 9)
+TRAIN_SPLIT = (1987, 10)   # Could also be a float in [0, 1] if desired
+TRAINING_TILES = list(range(0,20))
 BATCH_SIZE = 64
-NUM_EPOCHS = 5
-SECONDARY_TILES = False
+NUM_EPOCHS = 10
+SECONDARY_TILES = True
 INCLUDE_ZEROS = False
 
 # -------------------------------------------------------------------
 # MODEL HYPERPARAMETERS
 # -------------------------------------------------------------------
 MODEL_NAME = "unetwithattention"
-UNET_DEPTH = 1
+UNET_DEPTH = 2
 MODEL_INPUT_CHANNELS = 2
 MODEL_OUTPUT_CHANNELS = 1
 

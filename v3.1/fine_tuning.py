@@ -44,26 +44,14 @@ def fine_tune_tiles(tile_ids, base_checkpoint_path, fine_tuning_epochs=FINE_TUNE
     if not base_checkpoint_path.exists():
         raise FileNotFoundError(f"Base checkpoint not found at: {base_checkpoint_path}")
 
-    # Decide on device
-    if DEVICE.lower() == 'cuda':
-        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    elif DEVICE.lower() == 'mps':
-        if hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
-            device = torch.device('mps')
-        else:
-            print("Warning: MPS requested but not available. Falling back to CPU.")
-            device = torch.device('cpu')
-    else:
-        device = torch.device('cpu')
-
-    print(f"Fine-tuning on device: {device}")
+    print(f"Fine-tuning on device: {DEVICE}")
 
     # Dynamically load the model
     model_module = importlib.import_module(MODEL_NAME)
     ModelClass = model_module.Model
 
     # Load the base checkpoint
-    base_ckpt = torch.load(base_checkpoint_path, map_location=device)
+    base_ckpt = torch.load(base_checkpoint_path, map_location=DEVICE)
     base_state_dict = base_ckpt.get('model_state_dict', None)
     if base_state_dict is None:
         raise ValueError(f"Could not load 'model_state_dict' from {base_checkpoint_path}")
@@ -83,7 +71,7 @@ def fine_tune_tiles(tile_ids, base_checkpoint_path, fine_tuning_epochs=FINE_TUNE
             continue
 
         # Re-initialize model
-        model = ModelClass().to(device)
+        model = ModelClass().to(DEVICE)
         # Load the base generalized weights
         model.load_state_dict(base_state_dict, strict=True)
 
@@ -93,8 +81,8 @@ def fine_tune_tiles(tile_ids, base_checkpoint_path, fine_tuning_epochs=FINE_TUNE
 
         # Fine-tuning loop
         for epoch in range(fine_tuning_epochs):
-            train_loss = train(train_loader, model, optimizer, criterion, device)
-            test_loss = test(test_loader, model, criterion, device)
+            train_loss = train(train_loader, model, optimizer, criterion)
+            test_loss = test(test_loader, model, criterion)
 
             # Save a checkpoint in tile_subdir
             checkpoint_path = tile_subdir / f"fine_tune_{epoch}_model.pt"
@@ -125,7 +113,7 @@ def fine_tune_tiles(tile_ids, base_checkpoint_path, fine_tuning_epochs=FINE_TUNE
         best_dest_path = best_dest_dir / f"{tile_id}_best.pt"
 
         # Copy (or move) the file
-        torch.save(torch.load(best_model_subdir, map_location=device), best_dest_path)
+        torch.save(torch.load(best_model_subdir, map_location=DEVICE), best_dest_path)
         print(f"Tile {tile_id} best ensemble checkpoint saved to {best_dest_path}")
 
     print("\nFine-tuning complete for all specified tiles!")
