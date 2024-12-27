@@ -1,3 +1,5 @@
+# File: /run_inference_manhattan.py
+
 import importlib
 import torch
 import numpy as np
@@ -81,8 +83,9 @@ def run_inference_manhattan(
        - Open the NetCDF file for that month/year if it exists.
        - For each tile & each hour of the day:
          (a) Fill ground truth domain_true_day. 
-         (b) If INCLUDE_ZEROS=False and coarse is all zeros, skip model inference. 
-             Otherwise, infer and multiply by the Manhattan mask.
+         (b) If INCLUDE_ZEROS=False and coarse is all zeros, fill the tile region with
+             the normalized equivalent of 0 mm and skip actual model inference.
+         (c) Otherwise, do model inference and multiply by the Manhattan mask.
        - After all tiles, finalize the mosaic by dividing domain_pred_day by domain_wt_day 
          wherever domain_wt_day > 0, then un-transform from log space to mm.
        - Plot side-by-side with ground truth, using the same figure names and directory 
@@ -269,9 +272,16 @@ def run_inference_manhattan(
                                 lat_indices[0]:lat_indices[-1]+1,
                                 lon_indices[0]:lon_indices[-1]+1] = f_vals[i_hour]
 
-                # 2) Possibly skip model inference if coarse is all zero
+                # 2) If coarse is all zero and we're skipping zeros, fill normalized zero
                 coarse_precip_mm = c_vals[i_hour].astype(np.float32)
                 if (not INCLUDE_ZEROS) and np.all(coarse_precip_mm == 0.0):
+                    fill_val = -precip_mean / precip_std
+                    domain_pred_day[hour_idx,
+                                    lat_indices[0]:lat_indices[-1]+1,
+                                    lon_indices[0]:lon_indices[-1]+1] += (fill_val * manhattan_mask)
+                    domain_wt_day[hour_idx,
+                                  lat_indices[0]:lat_indices[-1]+1,
+                                  lon_indices[0]:lon_indices[-1]+1] += manhattan_mask
                     continue
 
                 # Otherwise, do log/normalize -> model inference -> multiply by Manhattan mask

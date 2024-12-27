@@ -41,7 +41,7 @@ LOAD = False
 START_MONTH = (1979, 10)
 END_MONTH = (1989, 9)
 TRAIN_SPLIT = (1987, 10)   # Could also be a float in [0, 1] if desired
-TRAINING_TILES = list(range(0,20))
+TRAINING_TILES = list(range(0,32))
 BATCH_SIZE = 64
 NUM_EPOCHS = 10
 SECONDARY_TILES = True
@@ -51,7 +51,7 @@ INCLUDE_ZEROS = False
 # MODEL HYPERPARAMETERS
 # -------------------------------------------------------------------
 MODEL_NAME = "unetwithattention"
-UNET_DEPTH = 2
+UNET_DEPTH = 1
 MODEL_INPUT_CHANNELS = 2
 MODEL_OUTPUT_CHANNELS = 1
 
