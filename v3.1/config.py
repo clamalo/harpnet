@@ -31,16 +31,16 @@ PADDING = 0.25
 # RUNTIME & DEVICE SETTINGS
 # -------------------------------------------------------------------
 DEVICE = ('mps' if torch.backends.mps.is_available() else 'cuda' if torch.cuda.is_available() else 'cpu')
-TRAINING_PROGRESS_BAR = True
 SAVE_PRECISION = 'float16'
+TRAINING_PROGRESS_BAR = False
 LOAD = False
 
 # -------------------------------------------------------------------
 # TRAINING DATA SETTINGS
 # -------------------------------------------------------------------
 START_MONTH = (1979, 10)
-END_MONTH = (1989, 9)
-TRAIN_SPLIT = (1987, 10)   # Could also be a float in [0, 1] if desired
+END_MONTH = (2022, 9)
+TRAIN_SPLIT = (2014, 10)   # Could also be a float in [0, 1] if desired
 TRAINING_TILES = list(range(0,32))
 BATCH_SIZE = 64
 NUM_EPOCHS = 10

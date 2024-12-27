@@ -21,7 +21,8 @@ from config import (
     PROCESSED_DIR,
     INCLUDE_ZEROS,
     CHECKPOINTS_DIR,
-    FINE_RESOLUTION
+    FINE_RESOLUTION,
+    COARSE_RESOLUTION
 )
 from tiles import (
     get_tile_dict,
@@ -32,13 +33,6 @@ from tiles import (
 def _date_range(start_day=(1980, 9, 3), end_day=(1980, 9, 5)):
     """
     Generate (year, month, day) tuples for each date from start_day up to and including end_day.
-
-    Args:
-        start_day (tuple): (year, month, day)
-        end_day   (tuple): (year, month, day)
-
-    Yields:
-        (int, int, int): (year, month, day) for each date in the range.
     """
     sy, sm, sd = start_day
     ey, em, ed = end_day
@@ -48,6 +42,40 @@ def _date_range(start_day=(1980, 9, 3), end_day=(1980, 9, 5)):
     for i in range(delta.days + 1):
         d = start_dt + timedelta(days=i)
         yield (d.year, d.month, d.day)
+
+
+def _upsample_coarse_with_crop_torch(coarse_tensor: torch.Tensor, final_shape: tuple) -> torch.Tensor:
+    """
+    Similar to generate_dataloaders.py, but works directly on a torch.Tensor.
+
+    coarse_tensor: shape (1, 1, cLat, cLon), log-space precipitation
+    final_shape: (fLat, fLon)
+    Returns: shape (1, 1, fLat, fLon)
+    """
+    _, _, cLat, cLon = coarse_tensor.shape
+    fLat, fLon = final_shape
+
+    ratio = int(round(COARSE_RESOLUTION / FINE_RESOLUTION))
+    upsample_size_lat = cLat * ratio
+    upsample_size_lon = cLon * ratio
+
+    # Interpolate
+    upsampled_t = F.interpolate(
+        coarse_tensor,
+        size=(upsample_size_lat, upsample_size_lon),
+        mode='bilinear',
+        align_corners=False
+    )
+
+    # Center crop
+    lat_diff = upsample_size_lat - fLat
+    lon_diff = upsample_size_lon - fLon
+    top = lat_diff // 2
+    left = lon_diff // 2
+    bottom = top + fLat
+    right = left + fLon
+
+    return upsampled_t[:, :, top:bottom, left:right]
 
 
 def run_inference(
@@ -68,25 +96,18 @@ def run_inference(
        - Slice out the day of interest at coarse resolution (0.25).
        - Keep precipitation in mm, apply log(1 + x), then normalize using the dataset-wide
          mean/std for the logged data.
-       - Bilinearly upsample the coarse precipitation from (cLat, cLon) -> (tile_size, tile_size).
+       - **Now upsample to a bigger padded shape, then center-crop** so the final shape
+         matches the 64×64 tile domain exactly.
        - Add the corresponding fine-resolution elevation channel to form a 2-channel input.
-       - Run the model to get a (tile_size, tile_size) prediction for each hour of that day.
-       - Also retrieve the ground truth high-resolution data for the tile at (tile_size, tile_size)
-         in mm (but do NOT log or normalize).
+       - Run the model to get a (tile_size, tile_size) prediction for each hour.
+       - Also retrieve the ground truth high-resolution data in mm (but do NOT log or normalize).
     5) Stitch the predictions for each tile into a single cohesive domain array, and do the same
-       for ground truth, for each hour of the day (0-23). Then un-normalize by reversing the
-       log transform (expm1).
-    6) For each hour, plot a 2-panel figure named 'inference_YYYYMMDD_HH.png':
-       - Left panel: model downscaled output (mm)
-       - Right panel: ground truth (mm)
-       Both panels share the same colormap and same range [0, 10] mm by default.
-       Figures are saved to FIGURES_DIR / 'inference_output'.
-    7) Keep a running sum of all hours across all days. After processing all days
-       in the range, plot a single 2-panel figure showing the *total* model precipitation
-       vs. *total* ground truth across the entire date range. The colormap max is the
-       maximum between the total predicted and total ground truth. This figure is named
-       'inference_total_YYYYMMDD_YYYYMMDD.png'.
+       for ground truth, for each hour. Then un-normalize by reversing the log transform (expm1).
+    6) For each hour, plot a 2-panel figure named 'inference_YYYYMMDD_HH.png'.
+    7) After processing all days, plot a single 2-panel figure showing the *total* model
+       precipitation vs. *total* ground truth across the entire date range.
     """
+
     def _fmt_date(yr, mn, dy):
         return f"{yr:04d}{mn:02d}{dy:02d}"
 
@@ -121,24 +142,15 @@ def run_inference(
     # Directory for tile-specific best weights
     tile_best_dir = CHECKPOINTS_DIR / "best"
 
-    # Create a dictionary mapping tile_id -> model. We'll load them once and reuse.
-    tile_models = {}
-
-    # ---------------------------------------------------------------------
-    # 2) We will figure out which tiles have fine-tuned weights, load them if available.
-    # ---------------------------------------------------------------------
+    # Create a dictionary mapping tile_id -> model
     tile_dict = get_tile_dict()
     primary_tile_dict = {tid: tile for tid, tile in tile_dict.items() if tile[-1] == 'primary'}
     tile_ids = sorted(primary_tile_dict.keys())
 
+    tile_models = {}
     for tid in tile_ids:
-        # If tile-specific checkpoint exists, load that
-        tile_specific_ckpt = tile_best_dir / f"{tid}_best.pt"
         tile_model = ModelClass().to(device)
-        
-        # Print total number of parameters
-        total_params = sum(p.numel() for p in tile_model.parameters())
-        print(f"Model has {total_params:,} parameters")
+        tile_specific_ckpt = tile_best_dir / f"{tid}_best.pt"
 
         if tile_specific_ckpt.exists():
             print(f"Found fine-tuned weights for tile {tid} at {tile_specific_ckpt}")
@@ -150,7 +162,6 @@ def run_inference(
             else:
                 tile_model.load_state_dict(tile_state_dict, strict=True)
         else:
-            # Otherwise, use the general checkpoint
             tile_model.load_state_dict(general_ckpt_state_dict, strict=True)
 
         tile_model.eval()
@@ -165,8 +176,8 @@ def run_inference(
             f"Cannot find {data_path}. Make sure you've run data_preprocessing.py first."
         )
     norm_data = np.load(data_path)
-    precip_mean = norm_data["precip_mean"].item()  # Mean of log(1 + precip in mm)
-    precip_std = norm_data["precip_std"].item()    # Std of log(1 + precip in mm)
+    precip_mean = norm_data["precip_mean"].item()
+    precip_std = norm_data["precip_std"].item()
     norm_data.close()
 
     print(f"Loaded normalization stats (log scale): mean={precip_mean:.4f}, std={precip_std:.4f}")
@@ -190,7 +201,7 @@ def run_inference(
     min_lon_domain = min(all_lons_min)
     max_lon_domain = max(all_lons_max)
 
-    # Fine resolution is 0.125, so build a global lat/lon array
+    # Fine resolution is typically 0.125 or 0.0625, etc.
     lat_global = np.arange(min_lat_domain, max_lat_domain, FINE_RESOLUTION)
     lon_global = np.arange(min_lon_domain, max_lon_domain, FINE_RESOLUTION)
     nLat = len(lat_global)
@@ -205,7 +216,6 @@ def run_inference(
     if 'Y' in ds_elev.dims and 'X' in ds_elev.dims:
         ds_elev = ds_elev.rename({'Y': 'lat', 'X': 'lon'})
 
-    # Precompute tile elevations for each primary tile
     tile_elevations = {}
     for tid in tile_ids:
         _, _, lat_fine, lon_fine = tile_coordinates(tid)
@@ -214,7 +224,6 @@ def run_inference(
         tile_elevations[tid] = elev_vals
     ds_elev.close()
 
-    # Directory for output
     out_dir = FIGURES_DIR / "inference_output"
     out_dir.mkdir(parents=True, exist_ok=True)
     map_extent = [min_lon_domain, max_lon_domain, min_lat_domain, max_lat_domain]
@@ -226,11 +235,10 @@ def run_inference(
         day_str = f"{year:04d}-{month:02d}-{day:02d}"
         day_tag = _fmt_date(year, month, day)
 
-        # For each day, we'll store up to 24 hours in a (24, nLat, nLon) array
+        # For each day, store up to 24 hours
         domain_pred_day = np.full((24, nLat, nLon), np.nan, dtype=np.float32)
         domain_true_day = np.full((24, nLat, nLon), np.nan, dtype=np.float32)
 
-        # The NetCDF file we expect
         nc_file = RAW_DIR / f"{year:04d}-{month:02d}.nc"
         if not nc_file.exists():
             print(f"** Skipping {day_str}: No data file {nc_file}")
@@ -259,7 +267,6 @@ def run_inference(
             min_lat, max_lat, min_lon, max_lon, _ = primary_tile_dict[tid]
             lat_coarse, lon_coarse, lat_fine, lon_fine = tile_coordinates(tid)
 
-            # This tile's model (general or fine-tuned)
             model = tile_models[tid]
 
             # Interpolate dataset onto tile's coarse grid
@@ -268,38 +275,29 @@ def run_inference(
 
             c_vals = coarse_ds.values  # shape (T, cLat, cLon)
             f_vals = fine_ds.values    # shape (T, fLat, fLon)
-
             elev_tile = tile_elevations[tid]
 
-            # For each hour
-            for i, h in enumerate(ds_hour):
-                coarse_precip_mm = c_vals[i].astype(np.float32)
-
-                # If user excludes zero-coarse hours, skip
+            for i_hr, h in enumerate(ds_hour):
+                coarse_precip_mm = c_vals[i_hr].astype(np.float32)
                 if (not INCLUDE_ZEROS) and np.all(coarse_precip_mm == 0.0):
+                    # If skipping zeros
                     pred_arr = np.zeros_like(elev_tile, dtype=np.float32)
                 else:
-                    # log(1 + x), normalize
+                    # log(1 + x), then normalize
                     coarse_precip_log = np.log1p(coarse_precip_mm)
                     coarse_precip_norm = (coarse_precip_log - precip_mean) / precip_std
 
-                    # Upsample to fine
-                    coarse_precip_t = torch.from_numpy(coarse_precip_norm).unsqueeze(0).unsqueeze(0).to(device)
-                    fLat, fLon = elev_tile.shape
-                    upsampled_precip_t = F.interpolate(
-                        coarse_precip_t,
-                        size=(fLat, fLon),
-                        mode='bilinear',
-                        align_corners=False
+                    # Upsample to bigger padded shape -> crop to tile_size
+                    coarse_tensor = torch.from_numpy(coarse_precip_norm).unsqueeze(0).unsqueeze(0).to(device)
+                    upsampled_cropped_t = _upsample_coarse_with_crop_torch(
+                        coarse_tensor,
+                        final_shape=elev_tile.shape  # e.g. (64,64)
                     )
 
                     # Elevation channel
                     elev_tile_t = torch.from_numpy(elev_tile).unsqueeze(0).unsqueeze(0).to(device)
 
-                    # Stack
-                    model_input = torch.cat([upsampled_precip_t, elev_tile_t], dim=1)
-
-                    # Inference
+                    model_input = torch.cat([upsampled_cropped_t, elev_tile_t], dim=1)
                     with torch.no_grad():
                         pred_t = model(model_input)
                     pred_arr_norm = pred_t.squeeze().cpu().numpy()
@@ -308,26 +306,24 @@ def run_inference(
                     pred_arr_log = (pred_arr_norm * precip_std) + precip_mean
                     pred_arr = np.expm1(pred_arr_log)
 
-                if h in hour_to_index:
-                    hour_idx = h
-                else:
-                    continue
+                # Place it into the domain
+                hour_idx = h if h in hour_to_index else None
+                if hour_idx is not None:
+                    lat_indices = np.searchsorted(lat_global, lat_fine)
+                    lon_indices = np.searchsorted(lon_global, lon_fine)
 
-                lat_indices = np.searchsorted(lat_global, lat_fine)
-                lon_indices = np.searchsorted(lon_global, lon_fine)
+                    domain_pred_day[hour_idx,
+                                    lat_indices[0]:lat_indices[-1] + 1,
+                                    lon_indices[0]:lon_indices[-1] + 1] = pred_arr
 
-                domain_pred_day[hour_idx,
-                                lat_indices[0]:lat_indices[-1] + 1,
-                                lon_indices[0]:lon_indices[-1] + 1] = pred_arr
-
-                # Ground truth
-                domain_true_day[hour_idx,
-                                lat_indices[0]:lat_indices[-1] + 1,
-                                lon_indices[0]:lon_indices[-1] + 1] = f_vals[i]
+                    # Ground truth
+                    domain_true_day[hour_idx,
+                                    lat_indices[0]:lat_indices[-1] + 1,
+                                    lon_indices[0]:lon_indices[-1] + 1] = f_vals[i_hr]
 
         ds.close()
 
-        # Now plot each hour for this day
+        # Plot each hour
         plotted_hours = sorted(hour_to_index.keys())
         for h in plotted_hours:
             hour_idx = h
@@ -439,13 +435,3 @@ def run_inference(
 
     print(f"\nAll inference plots saved to: {out_dir}")
     print("Done!")
-
-
-if __name__ == "__main__":
-    # Example usage:
-    example_checkpoint = "/Users/clamalo/documents/harpnet/v3.1/checkpoints/best/best_model.pt"
-    run_inference(
-        start_day=(2019, 1, 15),
-        end_day=(2019, 1, 19),
-        checkpoint_path=example_checkpoint
-    )

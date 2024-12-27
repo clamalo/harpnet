@@ -25,7 +25,8 @@ from config import (
     CHECKPOINTS_DIR,
     FINE_RESOLUTION,
     TILE_SIZE,
-    SECONDARY_TILES
+    SECONDARY_TILES,
+    COARSE_RESOLUTION
 )
 from tiles import (
     get_tile_dict,
@@ -41,26 +42,59 @@ def tile_weight_mask(N=TILE_SIZE):
     if N % 2 != 0:
         raise ValueError("N must be an even number.")
 
-    # Indices of the 2×2 center
     c1 = N // 2 - 1
     c2 = N // 2
-
-    # Grid of row/col indices
     rows, cols = np.indices((N, N))
 
-    # Compute Manhattan distance to each of the 4 central cells
     dist1 = np.abs(rows - c1) + np.abs(cols - c1)
     dist2 = np.abs(rows - c1) + np.abs(cols - c2)
     dist3 = np.abs(rows - c2) + np.abs(cols - c1)
     dist4 = np.abs(rows - c2) + np.abs(cols - c2)
 
-    # Minimum distance to any center cell
     dist = np.minimum(np.minimum(dist1, dist2), np.minimum(dist3, dist4))
     max_dist = dist.max()
-
-    # Linear flip so distance=0 => weight=1, distance=max => weight=0
     mask = 1.0 - (dist / max_dist) if max_dist > 0 else np.ones((N, N), dtype=np.float32)
     return mask.astype(np.float32)
+
+
+def _date_range(sd=(1980, 9, 3), ed=(1980, 9, 5)):
+    sy, sm, sd_ = sd
+    ey, em, ed_ = ed
+    start_dt = date(sy, sm, sd_)
+    end_dt = date(ey, em, ed_)
+    delta_ = (end_dt - start_dt).days
+    for i in range(delta_ + 1):
+        d_ = start_dt + timedelta(days=i)
+        yield (d_.year, d_.month, d_.day)
+
+
+def _upsample_coarse_with_crop_torch(coarse_tensor: torch.Tensor, final_shape: tuple) -> torch.Tensor:
+    """
+    Same approach as in run_inference.py: upsample to a bigger padded shape, 
+    then center-crop to 'final_shape'.
+    """
+    _, _, cLat, cLon = coarse_tensor.shape
+    fLat, fLon = final_shape
+
+    ratio = int(round(COARSE_RESOLUTION / FINE_RESOLUTION))
+    upsample_size_lat = cLat * ratio
+    upsample_size_lon = cLon * ratio
+
+    upsampled_t = F.interpolate(
+        coarse_tensor,
+        size=(upsample_size_lat, upsample_size_lon),
+        mode='bilinear',
+        align_corners=False
+    )
+
+    lat_diff = upsample_size_lat - fLat
+    lon_diff = upsample_size_lon - fLon
+    top = lat_diff // 2
+    left = lon_diff // 2
+    bottom = top + fLat
+    right = left + fLon
+
+    return upsampled_t[:, :, top:bottom, left:right]
 
 
 def run_inference_manhattan(
@@ -71,39 +105,18 @@ def run_inference_manhattan(
     """
     Run model inference for [start_day..end_day], using a staggered tiling approach 
     for primary + secondary tiles (Manhattan weighting). The ground truth is stored 
-    unchanged, so it never gets NaN-patches even if the model side is zero-skipped.
+    unchanged.
 
-    Steps:
-    1) Load the specified model checkpoint (general weights) with map_location=DEVICE.
-    2) For each tile (both primary and secondary), check for a fine-tuned
-       checkpoint in CHECKPOINTS_DIR/best/<tile_id>_best.pt. If found, use that;
-       otherwise use the general weights. Move the model to DEVICE.
-    3) Load precipitation normalization stats (mean, std) from combined_data.npz.
-    4) For each date in [start_day, end_day]:
-       - Open the NetCDF file for that month/year if it exists.
-       - For each tile & each hour of the day:
-         (a) Fill ground truth domain_true_day. 
-         (b) If INCLUDE_ZEROS=False and coarse is all zeros, fill the tile region with
-             the normalized equivalent of 0 mm and skip actual model inference.
-         (c) Otherwise, do model inference and multiply by the Manhattan mask.
-       - After all tiles, finalize the mosaic by dividing domain_pred_day by domain_wt_day 
-         wherever domain_wt_day > 0, then un-transform from log space to mm.
-       - Plot side-by-side with ground truth, using the same figure names and directory 
-         as run_inference.py.
-    5) After all days, plot total model precipitation vs. total ground truth in the same manner.
+    The main difference from run_inference.py is how we combine overlapping tiles 
+    via the Manhattan weights, but we still apply the "upsample bigger + crop" logic 
+    so the coarse input matches the fine resolution + domain exactly after cropping.
     """
     def _fmt_date(yr, mn, dy):
         return f"{yr:04d}{mn:02d}{dy:02d}"
 
-    # ---------------------------------------------------------------------
-    # Basic checks for checkpoint
-    # ---------------------------------------------------------------------
     if checkpoint_path is None or not os.path.exists(checkpoint_path):
         raise FileNotFoundError(f"Checkpoint not found at: {checkpoint_path}")
 
-    # ---------------------------------------------------------------------
-    # 1) Load the general model checkpoint
-    # ---------------------------------------------------------------------
     model_module = importlib.import_module(MODEL_NAME)
     ModelClass = model_module.Model
 
@@ -112,13 +125,7 @@ def run_inference_manhattan(
     if general_ckpt_state_dict is None:
         raise ValueError(f"Could not load 'model_state_dict' from {checkpoint_path}")
 
-    # ---------------------------------------------------------------------
-    # 2) Build tile models from best checkpoints if available
-    # ---------------------------------------------------------------------
     tile_dict = get_tile_dict()
-    if not tile_dict:
-        raise RuntimeError("No tiles found in get_tile_dict(). Check your config settings.")
-
     tile_ids = sorted(tile_dict.keys())
     tile_models = {}
 
@@ -127,7 +134,6 @@ def run_inference_manhattan(
         tile_specific_ckpt = CHECKPOINTS_DIR / "best" / f"{tid}_best.pt"
 
         if tile_specific_ckpt.exists():
-            print(f"Tile {tid}: using fine-tuned weights {tile_specific_ckpt}")
             ckpt_data = torch.load(tile_specific_ckpt, map_location=DEVICE)
             tile_state_dict = ckpt_data.get('model_state_dict', None)
             if tile_state_dict is not None:
@@ -141,9 +147,6 @@ def run_inference_manhattan(
         tile_model.eval()
         tile_models[tid] = tile_model
 
-    # ---------------------------------------------------------------------
-    # 3) Load normalization stats (mean, std)
-    # ---------------------------------------------------------------------
     data_path = PROCESSED_DIR / "combined_data.npz"
     if not data_path.exists():
         raise FileNotFoundError(
@@ -156,9 +159,6 @@ def run_inference_manhattan(
 
     print(f"Normalization stats: mean={precip_mean:.4f}, std={precip_std:.4f}")
 
-    # ---------------------------------------------------------------------
-    # 4) Prepare global domain bounding box & arrays
-    # ---------------------------------------------------------------------
     all_lats_min = [tile_dict[tid][0] for tid in tile_ids]
     all_lats_max = [tile_dict[tid][1] for tid in tile_ids]
     all_lons_min = [tile_dict[tid][2] for tid in tile_ids]
@@ -175,13 +175,9 @@ def run_inference_manhattan(
     nLon = len(lon_global)
     map_extent = [min_lon_domain, max_lon_domain, min_lat_domain, max_lat_domain]
 
-    # For total precipitation accumulation
     domain_pred_sum = np.zeros((nLat, nLon), dtype=np.float32)
     domain_true_sum = np.zeros((nLat, nLon), dtype=np.float32)
 
-    # ---------------------------------------------------------------------
-    # Load tile elevations
-    # ---------------------------------------------------------------------
     ds_elev = xr.open_dataset(ELEVATION_FILE)
     if 'Y' in ds_elev.dims and 'X' in ds_elev.dims:
         ds_elev = ds_elev.rename({'Y': 'lat', 'X': 'lon'})
@@ -191,41 +187,31 @@ def run_inference_manhattan(
         _, _, lat_fine, lon_fine = tile_coordinates(tid)
         elev_vals = ds_elev.topo.interp(lat=lat_fine, lon=lon_fine, method='nearest').values
         elev_vals = np.nan_to_num(elev_vals, nan=0.0).astype(np.float32)
-        tile_elevations[tid] = elev_vals / 8848.9  # same norm as run_inference
+        tile_elevations[tid] = elev_vals / 8848.9
     ds_elev.close()
 
-    # Precompute the Manhattan mask
     manhattan_mask = tile_weight_mask(TILE_SIZE)
-
-    # ---------------------------------------------------------------------
-    # Use the same directory & filenames as run_inference.py
-    # ---------------------------------------------------------------------
     out_dir = FIGURES_DIR / "inference_output"
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    # ---------------------------------------------------------------------
-    # 5) Iterate over each day, fill domain arrays & mosaic
-    # ---------------------------------------------------------------------
-    def _date_range(sd=(1980, 9, 3), ed=(1980, 9, 5)):
+    def _date_range_inner(sd, ed):
         sy, sm, sd_ = sd
         ey, em, ed_ = ed
         start_dt = date(sy, sm, sd_)
         end_dt = date(ey, em, ed_)
         delta_ = (end_dt - start_dt).days
-        for i in range(delta_ + 1):
-            d_ = start_dt + timedelta(days=i)
+        for i_ in range(delta_ + 1):
+            d_ = start_dt + timedelta(days=i_)
             yield (d_.year, d_.month, d_.day)
 
-    for (year, month, day) in _date_range(start_day, end_day):
+    for (year, month, day) in _date_range_inner(start_day, end_day):
         day_str = f"{year:04d}-{month:02d}-{day:02d}"
         day_tag = _fmt_date(year, month, day)
 
-        # We'll hold data for 24 hours
         domain_pred_day = np.zeros((24, nLat, nLon), dtype=np.float32)
-        domain_wt_day   = np.zeros((24, nLat, nLon), dtype=np.float32)
+        domain_wt_day = np.zeros((24, nLat, nLon), dtype=np.float32)
         domain_true_day = np.full((24, nLat, nLon), np.nan, dtype=np.float32)
 
-        # Attempt reading the monthly file
         nc_file = RAW_DIR / f"{year:04d}-{month:02d}.nc"
         if not nc_file.exists():
             print(f"** Skipping {day_str}: No data file {nc_file}")
@@ -251,28 +237,26 @@ def run_inference_manhattan(
         for tid in tqdm(tile_ids, desc=f"Processing {day_str}"):
             min_lat, max_lat, min_lon, max_lon, _ = tile_dict[tid]
             lat_coarse, lon_coarse, lat_fine, lon_fine = tile_coordinates(tid)
-
             tile_model = tile_models[tid]
 
-            # Slice coarse & fine data
             coarse_ds = ds_day.tp.interp(lat=lat_coarse, lon=lon_coarse, method="linear")
-            fine_ds   = ds_day.tp.interp(lat=lat_fine,  lon=lon_fine,  method="linear")
+            fine_ds = ds_day.tp.interp(lat=lat_fine, lon=lon_fine, method="linear")
 
-            c_vals = coarse_ds.values  # shape (T, cLat, cLon)
-            f_vals = fine_ds.values    # shape (T, fLat, fLon)
+            c_vals = coarse_ds.values
+            f_vals = fine_ds.values
             elev_tile = tile_elevations[tid]
 
             for i_hour, h_val in enumerate(ds_hours):
-                hour_idx = h_val  # 0..23
+                hour_idx = h_val
                 lat_indices = np.searchsorted(lat_global, lat_fine)
                 lon_indices = np.searchsorted(lon_global, lon_fine)
 
-                # 1) Always fill ground truth
+                # 1) ground truth
                 domain_true_day[hour_idx,
                                 lat_indices[0]:lat_indices[-1]+1,
                                 lon_indices[0]:lon_indices[-1]+1] = f_vals[i_hour]
 
-                # 2) If coarse is all zero and we're skipping zeros, fill normalized zero
+                # 2) model inference or skip zeros
                 coarse_precip_mm = c_vals[i_hour].astype(np.float32)
                 if (not INCLUDE_ZEROS) and np.all(coarse_precip_mm == 0.0):
                     fill_val = -precip_mean / precip_std
@@ -284,26 +268,22 @@ def run_inference_manhattan(
                                   lon_indices[0]:lon_indices[-1]+1] += manhattan_mask
                     continue
 
-                # Otherwise, do log/normalize -> model inference -> multiply by Manhattan mask
-                coarse_precip_log  = np.log1p(coarse_precip_mm)
+                coarse_precip_log = np.log1p(coarse_precip_mm)
                 coarse_precip_norm = (coarse_precip_log - precip_mean) / precip_std
 
-                coarse_precip_t = torch.from_numpy(coarse_precip_norm).unsqueeze(0).unsqueeze(0).to(DEVICE)
-                fLat, fLon = elev_tile.shape
-                upsampled_precip_t = F.interpolate(
-                    coarse_precip_t,
-                    size=(fLat, fLon),
-                    mode='bilinear',
-                    align_corners=False
+                coarse_tensor = torch.from_numpy(coarse_precip_norm).unsqueeze(0).unsqueeze(0).to(DEVICE)
+                upsampled_cropped_t = _upsample_coarse_with_crop_torch(
+                    coarse_tensor,
+                    final_shape=elev_tile.shape
                 )
-
                 elev_tile_t = torch.from_numpy(elev_tile).unsqueeze(0).unsqueeze(0).to(DEVICE)
-                model_input = torch.cat([upsampled_precip_t, elev_tile_t], dim=1)
+                model_input = torch.cat([upsampled_cropped_t, elev_tile_t], dim=1)
 
                 with torch.no_grad():
                     pred_t = tile_model(model_input)
                 pred_arr_norm = pred_t.squeeze().cpu().numpy()
 
+                # Weighted sum with Manhattan mask
                 domain_pred_day[hour_idx,
                                 lat_indices[0]:lat_indices[-1]+1,
                                 lon_indices[0]:lon_indices[-1]+1] += (pred_arr_norm * manhattan_mask)
@@ -313,24 +293,20 @@ def run_inference_manhattan(
 
         ds.close()
 
-        # -----------------------------------------------------------------
-        # Finalize mosaic & plot for each hour
-        # -----------------------------------------------------------------
         plotted_hours = sorted(hour_to_index.keys())
-        for h in plotted_hours:
-            hour_idx = h
+        for h_ in plotted_hours:
+            hour_idx = h_
 
+            # Merge the weighted sum
             with np.errstate(divide='ignore', invalid='ignore'):
                 mosaic_norm = domain_pred_day[hour_idx] / domain_wt_day[hour_idx]
             mosaic_norm[~np.isfinite(mosaic_norm)] = 0.0
 
             # Un-normalize
             mosaic_log = (mosaic_norm * precip_std) + precip_mean
-            mosaic_mm  = np.expm1(mosaic_log)
+            mosaic_mm = np.expm1(mosaic_log)
 
-            # Ground truth
             mosaic_true = domain_true_day[hour_idx]
-
             if np.all(np.isnan(mosaic_true)) and np.all(mosaic_mm == 0):
                 continue
 
@@ -371,32 +347,24 @@ def run_inference_manhattan(
             cbar = fig.colorbar(im_true, ax=(ax_pred, ax_true), orientation='horizontal', fraction=0.046, pad=0.08)
             cbar.set_label("Precip (mm / 3hr)")
 
-            # Same filenames as run_inference.py
             out_fname = out_dir / f"inference_{day_tag}_{hour_idx:02d}.png"
             plt.savefig(out_fname, dpi=150, bbox_inches='tight')
             plt.close(fig)
 
-        # -----------------------------------------------------------------
-        # Summation across all hours
-        # -----------------------------------------------------------------
+        # Summation
         if plotted_hours:
-            for h in plotted_hours:
-                hour_idx = h
+            for h_ in plotted_hours:
+                hour_idx = h_
                 with np.errstate(divide='ignore', invalid='ignore'):
                     final_norm = domain_pred_day[hour_idx] / domain_wt_day[hour_idx]
                 final_norm[~np.isfinite(final_norm)] = 0.0
 
                 mosaic_log = (final_norm * precip_std) + precip_mean
-                mosaic_mm  = np.expm1(mosaic_log)
-
-                # Only sum where ground truth isn't NaN
+                mosaic_mm = np.expm1(mosaic_log)
                 mask_valid = ~np.isnan(domain_true_day[hour_idx])
                 domain_pred_sum[mask_valid] += mosaic_mm[mask_valid]
                 domain_true_sum[mask_valid] += domain_true_day[hour_idx][mask_valid]
 
-    # ---------------------------------------------------------------------
-    # 6) Plot total sum across entire date range
-    # ---------------------------------------------------------------------
     total_max = max(domain_pred_sum.max(), domain_true_sum.max())
     if total_max <= 0:
         print("No valid data across the entire date range.")
@@ -439,7 +407,6 @@ def run_inference_manhattan(
     cbar2 = fig.colorbar(im_true_sum, ax=(ax_pred_sum, ax_true_sum), orientation='horizontal', fraction=0.046, pad=0.08)
     cbar2.set_label("Total Precip (mm)")
 
-    # Same naming as run_inference
     out_total = out_dir / f"inference_total_{_fmt_date(*start_day)}_{_fmt_date(*end_day)}.png"
     plt.savefig(out_total, dpi=150, bbox_inches='tight')
     plt.close(fig)
@@ -452,7 +419,7 @@ if __name__ == "__main__":
     # Example usage:
     example_checkpoint = CHECKPOINTS_DIR / "best" / "best_model.pt"
     run_inference_manhattan(
-        start_day=(2019, 1, 15),
-        end_day=(2019, 1, 19),
+        start_day=(2019, 2, 8),
+        end_day=(2019, 2, 23),
         checkpoint_path=str(example_checkpoint)
     )
