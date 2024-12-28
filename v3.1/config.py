@@ -33,6 +33,7 @@ PADDING = 0.25
 DEVICE = ('mps' if torch.backends.mps.is_available() else 'cuda' if torch.cuda.is_available() else 'cpu')
 TRAINING_PROGRESS_BAR = True
 ZIP_MODE = "save"
+PRECIP_THRESHOLD = 0.01
 
 # -------------------------------------------------------------------
 # TRAINING DATA SETTINGS

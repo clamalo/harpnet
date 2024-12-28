@@ -22,7 +22,8 @@ from config import (
     INCLUDE_ZEROS,
     CHECKPOINTS_DIR,
     FINE_RESOLUTION,
-    COARSE_RESOLUTION
+    COARSE_RESOLUTION,
+    PRECIP_THRESHOLD
 )
 from tiles import (
     get_tile_dict,
@@ -279,7 +280,7 @@ def run_inference(
 
             for i_hr, h in enumerate(ds_hour):
                 coarse_precip_mm = c_vals[i_hr].astype(np.float32)
-                if (not INCLUDE_ZEROS) and (coarse_precip_mm.max() < 0.1):
+                if (not INCLUDE_ZEROS) and (coarse_precip_mm.max() < PRECIP_THRESHOLD):
                     # If skipping zeros
                     pred_arr = np.zeros_like(elev_tile, dtype=np.float32)
                 else:

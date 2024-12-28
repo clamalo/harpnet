@@ -8,7 +8,8 @@ from config import (
     START_MONTH, END_MONTH, TRAIN_SPLIT,
     SECONDARY_TILES, TRAINING_TILES,
     INCLUDE_ZEROS,
-    ELEVATION_FILE
+    ELEVATION_FILE,
+    PRECIP_THRESHOLD
 )
 from tiles import get_tile_dict, tile_coordinates
 
@@ -153,7 +154,7 @@ def preprocess_data() -> None:
          (if it exists).
        - Interpolate the 'tp' variable onto the coarse grid and the fine grid.
        - Iterate over each time index (hourly step). If INCLUDE_ZEROS is False
-         and the entire coarse grid is less than 0.1mm at that time, skip it. Otherwise, 
+         and the entire coarse grid is less than PRECIP_THRESHOLD at that time, skip it. Otherwise, 
          write the data and associated time/tile info into the memory map.
        - Keep track of how many total samples were actually written (idx).
     
@@ -292,7 +293,7 @@ def preprocess_data() -> None:
             # Write each time step individually so we can check zeros if needed.
             for i in range(T_len):
                 c_slice = c_vals[i]
-                if (not INCLUDE_ZEROS) and (c_slice.max() < 0.1):
+                if (not INCLUDE_ZEROS) and (c_slice.max() < PRECIP_THRESHOLD):
                     # Skip if entire coarse grid is zero and we are excluding zeros
                     continue
 

@@ -26,7 +26,8 @@ from config import (
     FINE_RESOLUTION,
     TILE_SIZE,
     SECONDARY_TILES,
-    COARSE_RESOLUTION
+    COARSE_RESOLUTION,
+    PRECIP_THRESHOLD
 )
 from tiles import (
     get_tile_dict,
@@ -258,7 +259,7 @@ def run_inference_manhattan(
 
                 # 2) model inference or skip zeros
                 coarse_precip_mm = c_vals[i_hour].astype(np.float32)
-                if (not INCLUDE_ZEROS) and (coarse_precip_mm.max() < 0.1):
+                if (not INCLUDE_ZEROS) and (coarse_precip_mm.max() < PRECIP_THRESHOLD):
                     fill_val = -precip_mean / precip_std
                     domain_pred_day[hour_idx,
                                     lat_indices[0]:lat_indices[-1]+1,
