@@ -279,7 +279,7 @@ def run_inference(
 
             for i_hr, h in enumerate(ds_hour):
                 coarse_precip_mm = c_vals[i_hr].astype(np.float32)
-                if (not INCLUDE_ZEROS) and np.all(coarse_precip_mm == 0.0):
+                if (not INCLUDE_ZEROS) and (coarse_precip_mm.max() < 0.1):
                     # If skipping zeros
                     pred_arr = np.zeros_like(elev_tile, dtype=np.float32)
                 else:

@@ -7,7 +7,7 @@ from config import (
     PROCESSED_DIR,
     BATCH_SIZE,
     COARSE_RESOLUTION,
-    FINE_RESOLUTION
+    FINE_RESOLUTION,
 )
 
 
@@ -131,15 +131,11 @@ def _upsample_coarse_with_crop(coarse_array: np.ndarray, final_shape: tuple) -> 
     fLat, fLon = final_shape
 
     # Compute integer upsampling factor (assuming coarse/fine ratio is consistent in lat/lon)
-    # e.g. if COARSE_RESOLUTION=0.25 and FINE_RESOLUTION=0.0625, ratio=4
     ratio = int(round(COARSE_RESOLUTION / FINE_RESOLUTION))
 
-    # Upsample size in lat/lon dimension
     upsample_size_lat = cLat * ratio
     upsample_size_lon = cLon * ratio
 
-    # Sanity check: we expect upsample_size_lat >= fLat, upsample_size_lon >= fLon
-    # so that we can safely crop
     if upsample_size_lat < fLat or upsample_size_lon < fLon:
         raise ValueError(
             f"Upsample size ({upsample_size_lat}×{upsample_size_lon}) is smaller "
@@ -153,7 +149,7 @@ def _upsample_coarse_with_crop(coarse_array: np.ndarray, final_shape: tuple) -> 
         size=(upsample_size_lat, upsample_size_lon),
         mode='bilinear',
         align_corners=False
-    )  # shape (1,1, upsample_size_lat, upsample_size_lon)
+    )
 
     # Step 2) Center-crop to (fLat, fLon)
     lat_diff = upsample_size_lat - fLat
@@ -164,7 +160,7 @@ def _upsample_coarse_with_crop(coarse_array: np.ndarray, final_shape: tuple) -> 
     bottom = top + fLat
     right = left + fLon
 
-    cropped_t = upsampled_t[:, :, top:bottom, left:right]  # shape (1,1,fLat,fLon)
+    cropped_t = upsampled_t[:, :, top:bottom, left:right]
 
     # Return as np.ndarray (fLat, fLon)
     return cropped_t.squeeze(0).squeeze(0).numpy()
@@ -194,19 +190,42 @@ def generate_dataloaders(tile_id=None):
             f"Cannot find {data_path}. Make sure you've run data_preprocessing.py first."
         )
 
-    # Load the compressed arrays
-    data = np.load(data_path)
-    train_input = data['train_input']    # shape (N_train, cLat, cLon)
-    train_target = data['train_target']  # shape (N_train, fLat, fLon)
-    train_time = data['train_time']
-    train_tile = data['train_tile']
+    # Load the compressed arrays (metadata + references)
+    data = np.load(data_path, allow_pickle=True)
 
-    test_input = data['test_input']      # shape (N_test, cLat, cLon)
-    test_target = data['test_target']    # shape (N_test, fLat, fLon)
+    # Check if we have memmap references in the .npz
+    if 'train_input_mm_filename' in data:
+        train_input_mm_filename = data['train_input_mm_filename'].item()
+        train_input_shape = tuple(data['train_input_shape'])
+        train_input = np.memmap(train_input_mm_filename, dtype='float16', mode='r', shape=train_input_shape)
+
+        train_target_mm_filename = data['train_target_mm_filename'].item()
+        train_target_shape = tuple(data['train_target_shape'])
+        train_target = np.memmap(train_target_mm_filename, dtype='float16', mode='r', shape=train_target_shape)
+
+        test_input_mm_filename = data['test_input_mm_filename'].item()
+        test_input_shape = tuple(data['test_input_shape'])
+        test_input = np.memmap(test_input_mm_filename, dtype='float16', mode='r', shape=test_input_shape)
+
+        test_target_mm_filename = data['test_target_mm_filename'].item()
+        test_target_shape = tuple(data['test_target_shape'])
+        test_target = np.memmap(test_target_mm_filename, dtype='float16', mode='r', shape=test_target_shape)
+
+    else:
+        # Fallback in case the user never used memmaps
+        # (Not really expected if you are using the updated data_preprocessing.py,
+        # but we keep it for backward compatibility.)
+        train_input = data['train_input']
+        train_target = data['train_target']
+        test_input = data['test_input']
+        test_target = data['test_target']
+
+    train_time = data['train_time']
     test_time = data['test_time']
+    train_tile = data['train_tile']
     test_tile = data['test_tile']
 
-    tile_elevations = data.get('tile_elevations', None)  # (num_tiles, fLat, fLon)
+    tile_elevations = data.get('tile_elevations', None)
     tile_ids = data.get('tile_ids', None)
     data.close()
 
@@ -215,6 +234,9 @@ def generate_dataloaders(tile_id=None):
         train_mask = (train_tile == tile_id)
         test_mask = (test_tile == tile_id)
 
+        # We must take care if the arrays are memmaps, we can slice them using mask 
+        # but that may produce an in-memory copy. This is acceptable for small subsets
+        # but be aware it can still be large. Usually tile-based subsets are smaller.
         train_input = train_input[train_mask]
         train_target = train_target[train_mask]
         train_time = train_time[train_mask]

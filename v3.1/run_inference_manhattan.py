@@ -258,7 +258,7 @@ def run_inference_manhattan(
 
                 # 2) model inference or skip zeros
                 coarse_precip_mm = c_vals[i_hour].astype(np.float32)
-                if (not INCLUDE_ZEROS) and np.all(coarse_precip_mm == 0.0):
+                if (not INCLUDE_ZEROS) and (coarse_precip_mm.max() < 0.1):
                     fill_val = -precip_mean / precip_std
                     domain_pred_day[hour_idx,
                                     lat_indices[0]:lat_indices[-1]+1,
