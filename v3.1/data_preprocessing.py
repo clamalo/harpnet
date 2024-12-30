@@ -498,14 +498,14 @@ def preprocess_data() -> None:
     out_combined_path = PROCESSED_DIR / "combined_data.npz"
     np.savez_compressed(
         out_combined_path,
-        # memmap references
-        train_input_mm_filename=str(train_input_mm_path),
+        # memmap references (store them as RELATIVE paths to PROCESSED_DIR)
+        train_input_mm_filename=str(train_input_mm_path.relative_to(PROCESSED_DIR)),
         train_input_shape=[n_train, cLat, cLon],
-        train_target_mm_filename=str(train_target_mm_path),
+        train_target_mm_filename=str(train_target_mm_path.relative_to(PROCESSED_DIR)),
         train_target_shape=[n_train, fLat, fLon],
-        test_input_mm_filename=str(test_input_mm_path),
+        test_input_mm_filename=str(test_input_mm_path.relative_to(PROCESSED_DIR)),
         test_input_shape=[n_test, cLat, cLon],
-        test_target_mm_filename=str(test_target_mm_path),
+        test_target_mm_filename=str(test_target_mm_path.relative_to(PROCESSED_DIR)),
         test_target_shape=[n_test, fLat, fLon],
         # small arrays
         train_time=train_time,

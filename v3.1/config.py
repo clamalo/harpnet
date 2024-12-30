@@ -39,8 +39,8 @@ PRECIP_THRESHOLD = 0.01
 # TRAINING DATA SETTINGS
 # -------------------------------------------------------------------
 START_MONTH = (1979, 10)
-END_MONTH = (2022, 9)
-TRAIN_SPLIT = (2014, 10)   # Could also be a float in [0, 1] if desired
+END_MONTH = (1979, 12)
+TRAIN_SPLIT = (1979, 12)   # Could also be a float in [0, 1] if desired
 TRAINING_TILES = list(range(0,179))
 BATCH_SIZE = 64
 NUM_EPOCHS = 10

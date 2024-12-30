@@ -197,19 +197,23 @@ def generate_dataloaders(tile_id=None):
     if 'train_input_mm_filename' in data:
         train_input_mm_filename = data['train_input_mm_filename'].item()
         train_input_shape = tuple(data['train_input_shape'])
-        train_input = np.memmap(train_input_mm_filename, dtype='float16', mode='r', shape=train_input_shape)
+        train_input_filepath = PROCESSED_DIR / train_input_mm_filename
+        train_input = np.memmap(train_input_filepath, dtype='float16', mode='r', shape=train_input_shape)
 
         train_target_mm_filename = data['train_target_mm_filename'].item()
         train_target_shape = tuple(data['train_target_shape'])
-        train_target = np.memmap(train_target_mm_filename, dtype='float16', mode='r', shape=train_target_shape)
+        train_target_filepath = PROCESSED_DIR / train_target_mm_filename
+        train_target = np.memmap(train_target_filepath, dtype='float16', mode='r', shape=train_target_shape)
 
         test_input_mm_filename = data['test_input_mm_filename'].item()
         test_input_shape = tuple(data['test_input_shape'])
-        test_input = np.memmap(test_input_mm_filename, dtype='float16', mode='r', shape=test_input_shape)
+        test_input_filepath = PROCESSED_DIR / test_input_mm_filename
+        test_input = np.memmap(test_input_filepath, dtype='float16', mode='r', shape=test_input_shape)
 
         test_target_mm_filename = data['test_target_mm_filename'].item()
         test_target_shape = tuple(data['test_target_shape'])
-        test_target = np.memmap(test_target_mm_filename, dtype='float16', mode='r', shape=test_target_shape)
+        test_target_filepath = PROCESSED_DIR / test_target_mm_filename
+        test_target = np.memmap(test_target_filepath, dtype='float16', mode='r', shape=test_target_shape)
 
     else:
         # Fallback in case the user never used memmaps
@@ -234,9 +238,6 @@ def generate_dataloaders(tile_id=None):
         train_mask = (train_tile == tile_id)
         test_mask = (test_tile == tile_id)
 
-        # We must take care if the arrays are memmaps, we can slice them using mask 
-        # but that may produce an in-memory copy. This is acceptable for small subsets
-        # but be aware it can still be large. Usually tile-based subsets are smaller.
         train_input = train_input[train_mask]
         train_target = train_target[train_mask]
         train_time = train_time[train_mask]
