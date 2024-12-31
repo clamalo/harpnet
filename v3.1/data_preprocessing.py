@@ -125,58 +125,32 @@ def preprocess_data() -> None:
     including hourly resolution. The final output is a single .npz file 
     containing train/test time/tile arrays, tile-based elevation data, and 
     precipitation normalization stats. Meanwhile, the final train/test input 
-    and target arrays are stored as separate memmapped .dat files to avoid 
-    allocating huge arrays in memory.
+    and target arrays are stored as separate memmapped .dat files (i.e.
+    'train_input_mm.dat', 'test_input_mm.dat', etc.) to avoid allocating huge 
+    arrays in memory. We do NOT store any filenames in the .npz; all references 
+    are assumed to be 'hardcoded' to PROCESSED_DIR.
 
     Workflow Steps:
     
     1. Determine which tiles to process from TRAINING_TILES. These tiles
-       are defined in config.py and may represent coarse-to-fine 
-       geographical domains.
+       are defined in config.py.
     
-    2. Perform a first pass to count the total number of samples 
-       (hours × number of tiles × number of months) so that we can 
-       allocate sufficiently large memory-mapped arrays.
-       - If INCLUDE_ZEROS is True, all hours are counted.
-       - If INCLUDE_ZEROS is False, we still allocate space for 
-         all hours but may ultimately skip zero-value hours in the second pass.
+    2. First pass: count the total number of samples for memory-map allocation.
     
-    3. Allocate memory-mapped arrays for:
-       - input_mm   (float32) shape: (total_samples, cLat, cLon)
-       - target_mm  (float32) shape: (total_samples, fLat, fLon)
-       - time_mm    (int32)   shape: (total_samples, 4)  # [year, month, day, hour]
-       - tile_mm    (int32)   shape: (total_samples,)
-       
-       Here cLat, cLon = coarse lat/lon size, and fLat, fLon = fine lat/lon size.
+    3. Allocate memory-mapped arrays for input, target, time, tile.
     
-    4. Second pass over the months/tiles:
-       - For each tile in TRAINING_TILES, open the NetCDF file for that month 
-         (if it exists).
-       - Interpolate the 'tp' variable onto the coarse grid and the fine grid.
-       - Iterate over each time index (hourly step). If INCLUDE_ZEROS is False
-         and the entire coarse grid is less than PRECIP_THRESHOLD at that time, skip it. Otherwise, 
-         write the data and associated time/tile info into the memory map.
-       - Keep track of how many total samples were actually written (idx).
+    4. Second pass: read data, optionally skip zeros, and store to memory maps.
     
-    5. After the second pass completes, we now have idx samples in memmap arrays,
-       which may be less than the allocated total if we skipped zeros.
-       Then we proceed to log-transform, compute dataset-wide mean/std, and 
-       normalize the data in a memory-efficient, chunked way (avoiding full 
-       load into RAM at once).
+    5. Log-transform + compute dataset-wide mean/std in log-space, chunked.
     
-    6. We split into train/test in the same order as before. The smaller 
-       time/tile arrays are loaded fully into memory for date-based splitting,
-       while the big input/target arrays remain in memmap form for chunked splitting. 
+    6. Normalize in log-space (in-place), chunked.
     
-    7. Cast input/target arrays to float16 and write them to new memmapped 
-       files (train_input_mm.dat, etc.) in chunked fashion, separating into 
-       train vs. test subsets. This avoids ever creating giant in-memory arrays 
-       for the final train/test data.
+    7. Split into train/test sets, store final arrays as separate memmaps 
+       ('train_input_mm.dat', etc.). Store tile/time arrays, shapes, and 
+       normalization stats in 'combined_data.npz' (without any memmap filenames).
     
-    8. Load the elevation data once and store tile elevations. Finally, we 
-       save everything in a single .npz (except for the large train/test arrays, 
-       which remain in separate memmapped files). Then we remove the temporary 
-       .dat memmap files from the earlier steps.
+    8. Remove the temporary .dat memmap files from the earlier step, keep only
+       the final splitted memmaps plus 'combined_data.npz'.
     """
 
     # 1) Gather tile IDs to process
@@ -228,7 +202,7 @@ def preprocess_data() -> None:
             "Please check data files or tile configuration."
         )
 
-    # 3) Allocate memmap arrays
+    # 3) Allocate memmap arrays for the entire dataset
     PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
 
     input_mm_path = PROCESSED_DIR / "input_mm.dat"
@@ -323,16 +297,12 @@ def preprocess_data() -> None:
 
     print(f"\nTotal samples after processing (skipped zeros if INCLUDE_ZEROS=False): {idx}")
 
-    # -------------------------------------------------------------
     # 5) Log transform + compute dataset-wide mean/std in log-space
-    #    IN A CHUNKED WAY TO AVOID LOADING EVERYTHING AT ONCE
-    # -------------------------------------------------------------
     chunk_size = 50000
     sum_val = 0.0
     sum_sq_val = 0.0
     total_pixels = 0
 
-    # Pass 1: log1p transform + partial sums
     print("Performing in-place log transform & partial sums for mean/std...")
     for start in range(0, idx, chunk_size):
         end = min(start + chunk_size, idx)
@@ -359,9 +329,7 @@ def preprocess_data() -> None:
 
     print(f"Log-space mean = {precip_mean:.6f}, std = {precip_std:.6f}")
 
-    # -------------------------------------------------------------
     # 6) Normalize in log space (in-place), again chunked
-    # -------------------------------------------------------------
     print("Performing in-place normalization in log space...")
     for start in range(0, idx, chunk_size):
         end = min(start + chunk_size, idx)
@@ -377,15 +345,10 @@ def preprocess_data() -> None:
     input_mm.flush()
     target_mm.flush()
 
-    # -------------------------------------------------------------
     # 7) Split into train/test sets, store final arrays as memmaps
-    # -------------------------------------------------------------
-
-    # Load the time/tile arrays fully (they are relatively small)
     time_arr = np.array(time_mm[:idx])
     tile_arr = np.array(tile_mm[:idx])
 
-    # Build the train_mask using the same logic as _split_data_by_date
     def _date_int(yy, mm):
         return (yy * 12) + mm
 
@@ -402,7 +365,6 @@ def preprocess_data() -> None:
     n_train = train_mask.sum()
     n_test = (~train_mask).sum()
 
-    # Create final memmaps for train/test
     train_input_mm_path = PROCESSED_DIR / "train_input_mm.dat"
     test_input_mm_path  = PROCESSED_DIR / "test_input_mm.dat"
     train_target_mm_path = PROCESSED_DIR / "train_target_mm.dat"
@@ -430,7 +392,7 @@ def preprocess_data() -> None:
         shape=(n_test, fLat, fLon)
     )
 
-    # Also split time/tile into arrays in memory (they're small)
+    # Also split time/tile
     data_dict_small = _split_data_by_date(
         date_array=time_arr, 
         data_arrays=[time_arr, tile_arr], 
@@ -439,12 +401,10 @@ def preprocess_data() -> None:
     train_time, train_tile = data_dict_small['train']
     test_time, test_tile   = data_dict_small['test']
 
-    # Write data chunked from the big in-place input_mm/target_mm
     print("Splitting input/target into train/test memmaps in memory-friendly chunks...")
     train_idx_counter = 0
     test_idx_counter = 0
 
-    chunk_size = 50000
     for start in range(0, idx, chunk_size):
         end = min(start + chunk_size, idx)
         chunk_mask = train_mask[start:end]
@@ -466,7 +426,6 @@ def preprocess_data() -> None:
         train_idx_counter += n_train_chunk
         test_idx_counter += n_test_chunk
 
-    # Flush final memmaps
     train_input_mm.flush()
     test_input_mm.flush()
     train_target_mm.flush()
@@ -474,9 +433,7 @@ def preprocess_data() -> None:
 
     print("Train samples:", train_idx_counter, "Test samples:", test_idx_counter)
 
-    # -------------------------------------------------------------
-    # 8) Load elevation data + tile IDs, store in .npz
-    # -------------------------------------------------------------
+    # Load elevation data + tile IDs, store shape info in .npz
     ds_elev = xr.open_dataset(ELEVATION_FILE)
     if 'Y' in ds_elev.dims and 'X' in ds_elev.dims:
         ds_elev = ds_elev.rename({'Y': 'lat', 'X': 'lon'})
@@ -494,34 +451,27 @@ def preprocess_data() -> None:
     ds_elev.close()
     tile_ids_arr = np.array(unique_tile_ids, dtype=np.int32)
 
-    # Store final data references in a single .npz
     out_combined_path = PROCESSED_DIR / "combined_data.npz"
+    # We'll store only shapes, times, tiles, and normalization stats (no file references).
     np.savez_compressed(
         out_combined_path,
-        # memmap references (store them as RELATIVE paths to PROCESSED_DIR)
-        train_input_mm_filename=str(train_input_mm_path.relative_to(PROCESSED_DIR)),
         train_input_shape=[n_train, cLat, cLon],
-        train_target_mm_filename=str(train_target_mm_path.relative_to(PROCESSED_DIR)),
         train_target_shape=[n_train, fLat, fLon],
-        test_input_mm_filename=str(test_input_mm_path.relative_to(PROCESSED_DIR)),
         test_input_shape=[n_test, cLat, cLon],
-        test_target_mm_filename=str(test_target_mm_path.relative_to(PROCESSED_DIR)),
         test_target_shape=[n_test, fLat, fLon],
-        # small arrays
         train_time=train_time,
         train_tile=train_tile,
         test_time=test_time,
         test_tile=test_tile,
         tile_elevations=tile_elevations,
         tile_ids=tile_ids_arr,
-        precip_mean=precip_mean,  # Mean of log(1 + precip)
-        precip_std=precip_std     # Std of log(1 + precip)
+        precip_mean=precip_mean,
+        precip_std=precip_std
     )
 
-    print(f"\nSaved references + metadata to: {out_combined_path}")
+    print(f"\nSaved dataset metadata (no filenames) to: {out_combined_path}")
 
-    # Remove the temporary memmap files that were used for the initial 
-    # collection (the giant in-place ones). We keep the final splitted memmaps.
+    # Remove the temporary memmap files from the initial pass
     for p in [input_mm_path, target_mm_path, time_mm_path, tile_mm_path]:
         if p.exists():
             os.remove(p)

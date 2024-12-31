@@ -23,9 +23,9 @@ class PrecipDataset(Dataset):
         - 'time':   (4,)  [year, month, day, hour].
         - 'tile':   (int) the tile ID.
 
-    The upsampling to fine resolution (for the model's first channel) is now done with a 
-    "bigger interpolation + center crop" approach, so that the final precipitation grid 
-    exactly matches the resolution and spatial extent of the 'target' after removing the 
+    The upsampling to fine resolution (for the model's first channel) is done with a 
+    "bigger interpolation + center crop" approach, so the final precipitation grid 
+    exactly matches the resolution and spatial extent of 'target' after removing the
     outer pad region.
     """
 
@@ -34,15 +34,15 @@ class PrecipDataset(Dataset):
                  transform=None):
         """
         Args:
-            inputs (np.ndarray):  Coarse-resolution data array of shape (N, cLat, cLon).
-                                  This is log(1+precip) normalized if configured by preprocessing.
-            targets (np.ndarray): Fine-resolution data array of shape (N, fLat, fLon).
-                                  Also log(1+precip) normalized if configured by preprocessing.
+            inputs (np.ndarray):  Coarse-resolution data array of shape (N, cLat, cLon),
+                                  normalized in log-space if configured.
+            targets (np.ndarray): Fine-resolution data array of shape (N, fLat, fLon),
+                                  normalized in log-space if configured.
             times (np.ndarray):   (N, 4), [year, month, day, hour].
             tiles (np.ndarray):   (N,).
             tile_elevations (np.ndarray): (num_tiles, fLat, fLon). Elevation for each tile ID.
-            tile_ids (np.ndarray): 1D array of shape (num_tiles,) matching tile IDs to the
-                                   index in tile_elevations.
+            tile_ids (np.ndarray): 1D array of shape (num_tiles,) mapping tile IDs to 
+                                   indices in tile_elevations.
             transform (callable, optional): optional transform for augmentation.
         """
         self.inputs = inputs
@@ -51,7 +51,7 @@ class PrecipDataset(Dataset):
         self.tiles = tiles
         self.transform = transform
 
-        # Build a lookup dict for tile ID -> index into tile_elevations
+        # Build a lookup for tile ID -> index
         self.tile_elevations = tile_elevations
         self.tile_id_to_index = {}
         if tile_elevations is not None and tile_ids is not None:
@@ -72,13 +72,9 @@ class PrecipDataset(Dataset):
               'tile':         <tile_id>
             }
         """
-        # (cLat, cLon) coarse precipitation (normalized log-space)
         coarse_precip = self.inputs[idx]
-
-        # (fLat, fLon) fine-resolution target (normalized log-space)
         target = self.targets[idx]
 
-        # Identify tile & retrieve its fine-res elevation
         tile_id = self.tiles[idx]
         elev = None
         if self.tile_elevations is not None:
@@ -88,26 +84,19 @@ class PrecipDataset(Dataset):
         if elev is None:
             elev = np.zeros_like(target)
 
-        # Upsample with padding -> bigger shape -> then crop to exactly match target shape
-        upsampled_precip = _upsample_coarse_with_crop(
-            coarse_array=coarse_precip,
-            final_shape=target.shape  # e.g. (fLat, fLon)
-        )
+        upsampled_precip = _upsample_coarse_with_crop(coarse_precip, target.shape)
 
-        # Stack [precip, elevation] as 2 channels
         combined_input = np.stack([upsampled_precip, elev], axis=0)
 
         sample = {
-            'input':        combined_input,   # (2, fLat, fLon)
-            'coarse_input': coarse_precip,    # (cLat, cLon) original coarse data
-            'target':       target,           # (fLat, fLon)
-            'time':         self.times[idx],  # (4,)
+            'input':        combined_input,   
+            'coarse_input': coarse_precip,    
+            'target':       target,           
+            'time':         self.times[idx],  
             'tile':         tile_id
         }
-
         if self.transform:
             sample = self.transform(sample)
-
         return sample
 
 
@@ -116,13 +105,9 @@ def _upsample_coarse_with_crop(coarse_array: np.ndarray, final_shape: tuple) -> 
     Interpolate a coarse precipitation array to a larger padded size, then
     center-crop it so that the final shape matches 'final_shape'.
 
-    For example, if coarse_array is 18×18 and final_shape is 64×64, we might:
-      1) upsample to 72×72 (i.e. 4× upsampling for 18×18).
-      2) center-crop out 64×64 from the middle, discarding 4 px on each edge.
-
     Args:
         coarse_array (np.ndarray): shape (cLat, cLon), log-space precipitation.
-        final_shape (tuple): (fLat, fLon) shape for the final cropped result.
+        final_shape (tuple): (fLat, fLon).
 
     Returns:
         np.ndarray of shape (fLat, fLon)
@@ -130,9 +115,7 @@ def _upsample_coarse_with_crop(coarse_array: np.ndarray, final_shape: tuple) -> 
     cLat, cLon = coarse_array.shape
     fLat, fLon = final_shape
 
-    # Compute integer upsampling factor (assuming coarse/fine ratio is consistent in lat/lon)
     ratio = int(round(COARSE_RESOLUTION / FINE_RESOLUTION))
-
     upsample_size_lat = cLat * ratio
     upsample_size_lon = cLon * ratio
 
@@ -142,7 +125,6 @@ def _upsample_coarse_with_crop(coarse_array: np.ndarray, final_shape: tuple) -> 
             f"than final shape ({fLat}×{fLon}). Check your config!"
         )
 
-    # Step 1) Interpolate to (upsample_size_lat, upsample_size_lon)
     coarse_tensor = torch.from_numpy(coarse_array).unsqueeze(0).unsqueeze(0).float()
     upsampled_t = F.interpolate(
         coarse_tensor,
@@ -151,38 +133,28 @@ def _upsample_coarse_with_crop(coarse_array: np.ndarray, final_shape: tuple) -> 
         align_corners=False
     )
 
-    # Step 2) Center-crop to (fLat, fLon)
     lat_diff = upsample_size_lat - fLat
     lon_diff = upsample_size_lon - fLon
-
     top = lat_diff // 2
     left = lon_diff // 2
     bottom = top + fLat
     right = left + fLon
 
     cropped_t = upsampled_t[:, :, top:bottom, left:right]
-
-    # Return as np.ndarray (fLat, fLon)
     return cropped_t.squeeze(0).squeeze(0).numpy()
 
 
 def generate_dataloaders(tile_id=None):
     """
-    Generate and return training/testing DataLoaders for precipitation data plus elevation.
+    Generate and return training/testing DataLoaders for precipitation data plus elevation,
+    using ONLY hardcoded memmap paths in PROCESSED_DIR. The shapes are read from
+    'combined_data.npz', but no filenames are stored or used.
 
-    If tile_id is None, this function returns DataLoaders for the entire dataset
-    (the original train/test split). If tile_id is specified, it filters the dataset
-    so only samples matching that tile_id are included in the returned train/test sets.
+    If tile_id is None, the entire dataset is returned; if tile_id is specified,
+    only samples for that tile are included in the returned train/test loaders.
 
     Returns:
         (train_loader, test_loader)
-
-    Each sample from these loaders will now contain:
-        - 'input':        (2, fLat, fLon)  [upsampled coarse precip + fine elev]
-        - 'coarse_input': (cLat, cLon)     [coarse data without upsampling]
-        - 'target':       (fLat, fLon)
-        - 'time':         (4,)
-        - 'tile':         tile_id
     """
     data_path = PROCESSED_DIR / "combined_data.npz"
     if not data_path.exists():
@@ -190,39 +162,30 @@ def generate_dataloaders(tile_id=None):
             f"Cannot find {data_path}. Make sure you've run data_preprocessing.py first."
         )
 
-    # Load the compressed arrays (metadata + references)
     data = np.load(data_path, allow_pickle=True)
 
-    # Check if we have memmap references in the .npz
-    if 'train_input_mm_filename' in data:
-        train_input_mm_filename = data['train_input_mm_filename'].item()
-        train_input_shape = tuple(data['train_input_shape'])
-        train_input_filepath = PROCESSED_DIR / train_input_mm_filename
-        train_input = np.memmap(train_input_filepath, dtype='float16', mode='r', shape=train_input_shape)
+    train_input_shape = tuple(data['train_input_shape'])
+    train_target_shape = tuple(data['train_target_shape'])
+    test_input_shape = tuple(data['test_input_shape'])
+    test_target_shape = tuple(data['test_target_shape'])
 
-        train_target_mm_filename = data['train_target_mm_filename'].item()
-        train_target_shape = tuple(data['train_target_shape'])
-        train_target_filepath = PROCESSED_DIR / train_target_mm_filename
-        train_target = np.memmap(train_target_filepath, dtype='float16', mode='r', shape=train_target_shape)
-
-        test_input_mm_filename = data['test_input_mm_filename'].item()
-        test_input_shape = tuple(data['test_input_shape'])
-        test_input_filepath = PROCESSED_DIR / test_input_mm_filename
-        test_input = np.memmap(test_input_filepath, dtype='float16', mode='r', shape=test_input_shape)
-
-        test_target_mm_filename = data['test_target_mm_filename'].item()
-        test_target_shape = tuple(data['test_target_shape'])
-        test_target_filepath = PROCESSED_DIR / test_target_mm_filename
-        test_target = np.memmap(test_target_filepath, dtype='float16', mode='r', shape=test_target_shape)
-
-    else:
-        # Fallback in case the user never used memmaps
-        # (Not really expected if you are using the updated data_preprocessing.py,
-        # but we keep it for backward compatibility.)
-        train_input = data['train_input']
-        train_target = data['train_target']
-        test_input = data['test_input']
-        test_target = data['test_target']
+    # Hardcoded memmap files
+    train_input = np.memmap(
+        PROCESSED_DIR / "train_input_mm.dat",
+        dtype='float16', mode='r', shape=train_input_shape
+    )
+    train_target = np.memmap(
+        PROCESSED_DIR / "train_target_mm.dat",
+        dtype='float16', mode='r', shape=train_target_shape
+    )
+    test_input = np.memmap(
+        PROCESSED_DIR / "test_input_mm.dat",
+        dtype='float16', mode='r', shape=test_input_shape
+    )
+    test_target = np.memmap(
+        PROCESSED_DIR / "test_target_mm.dat",
+        dtype='float16', mode='r', shape=test_target_shape
+    )
 
     train_time = data['train_time']
     test_time = data['test_time']
@@ -269,7 +232,6 @@ def generate_dataloaders(tile_id=None):
     g = torch.Generator()
     g.manual_seed(42)
 
-    # DataLoaders
     train_loader = DataLoader(
         train_dataset,
         batch_size=BATCH_SIZE,
