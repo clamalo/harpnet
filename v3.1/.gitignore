@@ -1,3 +1,5 @@
 checkpoints/
 figures/inference_output/
 tiles/
+figures/inference_output_gfs/
+data/

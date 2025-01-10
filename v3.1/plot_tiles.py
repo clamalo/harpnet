@@ -57,7 +57,7 @@ def plot_tiles(plot_secondary_separately=False):
     min_lon = min(all_lons) - 1
     max_lon = max(all_lons) + 1
 
-    def _plot_tile_list(ax, tile_list, color, linestyle, linewidth=2.0, fontsize=14, rect_zorder=2):
+    def _plot_tile_list(ax, tile_list, color, linestyle, linewidth=2.0, fontsize=4, rect_zorder=2):
         """
         Helper function to plot a list of tile boundaries and text labels.
         The zorder is set higher than the basemap so these lines/text appear on top.
@@ -142,5 +142,5 @@ def plot_tiles(plot_secondary_separately=False):
     print(f"Tile plot saved to {out_path}")
 
 if __name__ == "__main__":
-    plot_secondary_separately = True
+    plot_secondary_separately = False
     plot_tiles(plot_secondary_separately)

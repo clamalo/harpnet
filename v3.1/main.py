@@ -90,9 +90,9 @@ elif ZIP_MODE == "load":
     train_loader, test_loader = generate_dataloaders()
     train_test(train_loader, test_loader)
 
-    ensemble(CHECKPOINTS_DIR)
+    # ensemble(CHECKPOINTS_DIR)
 
-    fine_tune_tiles(TRAINING_TILES, CHECKPOINTS_DIR / 'best' / 'best_model.pt', FINE_TUNE_EPOCHS)
+    # fine_tune_tiles(TRAINING_TILES, CHECKPOINTS_DIR / 'best' / 'best_model.pt', FINE_TUNE_EPOCHS)
 
 else:
     raise ValueError(f"ZIP_MODE must be either 'save' or 'load', but got '{ZIP_MODE}'.")

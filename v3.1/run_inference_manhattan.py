@@ -420,7 +420,7 @@ if __name__ == "__main__":
     # Example usage:
     example_checkpoint = CHECKPOINTS_DIR / "best" / "best_model.pt"
     run_inference_manhattan(
-        start_day=(2019, 2, 8),
+        start_day=(2019, 2, 13),
         end_day=(2019, 2, 23),
         checkpoint_path=str(example_checkpoint)
     )
