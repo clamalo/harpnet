@@ -11,6 +11,7 @@ import torch.nn.functional as F
 import matplotlib.pyplot as plt
 import cartopy.crs as ccrs
 import cartopy.feature as cfeature
+from metpy.plots import USCOUNTIES
 
 from pathlib import Path
 from datetime import datetime, timedelta
@@ -234,7 +235,8 @@ def run_inference(
     data_source: str,
     init_datestr: str,
     hours: int,
-    ratio: bool = False
+    ratio: bool = False,
+    colormap: str = "weatherbell"
 ):
     """
     Consolidated inference function for local NetCDF data, ECMWF realtime data, or GFS realtime data.
@@ -248,6 +250,9 @@ def run_inference(
         hours (int): How many hours to process. The script plots frames in multiples of 3 up to 'hours'.
         ratio (bool): If True, plot a 3-panel figure (model, coarse/bilinear, ratio).
                       If False, plot a 2-panel figure (model, coarse/bilinear).
+        colormap (str): Either "viridis" or "weatherbell". If "viridis", each 3-hourly plot
+                        is scaled to [0, 5]. The accumulated total plot is scaled to [0, max_value].
+                        If "weatherbell", uses the existing WeatherBell color palette and boundaries.
     """
     # --------------------------------------------
     # 1) Parse init date/time, create forecast steps
@@ -341,13 +346,47 @@ def run_inference(
     out_dir = FIGURES_DIR / "inference_output"
     out_dir.mkdir(parents=True, exist_ok=True)
 
+    # --------------------------------------------
+    # Handle colormap logic
+    # --------------------------------------------
     import matplotlib.colors as mcolors
-    wbell_cmap = _weatherbell_precip_colormap()
-    bounds = [0.0, 0.25, 0.76, 1.27, 1.91, 2.54, 3.81, 5.08, 6.35, 7.62,
-              10.16, 12.7, 15.24, 17.78, 20.32, 22.86, 25.4, 30.48, 35.56,
-              40.64, 45.72, 50.8, 63.5, 76.2, 88.9, 101.6, 127.0, 152.4,
-              177.8, 203.2, 228.6, 254.0]
-    wb_norm = mcolors.BoundaryNorm(bounds, ncolors=len(wbell_cmap.colors))
+
+    if colormap.lower() == "weatherbell":
+        # Use the existing WeatherBell color palette and boundary norms
+        wbell_cmap = _weatherbell_precip_colormap()
+        bounds = [
+            0.0, 0.25, 0.76, 1.27, 1.91, 2.54, 3.81, 5.08, 6.35, 7.62,
+            10.16, 12.7, 15.24, 17.78, 20.32, 22.86, 25.4, 30.48, 35.56,
+            40.64, 45.72, 50.8, 63.5, 76.2, 88.9, 101.6, 127.0, 152.4,
+            177.8, 203.2, 228.6, 254.0
+        ]
+        wb_norm = mcolors.BoundaryNorm(bounds, ncolors=len(wbell_cmap.colors))
+        cmap_hourly = wbell_cmap
+        norm_hourly = wb_norm
+        vmin_hourly = None
+        vmax_hourly = None
+
+        # For total plots, use same colormap & norms
+        cmap_total = wbell_cmap
+        norm_total = wb_norm
+        # We'll still need 'bounds' for colorbar ticks.
+
+    elif colormap.lower() == "viridis":
+        # For 3-hourly frames, fixed vmin=0, vmax=5
+        cmap_hourly = "viridis"
+        norm_hourly = None
+        vmin_hourly = 0
+        vmax_hourly = 5
+
+        # For total plots, we must determine vmax after we compute the total
+        # We'll set these placeholders now and update them later:
+        cmap_total = "viridis"
+        norm_total = None
+        # We won't define the total vmin/vmax yet; we'll do it once we have the max values.
+
+        bounds = None  # We won't use the WeatherBell boundaries in viridis mode.
+    else:
+        raise ValueError("colormap must be either 'viridis' or 'weatherbell'.")
 
     # Accumulated totals
     domain_model_accum = np.zeros((nLat, nLon), dtype=np.float32)
@@ -505,40 +544,66 @@ def run_inference(
                                crs=ccrs.PlateCarree())
                 ax_.add_feature(cfeature.BORDERS, linestyle=':', linewidth=1)
                 ax_.add_feature(cfeature.COASTLINE, edgecolor='black', linewidth=1)
+                ax_.add_feature(USCOUNTIES.with_scale('20m'), edgecolor='gray', linewidth=0.25)
 
             im_pred = ax_model.imshow(
                 mosaic_mm, origin='lower',
                 extent=[lon_global[0], lon_global[-1], lat_global[0], lat_global[-1]],
-                transform=ccrs.PlateCarree(), cmap=wbell_cmap, norm=wb_norm
+                transform=ccrs.PlateCarree(),
+                cmap=cmap_hourly,
+                norm=norm_hourly,
+                vmin=vmin_hourly,
+                vmax=vmax_hourly
             )
             ax_model.set_title(f"Downscaled Model\n{fig_title}")
 
             im_coarse = ax_coarse.imshow(
                 domain_coarse_2d, origin='lower',
                 extent=[lon_global[0], lon_global[-1], lat_global[0], lat_global[-1]],
-                transform=ccrs.PlateCarree(), cmap=wbell_cmap, norm=wb_norm
+                transform=ccrs.PlateCarree(),
+                cmap=cmap_hourly,
+                norm=norm_hourly,
+                vmin=vmin_hourly,
+                vmax=vmax_hourly
             )
             ax_coarse.set_title(f"Bilinear Coarse\n{fig_title}")
 
             im_ratio = ax_ratio.imshow(
                 ratio_arr, origin='lower',
                 extent=[lon_global[0], lon_global[-1], lat_global[0], lat_global[-1]],
-                transform=ccrs.PlateCarree(), cmap='RdBu_r', vmin=0, vmax=2
+                transform=ccrs.PlateCarree(),
+                cmap='RdBu_r', vmin=0, vmax=2
             )
             ax_ratio.set_title(f"Ratio (Model / Coarse)\n{fig_title}")
 
             fig.subplots_adjust(bottom=0.1, wspace=0.25)
-            cb_pred = fig.colorbar(
-                im_pred, ax=ax_model, orientation='horizontal',
-                fraction=0.046, pad=0.07, ticks=bounds
-            )
-            cb_pred.set_label("Precip (mm)")
 
-            cb_coarse = fig.colorbar(
-                im_coarse, ax=ax_coarse, orientation='horizontal',
-                fraction=0.046, pad=0.07, ticks=bounds
-            )
-            cb_coarse.set_label("Precip (mm)")
+            # Colorbars
+            if colormap.lower() == "weatherbell":
+                cb_pred = fig.colorbar(
+                    im_pred, ax=ax_model, orientation='horizontal',
+                    fraction=0.046, pad=0.07, ticks=bounds
+                )
+                cb_pred.set_label("Precip (mm)")
+
+                cb_coarse = fig.colorbar(
+                    im_coarse, ax=ax_coarse, orientation='horizontal',
+                    fraction=0.046, pad=0.07, ticks=bounds
+                )
+                cb_coarse.set_label("Precip (mm)")
+            else:
+                # viridis colorbars
+                cb_pred = fig.colorbar(
+                    im_pred, ax=ax_model, orientation='horizontal',
+                    fraction=0.046, pad=0.07
+                )
+                cb_pred.set_label("Precip (mm)")
+
+                cb_coarse = fig.colorbar(
+                    im_coarse, ax=ax_coarse, orientation='horizontal',
+                    fraction=0.046, pad=0.07
+                )
+                cb_coarse.set_label("Precip (mm)")
 
             cb_ratio = fig.colorbar(
                 im_ratio, ax=ax_ratio, orientation='horizontal',
@@ -555,27 +620,46 @@ def run_inference(
                                crs=ccrs.PlateCarree())
                 ax_.add_feature(cfeature.BORDERS, linestyle=':', linewidth=1)
                 ax_.add_feature(cfeature.COASTLINE, edgecolor='black', linewidth=1)
+                ax_.add_feature(USCOUNTIES.with_scale('20m'), edgecolor='gray', linewidth=0.25)
 
             im_pred = ax_model.imshow(
                 mosaic_mm, origin='lower',
                 extent=[lon_global[0], lon_global[-1], lat_global[0], lat_global[-1]],
-                transform=ccrs.PlateCarree(), cmap=wbell_cmap, norm=wb_norm
+                transform=ccrs.PlateCarree(),
+                cmap=cmap_hourly,
+                norm=norm_hourly,
+                vmin=vmin_hourly,
+                vmax=vmax_hourly
             )
             ax_model.set_title(f"Downscaled Model\n{fig_title}")
 
             im_coarse = ax_coarse.imshow(
                 domain_coarse_2d, origin='lower',
                 extent=[lon_global[0], lon_global[-1], lat_global[0], lat_global[-1]],
-                transform=ccrs.PlateCarree(), cmap=wbell_cmap, norm=wb_norm
+                transform=ccrs.PlateCarree(),
+                cmap=cmap_hourly,
+                norm=norm_hourly,
+                vmin=vmin_hourly,
+                vmax=vmax_hourly
             )
             ax_coarse.set_title(f"Bilinear Coarse\n{fig_title}")
 
             fig.subplots_adjust(bottom=0.15, wspace=0.2)
-            cbar = fig.colorbar(
-                im_coarse, ax=[ax_model, ax_coarse],
-                orientation='horizontal', fraction=0.046, pad=0.07, ticks=bounds
-            )
-            cbar.set_label("Precip (mm)")
+
+            # Single colorbar for both if "weatherbell"
+            if colormap.lower() == "weatherbell":
+                cbar = fig.colorbar(
+                    im_coarse, ax=[ax_model, ax_coarse],
+                    orientation='horizontal', fraction=0.046, pad=0.07, ticks=bounds
+                )
+                cbar.set_label("Precip (mm)")
+            else:
+                # viridis colorbar
+                cbar = fig.colorbar(
+                    im_coarse, ax=[ax_model, ax_coarse],
+                    orientation='horizontal', fraction=0.046, pad=0.07
+                )
+                cbar.set_label("Precip (mm)")
 
         plt.savefig(out_fname, dpi=150, bbox_inches='tight')
         plt.close(fig)
@@ -583,6 +667,15 @@ def run_inference(
     # ------------------------------------------------------------------
     # 8) After all frames: plot the accumulated total model vs coarse
     # ------------------------------------------------------------------
+    # If using viridis, we need to set our total vmax to the maximum value found in both accum arrays
+    if colormap.lower() == "viridis":
+        total_max_value = max(domain_model_accum.max(), domain_coarse_accum.max())
+        vmin_total = 0
+        vmax_total = total_max_value
+    else:
+        vmin_total = None
+        vmax_total = None
+
     total_ratio_arr = None
     if ratio:
         with np.errstate(divide='ignore', invalid='ignore'):
@@ -602,13 +695,16 @@ def run_inference(
                             crs=ccrs.PlateCarree())
     ax_model_sum.add_feature(cfeature.BORDERS, linestyle=':', linewidth=1)
     ax_model_sum.add_feature(cfeature.COASTLINE, edgecolor='black', linewidth=1)
+    ax_model_sum.add_feature(USCOUNTIES.with_scale('20m'), edgecolor='gray', linewidth=0.25)
     im_model_sum = ax_model_sum.imshow(
         domain_model_accum,
         origin='lower',
         extent=[lon_global[0], lon_global[-1], lat_global[0], lat_global[-1]],
         transform=ccrs.PlateCarree(),
-        cmap=wbell_cmap,
-        norm=wb_norm
+        cmap=cmap_total if colormap.lower() == "viridis" else cmap_hourly,
+        norm=norm_total if colormap.lower() == "weatherbell" else None,
+        vmin=vmin_total,
+        vmax=vmax_total
     )
     ax_model_sum.set_title(f"Accumulated Model\n({init_datestr} + up to {hours}h)")
 
@@ -617,13 +713,16 @@ def run_inference(
                              crs=ccrs.PlateCarree())
     ax_coarse_sum.add_feature(cfeature.BORDERS, linestyle=':', linewidth=1)
     ax_coarse_sum.add_feature(cfeature.COASTLINE, edgecolor='black', linewidth=1)
+    ax_coarse_sum.add_feature(USCOUNTIES.with_scale('20m'), edgecolor='gray', linewidth=0.25)
     im_coarse_sum = ax_coarse_sum.imshow(
         domain_coarse_accum,
         origin='lower',
         extent=[lon_global[0], lon_global[-1], lat_global[0], lat_global[-1]],
         transform=ccrs.PlateCarree(),
-        cmap=wbell_cmap,
-        norm=wb_norm
+        cmap=cmap_total if colormap.lower() == "viridis" else cmap_hourly,
+        norm=norm_total if colormap.lower() == "weatherbell" else None,
+        vmin=vmin_total,
+        vmax=vmax_total
     )
     ax_coarse_sum.set_title(f"Accumulated Coarse\n({init_datestr} + up to {hours}h)")
 
@@ -633,6 +732,7 @@ def run_inference(
                                 crs=ccrs.PlateCarree())
         ax_ratio_sum.add_feature(cfeature.BORDERS, linestyle=':', linewidth=1)
         ax_ratio_sum.add_feature(cfeature.COASTLINE, edgecolor='black', linewidth=1)
+        ax_ratio_sum.add_feature(USCOUNTIES.with_scale('20m'), edgecolor='gray', linewidth=0.25)
         im_ratio_sum = ax_ratio_sum.imshow(
             total_ratio_arr,
             origin='lower',
@@ -645,12 +745,27 @@ def run_inference(
         ax_ratio_sum.set_title("Accum. Ratio (Model / Coarse)")
 
     fig.subplots_adjust(bottom=0.15, wspace=0.25)
-    main_axes_for_cb = axes[:-1] if ratio else axes
-    cb_all = fig.colorbar(
-        im_coarse_sum, ax=main_axes_for_cb,
-        orientation='horizontal', fraction=0.046, pad=0.07, ticks=bounds
-    )
-    cb_all.set_label("Total Precip (mm)")
+
+    # Colorbar logic for totals
+    if ratio:
+        # The first two axes share the same colorbar
+        main_axes_for_cb = axes[:-1]
+    else:
+        main_axes_for_cb = axes
+
+    if colormap.lower() == "weatherbell":
+        cb_all = fig.colorbar(
+            im_coarse_sum, ax=main_axes_for_cb,
+            orientation='horizontal', fraction=0.046, pad=0.07, ticks=bounds
+        )
+        cb_all.set_label("Total Precip (mm)")
+    else:
+        # viridis colorbar
+        cb_all = fig.colorbar(
+            im_coarse_sum, ax=main_axes_for_cb,
+            orientation='horizontal', fraction=0.046, pad=0.07
+        )
+        cb_all.set_label("Total Precip (mm)")
 
     if ratio:
         cb_ratio_sum = fig.colorbar(
@@ -668,4 +783,11 @@ def run_inference(
 
 
 if __name__ == "__main__":
-    run_inference(data_source="ECMWF", init_datestr="2025011112", hours=144, ratio=True)
+    # Example usage with the new colormap option
+    run_inference(
+        data_source="ECMWF",
+        init_datestr="2025011100",
+        hours=48,
+        ratio=False,
+        colormap="weatherbell"
+    )
