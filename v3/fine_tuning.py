@@ -1,116 +1,119 @@
-"""
-Provides a fine-tuning script for specific tiles, extending from a global best model.
-Employs the hybrid loss and training functions defined in train_test.py,
-and uses ensemble logic to find the best tile-specific model.
-"""
-
 import os
-import random
-import numpy as np
+import math
 import torch
-import logging
+import importlib
 from pathlib import Path
 
-from src.constants import (CHECKPOINTS_DIR, TORCH_DEVICE, RANDOM_SEED, MODEL_NAME, DETERMINISTIC)
-import importlib
-from src.generate_dataloaders import generate_dataloaders
-from src.ensemble import ensemble_checkpoints
-from src.train_test import train_one_epoch, test_model, get_criterion
+from config import (
+    CHECKPOINTS_DIR,
+    MODEL_NAME,
+    DEVICE,
+    FINE_TUNE_EPOCHS
+)
+from generate_dataloaders import generate_dataloaders
+from train_test import train, test
+from ensemble import ensemble
 
-# --- DYNAMIC MODEL IMPORT ---
-model_module = importlib.import_module(f"src.models.{MODEL_NAME}")
-ModelClass = model_module.Model
 
-# --- USER-ADJUSTABLE PARAMETERS ---
-TILES_TO_FINE_TUNE = [15]
-FINE_TUNE_EPOCHS = 5
-INITIAL_CHECKPOINT = CHECKPOINTS_DIR / 'best' / 'best_model.pt'
-
-def fine_tune_single_tile(tile: int,
-                          fine_tune_epochs: int,
-                          initial_checkpoint: Path):
+def fine_tune_tiles(tile_ids, base_checkpoint_path, fine_tuning_epochs=FINE_TUNE_EPOCHS):
     """
-    Fine-tunes the global best model on a specific tile for the specified number of epochs,
-    then runs an ensemble over the newly created checkpoints to find the tile's best model.
+    Fine-tune the model for each tile in tile_ids, using the best
+    generalized model weights as initialization.
+
+    Steps:
+      1) Load the best generalized model from 'base_checkpoint_path'.
+      2) For each tile_id:
+         a) Create a subdirectory under CHECKPOINTS_DIR (e.g. "CHECKPOINTS_DIR / <tile_id>").
+         b) Generate tile-specific train/test dataloaders by calling generate_dataloaders(tile_id=...).
+         c) Train the model for 'fine_tuning_epochs'.
+            - Save a checkpoint "fine_tune_{epoch}_model.pt" for each epoch
+              with 'train_loss' and 'test_loss' in the state dict.
+         d) Run ensemble on that subdirectory, which merges all these new checkpoints
+            by calling ensemble(focus_tile=tile_id). This ensures we evaluate only on
+            that tile and read checkpoints from "CHECKPOINTS_DIR / <tile_id>".
+         e) We'll rename the resulting "best_model.pt" to "<tile_id>_best.pt"
+            and put it in the "CHECKPOINTS_DIR / best" directory.
+
+    Args:
+        tile_ids (list[int]): List of tile IDs to fine-tune.
+        base_checkpoint_path (str or Path): Path to the best generalized model checkpoint
+                                            from the ensemble run.
+        fine_tuning_epochs (int): How many epochs to train for each tile.
     """
-    device = TORCH_DEVICE
-    tile_ckpt_dir = CHECKPOINTS_DIR / str(tile)
-    os.makedirs(tile_ckpt_dir, exist_ok=True)
+    base_checkpoint_path = Path(base_checkpoint_path)
+    if not base_checkpoint_path.exists():
+        raise FileNotFoundError(f"Base checkpoint not found at: {base_checkpoint_path}")
 
-    train_dataloader, test_dataloader = generate_dataloaders(focus_tile=tile)
+    print(f"Fine-tuning on device: {DEVICE}")
 
-    model = ModelClass().to(device)
-    optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
-    criterion = get_criterion()
+    # Dynamically load the model
+    model_module = importlib.import_module(MODEL_NAME)
+    ModelClass = model_module.Model
 
-    # --- LOAD GLOBAL BEST MODEL AS STARTING POINT ---
-    if not initial_checkpoint.exists():
-        raise FileNotFoundError(f"Initial checkpoint {initial_checkpoint} not found.")
-    checkpoint = torch.load(initial_checkpoint, map_location=device)
-    model.load_state_dict(checkpoint['model_state_dict'], strict=False)
+    # Load the base checkpoint
+    base_ckpt = torch.load(base_checkpoint_path, map_location=DEVICE)
+    base_state_dict = base_ckpt.get('model_state_dict', None)
+    if base_state_dict is None:
+        raise ValueError(f"Could not load 'model_state_dict' from {base_checkpoint_path}")
 
-    logging.info(f"Starting fine-tuning for tile {tile} from checkpoint {initial_checkpoint} for {fine_tune_epochs} epochs.")
-    for epoch in range(fine_tune_epochs):
-        logging.info(f"Tile {tile}, Epoch {epoch}...")
-        train_loss = train_one_epoch(model, train_dataloader, optimizer, criterion)
-        metrics = test_model(model, test_dataloader, criterion, focus_tile=tile)
+    # Fine-tune for each tile
+    for tile_id in tile_ids:
+        print(f"\n--- Fine-tuning for tile {tile_id} ---")
 
-        mean_test_loss = metrics["mean_test_loss"]
-        mean_bilinear_loss = metrics["mean_bilinear_loss"]
-        focus_tile_test_loss = metrics["focus_tile_test_loss"]
-        focus_tile_bilinear_loss = metrics["focus_tile_bilinear_loss"]
-        unnorm_focus_tile_mse = metrics["unnorm_focus_tile_mse"]
-        unnorm_focus_tile_bilinear_mse = metrics["unnorm_focus_tile_bilinear_mse"]
-        unnorm_focus_tile_mae = metrics["unnorm_focus_tile_mae"]
-        unnorm_focus_tile_bilinear_mae = metrics["unnorm_focus_tile_bilinear_mae"]
-        unnorm_focus_tile_corr = metrics["unnorm_focus_tile_corr"]
-        unnorm_focus_tile_bilinear_corr = metrics["unnorm_focus_tile_bilinear_corr"]
+        # Create subdirectory for this tile
+        tile_subdir = CHECKPOINTS_DIR / str(tile_id)
+        tile_subdir.mkdir(exist_ok=True, parents=True)
 
-        logging.info(f'Epoch {epoch}: Train loss (normalized Hybrid) = {train_loss:.6f}')
-        logging.info(f'  Test (normalized Hybrid): {mean_test_loss:.6f}, Bilinear: {mean_bilinear_loss:.6f}')
-        if focus_tile_test_loss is not None:
-            logging.info(f'  Focus Tile {tile} (normalized Hybrid): {focus_tile_test_loss:.6f}, Bilinear: {focus_tile_bilinear_loss:.6f}')
-            logging.info(f'  Focus Tile {tile} Unnorm MSE: {unnorm_focus_tile_mse:.6f}, Bilinear: {unnorm_focus_tile_bilinear_mse:.6f}')
-            logging.info(f'  Focus Tile {tile} Unnorm MAE: {unnorm_focus_tile_mae:.6f}, Bilinear: {unnorm_focus_tile_bilinear_mae:.6f}')
-            logging.info(f'  Focus Tile {tile} Unnorm Corr: {unnorm_focus_tile_corr:.4f}, Bilinear: {unnorm_focus_tile_bilinear_corr:.4f}')
+        # Prepare data
+        train_loader, test_loader = generate_dataloaders(tile_id=tile_id)
+        if len(train_loader) == 0:
+            print(f"No training samples found for tile {tile_id}, skipping.")
+            continue
 
-        # --- SAVE CHECKPOINT ---
-        torch.save({
-            'model_state_dict': model.state_dict(),
-            'optimizer_state_dict': optimizer.state_dict(),
-            'train_loss': train_loss,
-            'test_loss': mean_test_loss,
-            'bilinear_test_loss': mean_bilinear_loss
-        }, tile_ckpt_dir / f'{epoch}_model.pt')
+        # Re-initialize model
+        model = ModelClass().to(DEVICE)
+        # Load the base generalized weights
+        model.load_state_dict(base_state_dict, strict=True)
 
-    # --- RUN ENSEMBLE ON TILE-SPECIFIC CHECKPOINTS ---
-    best_output_path = CHECKPOINTS_DIR / 'best' / f"{tile}_best.pt"
-    ensemble_checkpoints(
-        test_dataloader=test_dataloader,
-        device=device,
-        directory_path=str(tile_ckpt_dir),
-        output_path=str(best_output_path),
-        max_ensemble_size=None
-    )
-    logging.info(f"Best fine-tuned model for tile {tile} saved at {best_output_path}")
+        # Define optimizer & loss
+        optimizer = torch.optim.Adam(model.parameters(), lr=1e-5)
+        criterion = torch.nn.SmoothL1Loss()
 
-if __name__ == "__main__":
-    # --- SEED & DETERMINISTIC BEHAVIOR ---
-    random.seed(RANDOM_SEED)
-    np.random.seed(RANDOM_SEED)
-    torch.manual_seed(RANDOM_SEED)
-    if torch.cuda.is_available():
-        torch.cuda.manual_seed_all(RANDOM_SEED)
+        # Fine-tuning loop
+        for epoch in range(fine_tuning_epochs):
+            train_loss = train(train_loader, model, optimizer, criterion)
+            test_loss = test(test_loader, model, criterion)
 
-    if DETERMINISTIC:
-        torch.backends.cudnn.deterministic = True
-        torch.backends.cudnn.benchmark = False
-        torch.use_deterministic_algorithms(True)
+            # Save a checkpoint in tile_subdir
+            checkpoint_path = tile_subdir / f"fine_tune_{epoch}_model.pt"
+            torch.save({
+                'epoch': epoch,
+                'model_state_dict': model.state_dict(),
+                'optimizer_state_dict': optimizer.state_dict(),
+                'train_loss': train_loss,
+                'test_loss': test_loss
+            }, checkpoint_path)
 
-    # --- FINE-TUNE EACH TILE IN TILES_TO_FINE_TUNE ---
-    for tile in TILES_TO_FINE_TUNE:
-        fine_tune_single_tile(
-            tile=tile,
-            fine_tune_epochs=FINE_TUNE_EPOCHS,
-            initial_checkpoint=INITIAL_CHECKPOINT
-        )
+            print(f"Tile {tile_id}, Epoch {epoch+1}/{fine_tuning_epochs} - "
+                  f"Train Loss: {train_loss:.4f}, Test Loss: {test_loss:.4f}")
+
+        # After we've created fine-tune checkpoints, run ensemble specifically for tile_id
+        print(f"\nEnsembling checkpoints for tile {tile_id} ...")
+        ensemble(focus_tile=tile_id)
+
+        # The ensemble function saves its best model to tile_subdir / 'best' / 'best_model.pt'
+        best_model_subdir = tile_subdir / "best" / "best_model.pt"
+        if not best_model_subdir.exists():
+            print(f"Warning: Could not find best_model.pt for tile {tile_id}.")
+            continue
+
+        # Rename/copy it to "CHECKPOINTS_DIR/best/<tile_id>_best.pt"
+        best_dest_dir = CHECKPOINTS_DIR / "best"
+        best_dest_dir.mkdir(exist_ok=True, parents=True)
+        best_dest_path = best_dest_dir / f"{tile_id}_best.pt"
+
+        # Copy (or move) the file
+        torch.save(torch.load(best_model_subdir, map_location=DEVICE), best_dest_path)
+        print(f"Tile {tile_id} best ensemble checkpoint saved to {best_dest_path}")
+
+    print("\nFine-tuning complete for all specified tiles!")
