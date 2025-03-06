@@ -5,9 +5,9 @@ import torch
 # PATH CONFIGURATIONS
 # -------------------------------------------------------------------
 RAW_DIR = Path('/Volumes/T9/monthly/')
-PROCESSED_DIR = Path('/Users/clamalo/documents/harpnet/v3.1/tiles/')
-CHECKPOINTS_DIR = Path('/Users/clamalo/documents/harpnet/v3.1/checkpoints/')
-FIGURES_DIR = Path('/Users/clamalo/documents/harpnet/v3.1/figures/')
+PROCESSED_DIR = Path('/Users/clamalo/documents/harpnet/v3/tiles/')
+CHECKPOINTS_DIR = Path('/Users/clamalo/documents/harpnet/v3/checkpoints/')
+FIGURES_DIR = Path('/Users/clamalo/documents/harpnet/v3/figures/')
 ELEVATION_FILE = Path('/Users/clamalo/downloads/elevation.nc')
 
 # -------------------------------------------------------------------
@@ -18,24 +18,25 @@ ELEVATION_FILE = Path('/Users/clamalo/downloads/elevation.nc')
 
 # SECONDARY_MIN_LAT, SECONDARY_MAX_LAT = 34.0, 50.0
 # SECONDARY_MIN_LON, SECONDARY_MAX_LON = -125.0, -104.0
+# # CONUS
 
-# PRIMARY_MIN_LAT, PRIMARY_MAX_LAT = 42.0, 52.0
-# PRIMARY_MIN_LON, PRIMARY_MAX_LON = 0.0, 16.0
+# PRIMARY_MIN_LAT, PRIMARY_MAX_LAT = 41.0, 47.0
+# PRIMARY_MIN_LON, PRIMARY_MAX_LON = -119.0, -113.0
 
-# SECONDARY_MIN_LAT, SECONDARY_MAX_LAT = 43.0, 51.0
-# SECONDARY_MIN_LON, SECONDARY_MAX_LON = 1.0, 15.0
-
-# PRIMARY_MIN_LAT, PRIMARY_MAX_LAT = 58.0, 64.0
-# PRIMARY_MIN_LON, PRIMARY_MAX_LON = -151.0, -143.0
-
-# SECONDARY_MIN_LAT, SECONDARY_MAX_LAT = 59.0, 63.0
-# SECONDARY_MIN_LON, SECONDARY_MAX_LON = -150.0, -144
+# SECONDARY_MIN_LAT, SECONDARY_MAX_LAT = 42.0, 46.0
+# SECONDARY_MIN_LON, SECONDARY_MAX_LON = -118.0, -114.0
 
 # PRIMARY_MIN_LAT, PRIMARY_MAX_LAT = 34.0, 47.0
 # PRIMARY_MIN_LON, PRIMARY_MAX_LON = 134.0, 147.0
 
 # SECONDARY_MIN_LAT, SECONDARY_MAX_LAT = 35.0, 46.0
 # SECONDARY_MIN_LON, SECONDARY_MAX_LON = 135.0, 146.0
+
+# PRIMARY_MIN_LAT, PRIMARY_MAX_LAT = 44.0, 52.0
+# PRIMARY_MIN_LON, PRIMARY_MAX_LON = -127.0, -118.0
+
+# SECONDARY_MIN_LAT, SECONDARY_MAX_LAT = 45.0, 51.0
+# SECONDARY_MIN_LON, SECONDARY_MAX_LON = -126.0, -119.0
 
 PRIMARY_MIN_LAT, PRIMARY_MAX_LAT = 37.0, 43.0
 PRIMARY_MIN_LON, PRIMARY_MAX_LON = -115.0, -108.0
@@ -55,19 +56,19 @@ PADDING = 0.25
 # RUNTIME & DEVICE SETTINGS
 # -------------------------------------------------------------------
 DEVICE = ('mps' if torch.backends.mps.is_available() else 'cuda' if torch.cuda.is_available() else 'cpu')
-TRAINING_PROGRESS_BAR = False
+TRAINING_PROGRESS_BAR = True
 ZIP_MODE = "load"
 PRECIP_THRESHOLD = 0.01
 
 # -------------------------------------------------------------------
 # TRAINING DATA SETTINGS
 # -------------------------------------------------------------------
-START_MONTH = (1979, 10)
-END_MONTH = (1979, 12)
-TRAIN_SPLIT = (1979, 12)   # Could also be a float in [0, 1] if desired
-TRAINING_TILES = list(range(0,20))
+START_MONTH = (1980, 1)
+END_MONTH = (1980, 12)
+TRAIN_SPLIT = (1980, 10)   # Could also be a float in [0, 1] if desired
+TRAINING_TILES = list(range(4,5))
 BATCH_SIZE = 64
-NUM_EPOCHS = 3
+NUM_EPOCHS = 10
 SECONDARY_TILES = True
 INCLUDE_ZEROS = False
 

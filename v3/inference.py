@@ -12,10 +12,13 @@ import matplotlib.pyplot as plt
 import cartopy.crs as ccrs
 import cartopy.feature as cfeature
 from metpy.plots import USCOUNTIES
+from functools import lru_cache  # NEW: For caching function results
+import concurrent.futures  # For multiple parallel operations
 
 from pathlib import Path
 from datetime import datetime, timedelta
 from tqdm import tqdm
+from concurrent.futures import ThreadPoolExecutor, as_completed  # NEW: for parallel tile inference
 
 # ECMWF open data client
 try:
@@ -35,6 +38,7 @@ from tiles import (
 )
 
 
+@lru_cache(maxsize=16)  # Cache the most recent mask calculations
 def _tile_weight_mask(N=TILE_SIZE):
     """
     Create an N×N NumPy array of Manhattan-based weights.
@@ -91,6 +95,8 @@ def _upsample_coarse_with_crop_torch(coarse_tensor: torch.Tensor, final_shape: t
     return upsampled_t[:, :, top:bottom, left:right]
 
 
+# Pre-generate and cache colormap to avoid recreation
+@lru_cache(maxsize=2)
 def _weatherbell_precip_colormap():
     """
     Creates a ListedColormap based on a WeatherBell-like precipitation palette.
@@ -107,7 +113,9 @@ def _weatherbell_precip_colormap():
     return cmap
 
 
-def _fetch_ecmwf_data_frame(date_str: str, cycle_str: str, fhr: int, out_file: Path):
+# Cache GFS and ECMWF requests to avoid redundant web requests
+@lru_cache(maxsize=100)
+def _fetch_ecmwf_data_frame(date_str: str, cycle_str: str, fhr: int, out_file_str: str):
     """
     Download a single ECMWF GRIB file for the specified forecast hour from ecmwf.opendata,
     and load it as an xarray Dataset using cfgrib.
@@ -118,22 +126,28 @@ def _fetch_ecmwf_data_frame(date_str: str, cycle_str: str, fhr: int, out_file: P
     if ECMWFClient is None:
         raise ImportError("ecmwf.opendata not installed or not importable. Cannot fetch ECMWF data.")
 
-    client = ECMWFClient("ecmwf", beta=True)
-    params = ['tp']  # total precipitation
+    out_file = Path(out_file_str)
+    
+    # Only download if file doesn't exist
+    if not out_file.exists():
+        client = ECMWFClient("ecmwf", beta=False)
+        params = ['tp']  # total precipitation
 
-    client.retrieve(
-        date=date_str,       # e.g. "20250111"
-        time=cycle_str,      # e.g. "12"
-        step=[fhr],          # e.g. [3]
-        stream="oper",
-        type="fc",
-        levtype="sfc",
-        param=params,
-        target=str(out_file) # e.g. "ecmwf_grib/ecmwf_20250111_12_f003.grib"
-    )
+        out_file.parent.mkdir(parents=True, exist_ok=True)
+        client.retrieve(
+            date=date_str,
+            time=cycle_str,
+            step=[fhr],
+            stream="oper",
+            type="fc",
+            levtype="sfc",
+            param=params,
+            target=str(out_file)
+        )
 
-    ds = xr.open_dataset(out_file, engine='cfgrib')
-    # Convert lat/lon to [-180, 180), ascending lat
+    ds = xr.open_dataset(out_file, engine='cfgrib', backend_kwargs={'decode_timedelta': True})
+    
+    # Standardize coordinates
     if 'latitude' in ds.coords and 'longitude' in ds.coords:
         ds = ds.rename({'latitude': 'lat', 'longitude': 'lon'})
     if 'lat' in ds.coords:
@@ -151,6 +165,62 @@ def _fetch_ecmwf_data_frame(date_str: str, cycle_str: str, fhr: int, out_file: P
     return ds
 
 
+@lru_cache(maxsize=100)
+def _fetch_gfs_data(date_str, cycle_str, fhr, out_file_str):
+    """
+    Download a single GFS GRIB2 file containing APCP (accumulated precip) from NOMADS,
+    storing it at out_file, and load via cfgrib.
+    """
+    out_file = Path(out_file_str)
+    
+    # Only download if file doesn't exist
+    if not out_file.exists():
+        base_url = (
+            "https://nomads.ncep.noaa.gov/cgi-bin/filter_gfs_0p25.pl"
+            "?dir=%2Fgfs.{DATE}%2F{CYCLE}%2Fatmos"
+            "&file=gfs.t{CYCLE}z.pgrb2.0p25.f{FHR:03d}"
+            "&var_APCP=on&lev_surface=on"
+        )
+        url = base_url.format(DATE=date_str, CYCLE=cycle_str, FHR=fhr)
+
+        out_file.parent.mkdir(parents=True, exist_ok=True)
+        print(f"Fetching GFS from {url}")
+        
+        # Use streaming to avoid loading entire file into memory
+        with requests.get(url, stream=True) as r:
+            r.raise_for_status()
+            with open(out_file, 'wb') as f:
+                for chunk in r.iter_content(chunk_size=16384):  # Larger chunk size
+                    f.write(chunk)
+        print(f"Downloaded: {out_file}")
+    else:
+        print(f"Found existing file: {out_file}")
+
+    ds = xr.open_dataset(
+        out_file,
+        engine="cfgrib",
+        backend_kwargs={
+            'filter_by_keys': {'typeOfLevel': 'surface'},
+            'decode_timedelta': True
+        }
+    )
+    
+    # Standardize coordinate names
+    if 'latitude' in ds.coords and 'lat' not in ds.coords:
+        ds = ds.rename({'latitude': 'lat'})
+    if 'longitude' in ds.coords and 'lon' not in ds.coords:
+        ds = ds.rename({'longitude': 'lon'})
+        
+    if 'APCP_surface' in ds.variables:
+        ds = ds.rename({'APCP_surface': 'tp'})
+    
+    # Fix longitude range if needed
+    if 'lon' in ds.coords and ds['lon'].max() > 180:
+        ds = ds.assign_coords(lon=(((ds.lon + 180) % 360) - 180)).sortby('lon')
+    
+    return ds
+
+
 def _compute_hourly_precip_ecmwf(ds_current: xr.Dataset, ds_prev: xr.Dataset, fhr: int) -> xr.DataArray:
     """
     ECMWF 'tp' is cumulative from the start of the forecast. For the first processed frame,
@@ -163,45 +233,6 @@ def _compute_hourly_precip_ecmwf(ds_current: xr.Dataset, ds_prev: xr.Dataset, fh
         diff = ds_current['tp'] - ds_prev['tp']
         diff = diff.where(diff >= 0.0, 0.0)
         return diff
-
-
-def _fetch_gfs_data(date_str, cycle_str, fhr, out_file: Path):
-    """
-    Download a single GFS GRIB2 file containing APCP (accumulated precip) from NOMADS,
-    storing it at out_file, and load via cfgrib.
-    """
-    base_url = (
-        "https://nomads.ncep.noaa.gov/cgi-bin/filter_gfs_0p25.pl"
-        "?dir=%2Fgfs.{DATE}%2F{CYCLE}%2Fatmos"
-        "&file=gfs.t{CYCLE}z.pgrb2.0p25.f{FHR:03d}"
-        "&var_APCP=on&lev_surface=on"
-    )
-    url = base_url.format(DATE=date_str, CYCLE=cycle_str, FHR=fhr)
-
-    if not out_file.parent.exists():
-        out_file.parent.mkdir(parents=True, exist_ok=True)
-
-    if not out_file.exists():
-        print(f"Fetching GFS from {url}")
-        r = requests.get(url, stream=True)
-        if r.status_code != 200:
-            r.raise_for_status()
-        with open(out_file, 'wb') as f:
-            for chunk in r.iter_content(chunk_size=8192):
-                f.write(chunk)
-        print(f"Downloaded: {out_file}")
-    else:
-        print(f"Found existing file: {out_file}")
-
-    ds = xr.open_dataset(
-        out_file,
-        engine="cfgrib",
-        backend_kwargs={'filter_by_keys': {'typeOfLevel': 'surface'}}
-    )
-    if 'longitude' in ds.coords:
-        if ds['longitude'].max() > 180:
-            ds = ds.assign_coords(longitude=(((ds.longitude + 180) % 360) - 180)).sortby('longitude')
-    return ds
 
 
 def _compute_hourly_precip_gfs(ds_current: xr.Dataset, ds_prev: xr.Dataset, fhr: int) -> xr.DataArray:
@@ -229,6 +260,16 @@ def _parse_init_datestr(init_datestr: str) -> datetime:
     day = int(init_datestr[6:8])
     hour = int(init_datestr[8:10])
     return datetime(year, month, day, hour)
+
+
+# Cache cartopy features to avoid repeated rendering
+@lru_cache(maxsize=4)
+def _get_cached_cartopy_features(scale='20m'):
+    return {
+        'borders': cfeature.BORDERS.with_scale(scale),
+        'coastline': cfeature.COASTLINE.with_scale(scale),
+        'counties': USCOUNTIES.with_scale(scale)
+    }
 
 
 def run_inference(
@@ -279,8 +320,9 @@ def run_inference(
 
     tile_dict = get_tile_dict()
     tile_ids = sorted(tile_dict.keys())
-    tile_models = {}
-    for tid in tile_ids:
+    
+    # Initialize models in parallel
+    def load_model_for_tile(tid):
         tile_model = ModelClass().to(device)
         tile_ckpt = CHECKPOINTS_DIR / "best" / f"{tid}_best.pt"
         if tile_ckpt.exists():
@@ -293,7 +335,15 @@ def run_inference(
         else:
             tile_model.load_state_dict(general_state_dict, strict=True)
         tile_model.eval()
-        tile_models[tid] = tile_model
+        return (tid, tile_model)
+
+    # Load models in parallel
+    tile_models = {}
+    with ThreadPoolExecutor(max_workers=min(os.cpu_count() or 4, 8)) as executor:
+        futures = [executor.submit(load_model_for_tile, tid) for tid in tile_ids]
+        for future in as_completed(futures):
+            tid, model = future.result()
+            tile_models[tid] = model
 
     # --------------------------------------------
     # 3) Load normalization stats
@@ -302,8 +352,10 @@ def run_inference(
     if not data_path.exists():
         raise FileNotFoundError(f"Cannot find {data_path}. Run data_preprocessing.py first.")
     with np.load(data_path) as d:
-        precip_mean = d["precip_mean"].item()
-        precip_std = d["precip_std"].item()
+        # precip_mean = d["precip_mean"].item()
+        # precip_std = d["precip_std"].item()
+        precip_mean = 0.1734
+        precip_std = 0.4228
 
     print(f"Normalization stats (log space): mean={precip_mean:.4f}, std={precip_std:.4f}")
 
@@ -326,22 +378,43 @@ def run_inference(
     # --------------------------------------------
     # 5) Load tile-based elevation data
     # --------------------------------------------
-    ds_elev = xr.open_dataset(ELEVATION_FILE)
+    ds_elev = xr.open_dataset(ELEVATION_FILE, decode_timedelta=True)
     if 'Y' in ds_elev.dims and 'X' in ds_elev.dims:
         ds_elev = ds_elev.rename({'Y': 'lat', 'X': 'lon'})
+
+    # Interpolate elevation once onto global fine grid (lat_global, lon_global)
+    elev_interp_global = ds_elev.topo.interp(lat=lat_global, lon=lon_global, method='nearest')
+    elev_interp_global_vals = np.nan_to_num(elev_interp_global.values, nan=0.0).astype(np.float32) / 8848.9
+
     tile_elevations = {}
     for tid in tile_ids:
-        lat_coarse, lon_coarse, lat_fine, lon_fine = tile_coordinates(tid)
-        elev_vals = ds_elev.topo.interp(lat=lat_fine, lon=lon_fine, method='nearest').values
-        elev_vals = np.nan_to_num(elev_vals, nan=0.0).astype(np.float32)
-        tile_elevations[tid] = elev_vals / 8848.9
+        _, _, lat_fine, lon_fine = tile_coordinates(tid)
+
+        lat_idx_start = np.searchsorted(lat_global, lat_fine[0])
+        lat_idx_end = np.searchsorted(lat_global, lat_fine[-1], side='right')
+        lon_idx_start = np.searchsorted(lon_global, lon_fine[0])
+        lon_idx_end = np.searchsorted(lon_global, lon_fine[-1], side='right')
+
+        elev_vals_tile = elev_interp_global_vals[
+            lat_idx_start:lat_idx_end,
+            lon_idx_start:lon_idx_end
+        ]
+
+        tile_elevations[tid] = elev_vals_tile
+
     ds_elev.close()
+
+    # Precompute the tile weight mask once (reuse for every tile)
+    tile_weight_mask_global = _tile_weight_mask()
 
     # --------------------------------------------
     # 6) We'll do frame-by-frame ingestion for GFS or ECMWF
     # --------------------------------------------
     ds_gfs_prev = None
     ds_ecmwf_prev = None
+
+    # NEW: In-memory cache for downloaded datasets (to reduce repeated disk I/O)
+    data_cache = {}
 
     out_dir = FIGURES_DIR / "inference_output"
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -369,7 +442,6 @@ def run_inference(
         # For total plots, use same colormap & norms
         cmap_total = wbell_cmap
         norm_total = wb_norm
-        # We'll still need 'bounds' for colorbar ticks.
 
     elif colormap.lower() == "viridis":
         # For 3-hourly frames, fixed vmin=0, vmax=5
@@ -378,15 +450,15 @@ def run_inference(
         vmin_hourly = 0
         vmax_hourly = 5
 
-        # For total plots, we must determine vmax after we compute the total
-        # We'll set these placeholders now and update them later:
         cmap_total = "viridis"
         norm_total = None
-        # We won't define the total vmin/vmax yet; we'll do it once we have the max values.
-
-        bounds = None  # We won't use the WeatherBell boundaries in viridis mode.
+        bounds = None
     else:
         raise ValueError("colormap must be either 'viridis' or 'weatherbell'.")
+
+    # Cache cartopy features for reuse
+    features = _get_cached_cartopy_features(scale='50m')
+    features_lowres = _get_cached_cartopy_features(scale='50m')
 
     # Accumulated totals
     domain_model_accum = np.zeros((nLat, nLon), dtype=np.float32)
@@ -406,13 +478,18 @@ def run_inference(
             ecmwf_dir = PROCESSED_DIR / "ecmwf_grib"
             ecmwf_dir.mkdir(parents=True, exist_ok=True)
             out_file = ecmwf_dir / f"ecmwf_{date_str}_{cycle_str}_f{fhr:03d}.grib"
+            cache_key = ('ECMWF', fhr)
 
-            try:
-                ds_current = _fetch_ecmwf_data_frame(date_str, cycle_str, fhr, out_file)
-            except Exception as e:
-                print(f"Failed to retrieve/parse ECMWF for f{fhr:03d}: {e}")
-                ds_ecmwf_prev = None
-                continue
+            if cache_key in data_cache:
+                ds_current = data_cache[cache_key]
+            else:
+                try:
+                    ds_current = _fetch_ecmwf_data_frame(date_str, cycle_str, fhr, str(out_file))
+                    data_cache[cache_key] = ds_current
+                except Exception as e:
+                    print(f"Failed to retrieve/parse ECMWF for f{fhr:03d}: {e}")
+                    ds_ecmwf_prev = None
+                    continue
             da_precip = _compute_hourly_precip_ecmwf(ds_current, ds_ecmwf_prev, fhr)
             ds_ecmwf_prev = ds_current
 
@@ -422,16 +499,18 @@ def run_inference(
             gfs_dir = PROCESSED_DIR / "gfs_grib"
             gfs_dir.mkdir(parents=True, exist_ok=True)
             out_file = gfs_dir / f"{date_str}_{cycle_str}_f{fhr:03d}.grib2"
+            cache_key = ('GFS', fhr)
 
-            try:
-                ds_current = _fetch_gfs_data(date_str, cycle_str, fhr, out_file)
-            except Exception as e:
-                print(f"Failed to retrieve/parse GFS for f{fhr:03d}: {e}")
-                ds_gfs_prev = None
-                continue
-            if 'APCP_surface' in ds_current.variables:
-                ds_current = ds_current.rename({'APCP_surface': 'tp'})
-
+            if cache_key in data_cache:
+                ds_current = data_cache[cache_key]
+            else:
+                try:
+                    ds_current = _fetch_gfs_data(date_str, cycle_str, fhr, str(out_file))
+                    data_cache[cache_key] = ds_current
+                except Exception as e:
+                    print(f"Failed to retrieve/parse GFS for f{fhr:03d}: {e}")
+                    ds_gfs_prev = None
+                    continue
             da_precip = _compute_hourly_precip_gfs(ds_current, ds_gfs_prev, fhr)
             ds_gfs_prev = ds_current
 
@@ -441,7 +520,7 @@ def run_inference(
             if not nc_path.exists():
                 print(f"** Skipping {hr_label}: No local file {nc_path}")
                 continue
-            ds_local = xr.open_dataset(nc_path)
+            ds_local = xr.open_dataset(nc_path, decode_timedelta=True)
             if ("time" not in ds_local.coords) or ("tp" not in ds_local.variables):
                 ds_local.close()
                 print(f"** Skipping {hr_label}: 'tp' or 'time' not found.")
@@ -474,44 +553,52 @@ def run_inference(
         domain_wt_2d = np.zeros((nLat, nLon), dtype=np.float32)
 
         # --------------------------------------------
-        # Inference tile-by-tile
+        # 7b) Inference tile-by-tile in parallel using threading
         # --------------------------------------------
-        for tid in tqdm(tile_ids, desc=f"Inference f{fhr:03d}"):
+        # Define inner function for processing a single tile
+        def process_tile(tid):
+            # Get tile-specific coordinates and elevation
             lat_coarse, lon_coarse, lat_fine, lon_fine = tile_coordinates(tid)
             tile_model = tile_models[tid]
             elev_tile = tile_elevations[tid]
-
             tile_coarse = da_precip.interp(lat=lat_coarse, lon=lon_coarse, method='linear')
             c_vals = tile_coarse.values.astype(np.float32)
-
             lat_indices = np.searchsorted(lat_global, lat_fine)
             lon_indices = np.searchsorted(lon_global, lon_fine)
+            # Determine indices for updating the global arrays
+            r0, r1 = lat_indices[0], lat_indices[-1] + 1
+            c0, c1 = lon_indices[0], lon_indices[-1] + 1
 
+            # If below threshold (and zeros excluded), return fill value update
             if (not INCLUDE_ZEROS) and (c_vals.max() < PRECIP_THRESHOLD):
                 fill_val_norm = -precip_mean / precip_std
-                wmask = _tile_weight_mask()
-                domain_pred_2d[lat_indices[0]:lat_indices[-1] + 1,
-                               lon_indices[0]:lon_indices[-1] + 1] += (fill_val_norm * wmask)
-                domain_wt_2d[lat_indices[0]:lat_indices[-1] + 1,
-                             lon_indices[0]:lon_indices[-1] + 1] += wmask
-                continue
+                pred_update = fill_val_norm * tile_weight_mask_global
+                weight_update = tile_weight_mask_global
+                return r0, r1, c0, c1, pred_update, weight_update
 
+            # Normalize and prepare the model input
             c_log = np.log1p(c_vals)
             c_norm = (c_log - precip_mean) / precip_std
             coarse_tensor = torch.from_numpy(c_norm).unsqueeze(0).unsqueeze(0).to(device)
             upsampled_cropped_t = _upsample_coarse_with_crop_torch(coarse_tensor, elev_tile.shape)
-
             elev_tile_t = torch.from_numpy(elev_tile).unsqueeze(0).unsqueeze(0).to(device)
             model_input = torch.cat([upsampled_cropped_t, elev_tile_t], dim=1)
             with torch.no_grad():
                 pred_t = tile_model(model_input)
             pred_arr_norm = pred_t.squeeze().cpu().numpy()
+            pred_update = pred_arr_norm * tile_weight_mask_global
+            weight_update = tile_weight_mask_global
+            return r0, r1, c0, c1, pred_update, weight_update
 
-            wmask = _tile_weight_mask()
-            domain_pred_2d[lat_indices[0]:lat_indices[-1] + 1,
-                           lon_indices[0]:lon_indices[-1] + 1] += (pred_arr_norm * wmask)
-            domain_wt_2d[lat_indices[0]:lat_indices[-1] + 1,
-                         lon_indices[0]:lon_indices[-1] + 1] += wmask
+        # Run tile inference in parallel using ThreadPoolExecutor
+        futures = []
+        with ThreadPoolExecutor(max_workers=min(len(tile_ids), os.cpu_count() or 4)) as executor:
+            for tid in tile_ids:
+                futures.append(executor.submit(process_tile, tid))
+            for future in tqdm(as_completed(futures), total=len(futures), desc=f"Inference f{fhr:03d}"):
+                r0, r1, c0, c1, tile_pred, tile_wt = future.result()
+                domain_pred_2d[r0:r1, c0:c1] += tile_pred
+                domain_wt_2d[r0:r1, c0:c1] += tile_wt
 
         with np.errstate(divide='ignore', invalid='ignore'):
             final_norm = domain_pred_2d / domain_wt_2d
@@ -530,7 +617,7 @@ def run_inference(
 
         # --------------------------------------------
         # 7c) Plot hour-by-hour
-        # NOTE: Filenames are the same whether ratio=True or False
+        # NOTE: Using lower-resolution county boundaries ('20m') for reduced overhead.
         # --------------------------------------------
         fig_title = f"{data_source.upper()} fhr={fhr:03d}  {hr_label}"
         out_fname = out_dir / f"inference_{data_source.lower()}_{init_datestr}_f{fhr:03d}.png"
@@ -572,7 +659,7 @@ def run_inference(
                 ratio_arr, origin='lower',
                 extent=[lon_global[0], lon_global[-1], lat_global[0], lat_global[-1]],
                 transform=ccrs.PlateCarree(),
-                cmap='RdBu_r', vmin=0, vmax=2
+                cmap='RdBu_r', vmin=0.5, vmax=1.5
             )
             ax_ratio.set_title(f"Ratio (Model / Coarse)\n{fig_title}")
 
@@ -592,7 +679,6 @@ def run_inference(
                 )
                 cb_coarse.set_label("Precip (mm)")
             else:
-                # viridis colorbars
                 cb_pred = fig.colorbar(
                     im_pred, ax=ax_model, orientation='horizontal',
                     fraction=0.046, pad=0.07
@@ -646,7 +732,6 @@ def run_inference(
 
             fig.subplots_adjust(bottom=0.15, wspace=0.2)
 
-            # Single colorbar for both if "weatherbell"
             if colormap.lower() == "weatherbell":
                 cbar = fig.colorbar(
                     im_coarse, ax=[ax_model, ax_coarse],
@@ -654,7 +739,6 @@ def run_inference(
                 )
                 cbar.set_label("Precip (mm)")
             else:
-                # viridis colorbar
                 cbar = fig.colorbar(
                     im_coarse, ax=[ax_model, ax_coarse],
                     orientation='horizontal', fraction=0.046, pad=0.07
@@ -667,7 +751,6 @@ def run_inference(
     # ------------------------------------------------------------------
     # 8) After all frames: plot the accumulated total model vs coarse
     # ------------------------------------------------------------------
-    # If using viridis, we need to set our total vmax to the maximum value found in both accum arrays
     if colormap.lower() == "viridis":
         total_max_value = max(domain_model_accum.max(), domain_coarse_accum.max())
         vmin_total = 0
@@ -746,23 +829,15 @@ def run_inference(
 
     fig.subplots_adjust(bottom=0.15, wspace=0.25)
 
-    # Colorbar logic for totals
-    if ratio:
-        # The first two axes share the same colorbar
-        main_axes_for_cb = axes[:-1]
-    else:
-        main_axes_for_cb = axes
-
     if colormap.lower() == "weatherbell":
         cb_all = fig.colorbar(
-            im_coarse_sum, ax=main_axes_for_cb,
+            im_coarse_sum, ax=axes[:-1] if ratio else axes,
             orientation='horizontal', fraction=0.046, pad=0.07, ticks=bounds
         )
         cb_all.set_label("Total Precip (mm)")
     else:
-        # viridis colorbar
         cb_all = fig.colorbar(
-            im_coarse_sum, ax=main_axes_for_cb,
+            im_coarse_sum, ax=axes[:-1] if ratio else axes,
             orientation='horizontal', fraction=0.046, pad=0.07
         )
         cb_all.set_label("Total Precip (mm)")
@@ -786,8 +861,8 @@ if __name__ == "__main__":
     # Example usage with the new colormap option
     run_inference(
         data_source="ECMWF",
-        init_datestr="2025011100",
-        hours=48,
+        init_datestr="2025030600",
+        hours=144,
         ratio=True,
         colormap="weatherbell"
     )
