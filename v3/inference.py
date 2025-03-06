@@ -822,8 +822,8 @@ def run_inference(
             extent=[lon_global[0], lon_global[-1], lat_global[0], lat_global[-1]],
             transform=ccrs.PlateCarree(),
             cmap='RdBu_r',
-            vmin=0,
-            vmax=2
+            vmin=0.5,
+            vmax=1.5
         )
         ax_ratio_sum.set_title("Accum. Ratio (Model / Coarse)")
 
